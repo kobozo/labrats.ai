@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
   Minus, 
@@ -11,7 +11,17 @@ import {
   X,
   AlertCircle,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Archive,
+  ArchiveRestore,
+  RefreshCcw,
+  Trash2,
+  GitMerge,
+  History,
+  MoreVertical,
+  Settings,
+  Zap,
+  AlertTriangle
 } from 'lucide-react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { GitStatus, GitFileStatus, GitDiff } from '../types/electron';
@@ -34,6 +44,17 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [expandedStagedDirectories, setExpandedStagedDirectories] = useState<Set<string>>(new Set());
   const [expandedChangedDirectories, setExpandedChangedDirectories] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: GitFileStatus | null; type: 'file' | 'staged' | 'changes' | 'general' } | null>(null);
+  const [branches, setBranches] = useState<{ current: string; all: string[] }>({ current: '', all: [] });
+  const [showBranchMenu, setShowBranchMenu] = useState(false);
+  const [showStashMenu, setShowStashMenu] = useState(false);
+  const [stashList, setStashList] = useState<string[]>([]);
+  const [commitHistory, setCommitHistory] = useState<Array<{ hash: string; message: string; author: string; date: string }>>([]);
+  const [showHistoryMenu, setShowHistoryMenu] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(true);
+  const [isPulling, setIsPulling] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const checkDebugMode = async () => {
@@ -53,11 +74,136 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
   useEffect(() => {
     if (currentFolder) {
       loadGitStatus();
+      loadBranches();
+      loadStashList();
+      loadCommitHistory();
     } else {
       setGitStatus(null);
       setError(null);
+      setBranches({ current: '', all: [] });
+      setStashList([]);
+      setCommitHistory([]);
     }
   }, [currentFolder]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleContextMenu = (e: React.MouseEvent, file: GitFileStatus | null, type: 'file' | 'staged' | 'changes' | 'general') => {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      file,
+      type
+    });
+  };
+
+  const handleContextMenuAction = async (action: string, file?: GitFileStatus) => {
+    setContextMenu(null);
+    
+    if (!file) return;
+    
+    switch (action) {
+      case 'stage':
+        await handleStageFile(file.path);
+        break;
+      case 'unstage':
+        await handleUnstageFile(file.path);
+        break;
+      case 'discard':
+        await handleDiscardChanges(file.path);
+        break;
+      case 'revert':
+        await handleRevertFile(file.path);
+        break;
+      case 'viewDiff':
+        await loadDiff(file);
+        break;
+    }
+  };
+
+  const handleBulkAction = async (action: string) => {
+    setContextMenu(null);
+    
+    switch (action) {
+      case 'stageAll':
+        await handleStageAll();
+        break;
+      case 'unstageAll':
+        await handleUnstageAll();
+        break;
+      case 'discardAll':
+        await handleDiscardAll();
+        break;
+      case 'stashPush':
+        const message = window.prompt('Enter stash message (optional):');
+        if (message !== null) {
+          await handleStashPush(message || undefined);
+        }
+        break;
+      case 'stashPop':
+        await handleStashPop();
+        break;
+      case 'resetSoft':
+        await handleResetSoft();
+        break;
+      case 'resetHard':
+        await handleResetHard();
+        break;
+    }
+  };
+
+  const handlePull = async () => {
+    if (isPulling) return;
+    
+    setIsPulling(true);
+    try {
+      const result = await window.electronAPI.git.pull();
+      if (result.success) {
+        await loadGitStatus();
+        await loadCommitHistory();
+        console.log('Pull successful:', result.message);
+      } else {
+        console.error('Pull failed:', result.message);
+        alert(`Pull failed: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error during pull:', error);
+      alert('Pull failed: Network error or repository issue');
+    } finally {
+      setIsPulling(false);
+    }
+  };
+
+  const handlePush = async () => {
+    if (isPushing) return;
+    
+    setIsPushing(true);
+    try {
+      const result = await window.electronAPI.git.push();
+      if (result.success) {
+        await loadGitStatus();
+        console.log('Push successful:', result.message);
+      } else {
+        console.error('Push failed:', result.message);
+        alert(`Push failed: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error during push:', error);
+      alert('Push failed: Network error or repository issue');
+    } finally {
+      setIsPushing(false);
+    }
+  };
 
   const loadGitStatus = async () => {
     setLoading(true);
@@ -129,6 +275,139 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
       } catch (error) {
         console.error('Error discarding changes:', error);
       }
+    }
+  };
+
+  const handleRevertFile = async (filePath: string) => {
+    if (window.confirm(`Are you sure you want to revert ${filePath} to HEAD?`)) {
+      try {
+        await window.electronAPI.git.revertFile(filePath);
+        loadGitStatus();
+        if (selectedFile?.path === filePath) {
+          setSelectedFile(null);
+          setSelectedDiff(null);
+        }
+      } catch (error) {
+        console.error('Error reverting file:', error);
+      }
+    }
+  };
+
+  const handleStashPush = async (message?: string) => {
+    try {
+      const success = await window.electronAPI.git.stashPush(message);
+      if (success) {
+        loadGitStatus();
+        loadStashList();
+        setSelectedFile(null);
+        setSelectedDiff(null);
+      }
+    } catch (error) {
+      console.error('Error stashing changes:', error);
+    }
+  };
+
+  const handleStashPop = async () => {
+    try {
+      const success = await window.electronAPI.git.stashPop();
+      if (success) {
+        loadGitStatus();
+        loadStashList();
+      }
+    } catch (error) {
+      console.error('Error popping stash:', error);
+    }
+  };
+
+  const handleStageAll = async () => {
+    try {
+      await window.electronAPI.git.stageAllFiles();
+      loadGitStatus();
+    } catch (error) {
+      console.error('Error staging all files:', error);
+    }
+  };
+
+  const handleUnstageAll = async () => {
+    try {
+      await window.electronAPI.git.unstageAllFiles();
+      loadGitStatus();
+    } catch (error) {
+      console.error('Error unstaging all files:', error);
+    }
+  };
+
+  const handleDiscardAll = async () => {
+    if (window.confirm('Are you sure you want to discard all changes? This cannot be undone.')) {
+      try {
+        await window.electronAPI.git.discardAllChanges();
+        loadGitStatus();
+        setSelectedFile(null);
+        setSelectedDiff(null);
+      } catch (error) {
+        console.error('Error discarding all changes:', error);
+      }
+    }
+  };
+
+  const handleResetSoft = async (commitHash?: string) => {
+    if (window.confirm(`Are you sure you want to soft reset to ${commitHash || 'HEAD~1'}?`)) {
+      try {
+        await window.electronAPI.git.resetSoft(commitHash);
+        loadGitStatus();
+      } catch (error) {
+        console.error('Error soft resetting:', error);
+      }
+    }
+  };
+
+  const handleResetHard = async (commitHash?: string) => {
+    if (window.confirm(`Are you sure you want to hard reset to ${commitHash || 'HEAD~1'}? This will lose all changes.`)) {
+      try {
+        await window.electronAPI.git.resetHard(commitHash);
+        loadGitStatus();
+        setSelectedFile(null);
+        setSelectedDiff(null);
+      } catch (error) {
+        console.error('Error hard resetting:', error);
+      }
+    }
+  };
+
+  const handleSwitchBranch = async (branchName: string) => {
+    try {
+      await window.electronAPI.git.switchBranch(branchName);
+      loadGitStatus();
+      loadBranches();
+    } catch (error) {
+      console.error('Error switching branch:', error);
+    }
+  };
+
+  const loadBranches = async () => {
+    try {
+      const branchData = await window.electronAPI.git.getBranches();
+      setBranches(branchData);
+    } catch (error) {
+      console.error('Error loading branches:', error);
+    }
+  };
+
+  const loadStashList = async () => {
+    try {
+      const stashes = await window.electronAPI.git.stashList();
+      setStashList(stashes);
+    } catch (error) {
+      console.error('Error loading stash list:', error);
+    }
+  };
+
+  const loadCommitHistory = async (count: number = 10) => {
+    try {
+      const history = await window.electronAPI.git.getCommitHistory(count);
+      setCommitHistory(history);
+    } catch (error) {
+      console.error('Error loading commit history:', error);
     }
   };
 
@@ -315,6 +594,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
                 }`}
                 style={{ paddingLeft: `${depth * 16 + 28}px` }}
                 onClick={() => loadDiff(file)}
+                onContextMenu={(e) => handleContextMenu(e, file, file.staged ? 'staged' : 'changes')}
               >
                 {getStatusIcon(file)}
                 <span className="flex-1 text-gray-300 text-sm truncate">{node.name}</span>
@@ -448,6 +728,220 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
   const stagedTree = buildFileTree(stagedFiles);
   const changedTree = buildFileTree(changedFiles);
 
+  const renderContextMenu = () => {
+    if (!contextMenu) return null;
+
+    const { x, y, file, type } = contextMenu;
+    
+    return (
+      <div
+        ref={contextMenuRef}
+        className="fixed bg-gray-800 border border-gray-600 rounded shadow-lg z-[9999] py-1 min-w-48"
+        style={{ left: x, top: y }}
+      >
+        {type === 'file' && file && (
+          <>
+            <button
+              onClick={() => handleContextMenuAction('viewDiff', file)}
+              className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>View Diff</span>
+            </button>
+            {file.staged ? (
+              <button
+                onClick={() => handleContextMenuAction('unstage', file)}
+                className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+              >
+                <Minus className="w-4 h-4" />
+                <span>Unstage</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleContextMenuAction('stage', file)}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Stage</span>
+                </button>
+                {!file.isNew && (
+                  <>
+                    <button
+                      onClick={() => handleContextMenuAction('discard', file)}
+                      className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Discard Changes</span>
+                    </button>
+                    <button
+                      onClick={() => handleContextMenuAction('revert', file)}
+                      className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+                    >
+                      <RefreshCcw className="w-4 h-4" />
+                      <span>Revert to HEAD</span>
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </>
+        )}
+        
+        {type === 'staged' && (
+          <>
+            <button
+              onClick={() => handleBulkAction('unstageAll')}
+              className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+            >
+              <Minus className="w-4 h-4" />
+              <span>Unstage All</span>
+            </button>
+          </>
+        )}
+        
+        {type === 'changes' && (
+          <>
+            <button
+              onClick={() => handleBulkAction('stageAll')}
+              className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Stage All</span>
+            </button>
+            <button
+              onClick={() => handleBulkAction('discardAll')}
+              className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2 text-red-400 hover:text-red-300"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Discard All</span>
+            </button>
+          </>
+        )}
+        
+        {type === 'general' && (
+          <>
+            <button
+              onClick={() => handleBulkAction('stashPush')}
+              className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+            >
+              <Archive className="w-4 h-4" />
+              <span>Stash Changes</span>
+            </button>
+            <button
+              onClick={() => handleBulkAction('stashPop')}
+              className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+            >
+              <ArchiveRestore className="w-4 h-4" />
+              <span>Pop Stash</span>
+            </button>
+            <div className="border-t border-gray-600 my-1" />
+            <button
+              onClick={() => handleBulkAction('resetSoft')}
+              className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
+            >
+              <RefreshCcw className="w-4 h-4" />
+              <span>Reset Soft</span>
+            </button>
+            <button
+              onClick={() => handleBulkAction('resetHard')}
+              className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2 text-red-400 hover:text-red-300"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              <span>Reset Hard</span>
+            </button>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderBranchDropdown = () => {
+    if (!showBranchMenu) return null;
+    
+    return (
+      <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg z-[9999] py-1 min-w-48">
+        <div className="px-3 py-2 text-xs text-gray-400 font-medium border-b border-gray-600">
+          Switch Branch
+        </div>
+        {branches.all.map(branch => (
+          <button
+            key={branch}
+            onClick={() => {
+              handleSwitchBranch(branch);
+              setShowBranchMenu(false);
+            }}
+            className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 flex items-center space-x-2 ${
+              branch === branches.current ? 'text-green-400' : 'text-gray-300'
+            }`}
+          >
+            <GitBranch className="w-4 h-4" />
+            <span>{branch}</span>
+            {branch === branches.current && <Check className="w-4 h-4 ml-auto" />}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const renderStashDropdown = () => {
+    if (!showStashMenu) return null;
+    
+    return (
+      <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg z-[9999] py-1 min-w-64">
+        <div className="px-3 py-2 text-xs text-gray-400 font-medium border-b border-gray-600">
+          Stash List
+        </div>
+        {stashList.length === 0 ? (
+          <div className="px-3 py-2 text-sm text-gray-500">No stashes</div>
+        ) : (
+          stashList.map((stash, index) => (
+            <div key={index} className="px-3 py-2 text-sm text-gray-300 hover:bg-gray-700">
+              <div className="truncate">{stash}</div>
+            </div>
+          ))
+        )}
+      </div>
+    );
+  };
+
+  const renderHistoryDropdown = () => {
+    if (!showHistoryMenu) return null;
+    
+    return (
+      <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg z-[9999] py-1 min-w-80">
+        <div className="px-3 py-2 text-xs text-gray-400 font-medium border-b border-gray-600">
+          Recent Commits
+        </div>
+        {commitHistory.length === 0 ? (
+          <div className="px-3 py-2 text-sm text-gray-500">No commits</div>
+        ) : (
+          commitHistory.slice(0, 5).map((commit, index) => (
+            <div key={commit.hash} className="px-3 py-2 text-sm text-gray-300 hover:bg-gray-700">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full" />
+                <div className="font-mono text-xs text-gray-400">{commit.hash.substring(0, 7)}</div>
+              </div>
+              <div className="mt-1 text-xs truncate">{commit.message}</div>
+              <div className="text-xs text-gray-500 mt-1">{commit.author} • {new Date(commit.date).toLocaleDateString()}</div>
+            </div>
+          ))
+        )}
+        <div className="border-t border-gray-600 px-3 py-2">
+          <button 
+            onClick={() => {
+              setHistoryExpanded(true);
+              setShowHistoryMenu(false);
+            }}
+            className="text-xs text-blue-400 hover:text-blue-300"
+          >
+            Show all commits in sidebar
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   if (!currentFolder) {
     return (
       <div className="h-full bg-gray-900 flex items-center justify-center">
@@ -492,12 +986,12 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
 
   return (
     <div 
-      className="h-full w-full bg-gray-900 flex overflow-hidden min-h-0"
+      className="h-full w-full bg-gray-900 flex overflow-visible min-h-0"
       style={isDebugMode ? { border: '2px solid red' } : {}}
     >
       {/* Git Status Sidebar */}
       <div 
-        className="w-80 bg-gray-800 border-r border-gray-700 p-4 flex flex-col h-full overflow-hidden min-h-0"
+        className="w-80 bg-gray-800 border-r border-gray-700 p-4 flex flex-col h-full overflow-visible min-h-0"
         style={isDebugMode ? { border: '2px solid blue' } : {}}
       >
         <div className="mb-4">
@@ -512,18 +1006,79 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
             </button>
           </div>
 
-          {/* Branch info */}
+          {/* Branch info and controls */}
           {gitStatus && (
-            <div className="mb-4 p-2 bg-gray-700 rounded text-sm text-gray-300">
-              <div className="flex items-center space-x-2">
-                <GitBranch className="w-4 h-4" />
-                <span>{gitStatus.current}</span>
-                {gitStatus.ahead > 0 && (
-                  <span className="text-green-400">↑{gitStatus.ahead}</span>
-                )}
-                {gitStatus.behind > 0 && (
-                  <span className="text-red-400">↓{gitStatus.behind}</span>
-                )}
+            <div className="mb-4 space-y-2">
+              <div className="p-2 bg-gray-700 rounded text-sm text-gray-300">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <GitBranch className="w-4 h-4" />
+                    <span>{gitStatus.current}</span>
+                    {gitStatus.ahead > 0 && (
+                      <button
+                        onClick={handlePush}
+                        disabled={isPushing}
+                        className={`text-green-400 hover:text-green-300 transition-colors cursor-pointer ${
+                          isPushing ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={isPushing ? 'Pushing...' : `Push ${gitStatus.ahead} commit(s) to remote`}
+                      >
+                        {isPushing ? '↑...' : `↑${gitStatus.ahead}`}
+                      </button>
+                    )}
+                    {gitStatus.behind > 0 && (
+                      <button
+                        onClick={handlePull}
+                        disabled={isPulling}
+                        className={`text-red-400 hover:text-red-300 transition-colors cursor-pointer ${
+                          isPulling ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={isPulling ? 'Pulling...' : `Pull ${gitStatus.behind} commit(s) from remote`}
+                      >
+                        {isPulling ? '↓...' : `↓${gitStatus.behind}`}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowBranchMenu(!showBranchMenu)}
+                        className="p-1 text-gray-400 hover:text-white transition-colors"
+                        title="Switch Branch"
+                      >
+                        <GitMerge className="w-4 h-4" />
+                      </button>
+                      {renderBranchDropdown()}
+                    </div>
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowStashMenu(!showStashMenu)}
+                        className="p-1 text-gray-400 hover:text-white transition-colors"
+                        title="Stash"
+                      >
+                        <Archive className="w-4 h-4" />
+                      </button>
+                      {renderStashDropdown()}
+                    </div>
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowHistoryMenu(!showHistoryMenu)}
+                        className="p-1 text-gray-400 hover:text-white transition-colors"
+                        title="History"
+                      >
+                        <History className="w-4 h-4" />
+                      </button>
+                      {renderHistoryDropdown()}
+                    </div>
+                    <button
+                      onClick={(e) => handleContextMenu(e, null, 'general')}
+                      className="p-1 text-gray-400 hover:text-white transition-colors"
+                      title="More Actions"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -572,13 +1127,22 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
           {/* Staged Changes */}
           {stagedFiles.length > 0 && (
             <div>
-              <button
-                onClick={() => setStagedExpanded(!stagedExpanded)}
-                className="flex items-center space-x-2 w-full text-left text-sm font-medium text-gray-300 hover:text-white transition-colors mb-2"
-              >
-                {stagedExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                <span>Staged Changes ({stagedFiles.length})</span>
-              </button>
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  onClick={() => setStagedExpanded(!stagedExpanded)}
+                  className="flex items-center space-x-2 text-left text-sm font-medium text-gray-300 hover:text-white transition-colors"
+                >
+                  {stagedExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  <span>Staged Changes ({stagedFiles.length})</span>
+                </button>
+                <button
+                  onClick={(e) => handleContextMenu(e, null, 'staged')}
+                  className="p-1 text-gray-400 hover:text-white transition-colors"
+                  title="Staged Actions"
+                >
+                  <MoreVertical className="w-3 h-3" />
+                </button>
+              </div>
               {stagedExpanded && (
                 <div className="space-y-1">
                   {stagedTree.map(node => renderTreeNode(node, 0, true))}
@@ -590,13 +1154,22 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
           {/* Changes */}
           {changedFiles.length > 0 && (
             <div>
-              <button
-                onClick={() => setChangesExpanded(!changesExpanded)}
-                className="flex items-center space-x-2 w-full text-left text-sm font-medium text-gray-300 hover:text-white transition-colors mb-2"
-              >
-                {changesExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                <span>Changes ({changedFiles.length})</span>
-              </button>
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  onClick={() => setChangesExpanded(!changesExpanded)}
+                  className="flex items-center space-x-2 text-left text-sm font-medium text-gray-300 hover:text-white transition-colors"
+                >
+                  {changesExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  <span>Changes ({changedFiles.length})</span>
+                </button>
+                <button
+                  onClick={(e) => handleContextMenu(e, null, 'changes')}
+                  className="p-1 text-gray-400 hover:text-white transition-colors"
+                  title="Changes Actions"
+                >
+                  <MoreVertical className="w-3 h-3" />
+                </button>
+              </div>
               {changesExpanded && (
                 <div className="space-y-1">
                   {changedTree.map(node => renderTreeNode(node, 0, false))}
@@ -605,6 +1178,65 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
             </div>
           )}
         </div>
+        
+        {/* Commit History Footer - Always Visible */}
+        {gitStatus && (
+          <div className="border-t border-gray-700 pt-2 mt-2">
+            <button
+              onClick={() => setHistoryExpanded(!historyExpanded)}
+              className="w-full flex items-center justify-between p-3 bg-gray-700 hover:bg-gray-600 rounded transition-colors text-sm font-medium text-gray-300 hover:text-white"
+            >
+              <div className="flex items-center space-x-2">
+                <History className="w-4 h-4" />
+                <span>Recent Commits ({commitHistory.length})</span>
+              </div>
+              {historyExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+            
+            {historyExpanded && (
+              <div className="mt-2 space-y-1 max-h-64 overflow-y-auto bg-gray-800 rounded p-2">
+                {commitHistory.length === 0 ? (
+                  <div className="text-center text-gray-500 py-4">
+                    <History className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No commits found</p>
+                  </div>
+                ) : (
+                  commitHistory.map((commit, index) => (
+                    <div 
+                      key={commit.hash} 
+                      className="p-2 rounded cursor-pointer hover:bg-gray-600 transition-colors border-l-2 border-green-500"
+                      title={`${commit.hash}\n${commit.message}\n${commit.author} - ${new Date(commit.date).toLocaleString()}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full" />
+                          <span className="font-mono text-xs text-gray-400">{commit.hash.substring(0, 7)}</span>
+                        </div>
+                        <span className="text-xs text-gray-500">{new Date(commit.date).toLocaleDateString()}</span>
+                      </div>
+                      <div className="text-xs text-gray-300 truncate mb-1" title={commit.message}>
+                        {commit.message}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {commit.author}
+                      </div>
+                    </div>
+                  ))
+                )}
+                {commitHistory.length > 10 && (
+                  <div className="text-center pt-2 border-t border-gray-600">
+                    <button 
+                      onClick={() => loadCommitHistory(commitHistory.length + 10)}
+                      className="text-xs text-blue-400 hover:text-blue-300 py-1"
+                    >
+                      Load more commits
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Diff Viewer */}
@@ -652,6 +1284,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
           </div>
         )}
       </div>
+      {renderContextMenu()}
     </div>
   );
 };

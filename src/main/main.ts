@@ -567,6 +567,196 @@ ipcMain.handle('git-initialize', async (event, repoPath: string) => {
   return success;
 });
 
+ipcMain.handle('git-revert-file', async (event, filePath: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.revertFile(filePath);
+});
+
+ipcMain.handle('git-stash-push', async (event, message?: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.stashPush(message);
+});
+
+ipcMain.handle('git-stash-pop', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.stashPop();
+});
+
+ipcMain.handle('git-stash-list', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return [];
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return [];
+  
+  return await gitService.stashList();
+});
+
+ipcMain.handle('git-reset-soft', async (event, commitHash?: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.resetSoft(commitHash);
+});
+
+ipcMain.handle('git-reset-hard', async (event, commitHash?: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.resetHard(commitHash);
+});
+
+ipcMain.handle('git-reset-mixed', async (event, commitHash?: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.resetMixed(commitHash);
+});
+
+ipcMain.handle('git-stage-all', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.stageAllFiles();
+});
+
+ipcMain.handle('git-unstage-all', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.unstageAllFiles();
+});
+
+ipcMain.handle('git-discard-all', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.discardAllChanges();
+});
+
+ipcMain.handle('git-get-branches', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return { current: '', all: [] };
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return { current: '', all: [] };
+  
+  return await gitService.getBranches();
+});
+
+ipcMain.handle('git-create-branch', async (event, branchName: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.createBranch(branchName);
+});
+
+ipcMain.handle('git-switch-branch', async (event, branchName: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.switchBranch(branchName);
+});
+
+ipcMain.handle('git-delete-branch', async (event, branchName: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.deleteBranch(branchName);
+});
+
+ipcMain.handle('git-get-commit-history', async (event, count?: number) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return [];
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return [];
+  
+  return await gitService.getCommitHistory(count);
+});
+
+ipcMain.handle('git-clean-untracked', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.cleanUntrackedFiles();
+});
+
+ipcMain.handle('git-pull', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return { success: false, message: 'Window not found' };
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return { success: false, message: 'Git not initialized' };
+  
+  return await gitService.pull();
+});
+
+ipcMain.handle('git-push', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return { success: false, message: 'Window not found' };
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return { success: false, message: 'Git not initialized' };
+  
+  return await gitService.push();
+});
+
+ipcMain.handle('git-fetch', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return { success: false, message: 'Window not found' };
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return { success: false, message: 'Git not initialized' };
+  
+  return await gitService.fetch();
+});
+
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;

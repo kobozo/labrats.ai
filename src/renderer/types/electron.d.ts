@@ -73,6 +73,25 @@ export interface GitAPI {
   discardChanges: (filePath: string) => Promise<boolean>;
   commit: (message: string) => Promise<boolean>;
   initialize: (repoPath: string) => Promise<boolean>;
+  revertFile: (filePath: string) => Promise<boolean>;
+  stashPush: (message?: string) => Promise<boolean>;
+  stashPop: () => Promise<boolean>;
+  stashList: () => Promise<string[]>;
+  resetSoft: (commitHash?: string) => Promise<boolean>;
+  resetHard: (commitHash?: string) => Promise<boolean>;
+  resetMixed: (commitHash?: string) => Promise<boolean>;
+  stageAllFiles: () => Promise<boolean>;
+  unstageAllFiles: () => Promise<boolean>;
+  discardAllChanges: () => Promise<boolean>;
+  getBranches: () => Promise<{ current: string; all: string[] }>;
+  createBranch: (branchName: string) => Promise<boolean>;
+  switchBranch: (branchName: string) => Promise<boolean>;
+  deleteBranch: (branchName: string) => Promise<boolean>;
+  getCommitHistory: (count?: number) => Promise<Array<{ hash: string; message: string; author: string; date: string }>>;
+  cleanUntrackedFiles: () => Promise<boolean>;
+  pull: () => Promise<{ success: boolean; message: string }>;
+  push: () => Promise<{ success: boolean; message: string }>;
+  fetch: () => Promise<{ success: boolean; message: string }>;
 }
 
 export interface ElectronAPI {

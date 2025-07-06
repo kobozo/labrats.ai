@@ -36,6 +36,7 @@ if (!fs.existsSync(labratsConfigDir)) {
 
 const store: any = new Store({
   cwd: labratsConfigDir,
+  name: 'projects',
   defaults: {
     recentProjects: [] as RecentProject[],
     windowStates: [] as WindowState[],
@@ -344,11 +345,27 @@ function updateRecentProjectsMenu(): void {
 
 
 // IPC handlers
-ipcMain.handle('open-folder', async () => {
+ipcMain.handle('open-folder', async (event) => {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory'],
     title: 'Select Folder to Open'
   });
+
+  if (!result.canceled && result.filePaths.length > 0) {
+    const projectPath = result.filePaths[0];
+
+    // Identify the window that requested the dialog
+    const requestingWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (requestingWindow) {
+      requestingWindow.webContents.send('folder-opened', projectPath);
+      windowProjects.set(requestingWindow.id, projectPath);
+    }
+
+    updateRecentProjects(projectPath);
+    saveOpenWindows();
+  }
+
   return result;
 });
 

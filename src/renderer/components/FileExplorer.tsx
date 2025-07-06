@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Folder, File, ChevronRight, ChevronDown, Search, Plus, GitBranch, Eye, AlertCircle, FolderOpen, ChevronUp, Minimize2 } from 'lucide-react';
+import { Folder, File, ChevronRight, ChevronDown, Search, Plus, Eye, AlertCircle, FolderOpen, ChevronUp, Minimize2 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { FileNode } from '../types/electron';
 import { getFileIconInfo } from '../utils/fileIcons';
@@ -252,9 +252,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder }) => 
               </button>
               <button className="p-1 text-gray-400 hover:text-white transition-colors" title="New File">
                 <Plus className="w-4 h-4" />
-              </button>
-              <button className="p-1 text-gray-400 hover:text-white transition-colors" title="Git Operations">
-                <GitBranch className="w-4 h-4" />
               </button>
             </div>
           </div>

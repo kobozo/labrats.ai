@@ -32,7 +32,8 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
   const [changesExpanded, setChangesExpanded] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDebugMode, setIsDebugMode] = useState(false);
-  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set());
+  const [expandedStagedDirectories, setExpandedStagedDirectories] = useState<Set<string>>(new Set());
+  const [expandedChangedDirectories, setExpandedChangedDirectories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const checkDebugMode = async () => {
@@ -236,19 +237,32 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
     });
   };
 
-  const toggleDirectory = (path: string) => {
-    setExpandedDirectories(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(path)) {
-        newSet.delete(path);
-      } else {
-        newSet.add(path);
-      }
-      return newSet;
-    });
+  const toggleDirectory = (path: string, isStaged: boolean) => {
+    if (isStaged) {
+      setExpandedStagedDirectories(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(path)) {
+          newSet.delete(path);
+        } else {
+          newSet.add(path);
+        }
+        return newSet;
+      });
+    } else {
+      setExpandedChangedDirectories(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(path)) {
+          newSet.delete(path);
+        } else {
+          newSet.add(path);
+        }
+        return newSet;
+      });
+    }
   };
 
-  const renderTreeNode = (node: GitTreeNode, depth: number = 0): React.ReactNode => {
+  const renderTreeNode = (node: GitTreeNode, depth: number = 0, isStaged: boolean = false): React.ReactNode => {
+    const expandedDirectories = isStaged ? expandedStagedDirectories : expandedChangedDirectories;
     const isExpanded = expandedDirectories.has(node.path);
     const hasChildren = node.children.length > 0;
 
@@ -260,7 +274,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
             <div
               className="flex items-center space-x-2 p-2 rounded cursor-pointer hover:bg-gray-700 transition-colors"
               style={{ paddingLeft: `${depth * 16 + 8}px` }}
-              onClick={() => toggleDirectory(node.path)}
+              onClick={() => toggleDirectory(node.path, isStaged)}
             >
               {hasChildren && (
                 <button className="p-0.5">
@@ -286,7 +300,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
             
             {isExpanded && hasChildren && (
               <div>
-                {node.children.map(child => renderTreeNode(child, depth + 1))}
+                {node.children.map(child => renderTreeNode(child, depth + 1, isStaged))}
               </div>
             )}
           </div>
@@ -567,7 +581,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
               </button>
               {stagedExpanded && (
                 <div className="space-y-1">
-                  {stagedTree.map(node => renderTreeNode(node))}
+                  {stagedTree.map(node => renderTreeNode(node, 0, true))}
                 </div>
               )}
             </div>
@@ -585,7 +599,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
               </button>
               {changesExpanded && (
                 <div className="space-y-1">
-                  {changedTree.map(node => renderTreeNode(node))}
+                  {changedTree.map(node => renderTreeNode(node, 0, false))}
                 </div>
               )}
             </div>

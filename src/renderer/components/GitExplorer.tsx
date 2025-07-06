@@ -13,7 +13,7 @@ import {
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
-import Editor from '@monaco-editor/react';
+import Editor, { DiffEditor } from '@monaco-editor/react';
 import { GitStatus, GitFileStatus, GitDiff } from '../types/electron';
 import { getFileIconInfo } from '../utils/fileIcons';
 
@@ -356,35 +356,73 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
   };
 
   const renderDiffViewer = () => {
-    if (!selectedDiff) return null;
+    if (!selectedDiff || !selectedFile) return null;
 
-    // Convert diff to unified format for Monaco
-    let diffContent = '';
-    selectedDiff.hunks.forEach(hunk => {
-      diffContent += `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@\n`;
-      hunk.lines.forEach(line => {
-        const prefix = line.type === 'addition' ? '+' : 
-                     line.type === 'deletion' ? '-' : ' ';
-        diffContent += `${prefix}${line.content}\n`;
+    // Reconstruct original and modified content from diff hunks
+    const reconstructContent = () => {
+      let originalContent = '';
+      let modifiedContent = '';
+      
+      selectedDiff.hunks.forEach(hunk => {
+        hunk.lines.forEach(line => {
+          if (line.type === 'context') {
+            originalContent += line.content + '\n';
+            modifiedContent += line.content + '\n';
+          } else if (line.type === 'deletion') {
+            originalContent += line.content + '\n';
+          } else if (line.type === 'addition') {
+            modifiedContent += line.content + '\n';
+          }
+        });
       });
-    });
+
+      return { originalContent, modifiedContent };
+    };
+
+    const { originalContent, modifiedContent } = reconstructContent();
+
+    // Determine file language from extension
+    const getLanguageFromPath = (filePath: string) => {
+      const ext = filePath.split('.').pop()?.toLowerCase();
+      const languageMap: Record<string, string> = {
+        'js': 'javascript',
+        'jsx': 'javascript',
+        'ts': 'typescript',
+        'tsx': 'typescript',
+        'py': 'python',
+        'css': 'css',
+        'scss': 'scss',
+        'html': 'html',
+        'json': 'json',
+        'md': 'markdown',
+        'yaml': 'yaml',
+        'yml': 'yaml'
+      };
+      return languageMap[ext || ''] || 'plaintext';
+    };
 
     return (
-      <Editor
+      <DiffEditor
         height="100%"
-        language="diff"
-        value={diffContent}
+        language={getLanguageFromPath(selectedFile.path)}
+        original={originalContent}
+        modified={modifiedContent}
         theme="vs-dark"
         options={{
           readOnly: true,
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
           fontSize: 14,
-          lineNumbers: 'off',
           wordWrap: 'on',
           automaticLayout: true,
           contextmenu: false,
           renderWhitespace: 'selection',
+          renderSideBySide: true,
+          enableSplitViewResizing: true,
+          scrollbar: {
+            verticalScrollbarSize: 10,
+            horizontalScrollbarSize: 10
+          }
         }}
       />
     );

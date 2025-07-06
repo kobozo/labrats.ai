@@ -1,0 +1,440 @@
+import React, { useState, useEffect } from 'react';
+import { Folder, File, ChevronRight, ChevronDown, Search, Plus, GitBranch, Eye, AlertCircle, FolderOpen, ChevronUp, Minimize2 } from 'lucide-react';
+import Editor from '@monaco-editor/react';
+import { FileNode } from '../types/electron';
+import { getFileIconInfo } from '../utils/fileIcons';
+import { getLanguageFromFileName, getLanguageDisplayName } from '../utils/fileLanguages';
+import '@vscode/codicons/dist/codicon.css';
+
+interface FileExplorerProps {
+  currentFolder: string | null;
+}
+
+export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder }) => {
+  const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [detailsCollapsed, setDetailsCollapsed] = useState(false);
+
+  // Debug mode flag
+  const [isDebugMode, setIsDebugMode] = useState(false);
+
+  useEffect(() => {
+    const checkDebugMode = async () => {
+      try {
+        const debugValue = await window.electronAPI.getEnv('LABRATS_DEBUG');
+        setIsDebugMode(debugValue === 'true');
+      } catch (error) {
+        console.error('Error checking debug mode:', error);
+        setIsDebugMode(false);
+      }
+    };
+    checkDebugMode();
+  }, []);
+
+
+  // Load folder contents when currentFolder changes
+  useEffect(() => {
+    if (currentFolder) {
+      loadDirectory(currentFolder);
+    } else {
+      setFileTree([]);
+      setError(null);
+    }
+  }, [currentFolder]);
+
+  const loadDirectory = async (dirPath: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const files = await window.electronAPI.readDirectory(dirPath);
+      setFileTree(files);
+    } catch (error) {
+      setError(`Failed to load directory: ${error}`);
+      setFileTree([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadFileContent = async (filePath: string) => {
+    try {
+      const content = await window.electronAPI.readFile(filePath);
+      setFileContent(content);
+    } catch (error) {
+      setFileContent(`Error loading file: ${error}`);
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    try {
+      const result = await window.electronAPI.openFolder();
+      if (result && !result.canceled && result.filePaths.length > 0) {
+        // The App component will handle the folder opening via the menu system
+        // This is just a fallback
+      }
+    } catch (error) {
+      console.error('Error opening folder:', error);
+    }
+  };
+
+  const toggleFolder = async (targetNode: FileNode) => {
+    if (targetNode.type === 'folder') {
+      // If folder is being expanded and has no children loaded, load them
+      if (!targetNode.isExpanded && (!targetNode.children || targetNode.children.length === 0)) {
+        try {
+          const children = await window.electronAPI.readDirectory(targetNode.path);
+          const updateNode = (nodes: FileNode[]): FileNode[] => {
+            return nodes.map(node => {
+              if (node.id === targetNode.id) {
+                return { ...node, isExpanded: true, children };
+              }
+              if (node.children) {
+                return { ...node, children: updateNode(node.children) };
+              }
+              return node;
+            });
+          };
+          setFileTree(updateNode(fileTree));
+        } catch (error) {
+          console.error('Error loading folder contents:', error);
+        }
+      } else {
+        // Just toggle the expanded state
+        const updateNode = (nodes: FileNode[]): FileNode[] => {
+          return nodes.map(node => {
+            if (node.id === targetNode.id) {
+              return { ...node, isExpanded: !node.isExpanded };
+            }
+            if (node.children) {
+              return { ...node, children: updateNode(node.children) };
+            }
+            return node;
+          });
+        };
+        setFileTree(updateNode(fileTree));
+      }
+    }
+  };
+
+  const getFileIcon = (fileName: string, isFolder: boolean = false, large: boolean = false) => {
+    const iconInfo = getFileIconInfo(fileName, isFolder);
+    return (
+      <i 
+        className={`codicon codicon-${iconInfo.icon} ${large ? 'file-icon-large' : 'file-icon'}`}
+        style={{ color: iconInfo.color }}
+      />
+    );
+  };
+
+
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = (now.getTime() - date.getTime()) / (1000 * 60);
+    
+    if (diffInMinutes < 60) {
+      return `${Math.floor(diffInMinutes)} min ago`;
+    } else if (diffInMinutes < 1440) {
+      return `${Math.floor(diffInMinutes / 60)} hours ago`;
+    } else {
+      return date.toLocaleDateString();
+    }
+  };
+
+  const renderFileNode = (node: FileNode, depth: number = 0) => {
+    const isFolder = node.type === 'folder';
+    const hasChildren = node.children && node.children.length > 0;
+    const isSelected = selectedFile?.id === node.id;
+
+    return (
+      <div key={node.id}>
+        <div
+          className={`flex items-center space-x-2 p-2 rounded cursor-pointer hover:bg-gray-700 transition-colors ${
+            isSelected ? 'bg-blue-600' : ''
+          }`}
+          style={{ paddingLeft: `${depth * 20 + 8}px` }}
+          onClick={() => {
+            if (isFolder) {
+              toggleFolder(node);
+            } else {
+              setSelectedFile(node);
+              loadFileContent(node.path);
+            }
+          }}
+        >
+          {isFolder && hasChildren && (
+            <button className="p-0.5">
+              {node.isExpanded ? (
+                <ChevronDown className="w-4 h-4 text-gray-400" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              )}
+            </button>
+          )}
+          
+          {isFolder && !hasChildren && <div className="w-5" />}
+          
+          {getFileIcon(node.name, isFolder)}
+          
+          <span className="text-gray-300 text-sm flex-1">{node.name}</span>
+          
+          {!isFolder && (
+            <span className="text-xs text-gray-500">{node.size}</span>
+          )}
+        </div>
+        
+        {isFolder && node.isExpanded && node.children && (
+          <div>
+            {node.children.map(child => renderFileNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const allFiles = (nodes: FileNode[]): FileNode[] => {
+    let files: FileNode[] = [];
+    nodes.forEach(node => {
+      if (node.type === 'file') {
+        files.push(node);
+      }
+      if (node.children) {
+        files = files.concat(allFiles(node.children));
+      }
+    });
+    return files;
+  };
+
+  const filteredFiles = allFiles(fileTree).filter(file =>
+    file.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    file.path.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div 
+      className="h-full w-full bg-gray-900 flex overflow-hidden min-h-0"
+      style={isDebugMode ? { border: '2px solid red' } : {}}
+    >
+              {/* File Tree */}
+        <div 
+          className="w-80 bg-gray-800 border-r border-gray-700 p-4 flex flex-col h-full overflow-hidden min-h-0"
+          style={isDebugMode ? { border: '2px solid blue' } : {}}
+        >
+        <div className="mb-4 flex-shrink-0">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white">Files</h2>
+            <div className="flex items-center space-x-2">
+              <button 
+                onClick={handleOpenFolder}
+                className="p-1 text-gray-400 hover:text-white transition-colors"
+                title="Open Folder"
+              >
+                <FolderOpen className="w-4 h-4" />
+              </button>
+              <button className="p-1 text-gray-400 hover:text-white transition-colors" title="New File">
+                <Plus className="w-4 h-4" />
+              </button>
+              <button className="p-1 text-gray-400 hover:text-white transition-colors" title="Git Operations">
+                <GitBranch className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          
+          {/* Current Folder Display */}
+          {currentFolder && (
+            <div className="mb-3 p-2 bg-gray-700 rounded text-xs text-gray-300 break-all">
+              📁 {currentFolder}
+            </div>
+          )}
+          
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search files..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* File Tree */}
+        <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-gray-400">Loading...</div>
+            </div>
+          ) : error ? (
+            <div className="flex items-center space-x-2 p-3 bg-red-900/20 border border-red-500/30 rounded">
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <div className="text-red-400 text-sm">{error}</div>
+            </div>
+          ) : !currentFolder ? (
+            <div className="flex items-center justify-center py-8 text-center">
+              <div className="text-gray-400">
+                <Folder className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>No folder opened</p>
+                <p className="text-xs mt-1">Click "Open Folder" to get started</p>
+              </div>
+            </div>
+          ) : searchTerm ? (
+            // Show search results
+            <div>
+              <h3 className="text-sm font-medium text-gray-400 mb-2">Search Results</h3>
+              {filteredFiles.map(file => (
+                <div
+                  key={file.id}
+                  className={`flex items-center space-x-2 p-2 rounded cursor-pointer hover:bg-gray-700 transition-colors ${
+                    selectedFile?.id === file.id ? 'bg-blue-600' : ''
+                  }`}
+                  onClick={() => {
+                    setSelectedFile(file);
+                    if (file.type === 'file') {
+                      loadFileContent(file.path);
+                    }
+                  }}
+                >
+                  {getFileIcon(file.name, false)}
+                  <div className="flex-1">
+                    <div className="text-gray-300 text-sm">{file.name}</div>
+                    <div className="text-xs text-gray-500">{file.path}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            // Show file tree
+            fileTree.map(node => renderFileNode(node))
+          )}
+        </div>
+      </div>
+
+      {/* File Details */}
+      <div 
+        className="flex-1 p-6 h-full overflow-hidden flex flex-col min-w-0 min-h-0"
+        style={isDebugMode ? { border: '2px solid green' } : {}}
+      >
+        {selectedFile ? (
+          <div className="flex flex-col h-full min-h-0">
+            {/* Header */}
+            <div className="flex items-center space-x-3 mb-6 flex-shrink-0">
+              <div className="text-2xl">{getFileIcon(selectedFile.name, selectedFile.type === 'folder', true)}</div>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-2xl font-bold text-white truncate">{selectedFile.name}</h1>
+                <p className="text-gray-400 text-sm truncate">{selectedFile.path}</p>
+              </div>
+              <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex-shrink-0">
+                <Eye className="w-4 h-4" />
+                <span>Open</span>
+              </button>
+            </div>
+
+            {/* File Details - Collapsible */}
+            <div className="flex-shrink-0 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">File Details</h3>
+                <button
+                  onClick={() => setDetailsCollapsed(!detailsCollapsed)}
+                  className="p-1 text-gray-400 hover:text-white transition-colors"
+                  title={detailsCollapsed ? 'Expand details' : 'Collapse details'}
+                >
+                  {detailsCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                </button>
+              </div>
+              
+              {!detailsCollapsed && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <h3 className="text-sm font-medium text-gray-400 mb-2">Size</h3>
+                    <p className="text-xl font-bold text-white">{selectedFile.size || 'Unknown'}</p>
+                  </div>
+                  <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <h3 className="text-sm font-medium text-gray-400 mb-2">Last Modified</h3>
+                    <p className="text-white">{formatDate(selectedFile.lastModified)}</p>
+                  </div>
+                  <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <h3 className="text-sm font-medium text-gray-400 mb-2">Type</h3>
+                    <p className="font-medium text-blue-400">
+                      {selectedFile.type === 'file' ? getLanguageDisplayName(selectedFile.name) : 'Folder'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* File Contents - Expandable */}
+            {selectedFile.type === 'file' && (
+              <div 
+                className="bg-gray-800 rounded-lg border border-gray-700 flex-1 flex flex-col min-h-0 overflow-hidden w-full"
+                style={isDebugMode ? { border: '2px solid yellow' } : {}}
+              >
+                <div className="p-4 border-b border-gray-700 flex-shrink-0">
+                  <h3 className="text-lg font-semibold text-white">File Contents</h3>
+                </div>
+                <div 
+                  className="flex-1 bg-gray-900 overflow-hidden w-full"
+                  style={isDebugMode ? { border: '2px solid purple' } : {}}
+                >
+                  {fileContent ? (
+                    <Editor
+                      height="100%"
+                      language={getLanguageFromFileName(selectedFile.name)}
+                      value={fileContent}
+                      theme="vs-dark"
+                      loading={
+                        <div className="text-gray-400 flex items-center justify-center h-full min-h-[200px]">
+                          Loading editor...
+                        </div>
+                      }
+                      options={{
+                        readOnly: true,
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        fontSize: 14,
+                        lineNumbers: 'on',
+                        wordWrap: 'on',
+                        automaticLayout: true,
+                        contextmenu: true,
+                        selectOnLineNumbers: true,
+                        renderWhitespace: 'selection',
+                        folding: true,
+                        foldingStrategy: 'indentation',
+                        showFoldingControls: 'always',
+                        bracketPairColorization: { enabled: true },
+                        guides: {
+                          indentation: true,
+                          bracketPairs: true,
+                          bracketPairsHorizontal: true,
+                          highlightActiveIndentation: true
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="text-gray-400 flex items-center justify-center h-full min-h-[200px]">
+                      Click on a file to view its contents...
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center text-gray-400">
+              <File className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              <h3 className="text-lg font-medium mb-2">No file selected</h3>
+              <p>Select a file from the explorer to view its details</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

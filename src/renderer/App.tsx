@@ -1,0 +1,311 @@
+import React, { useState, useEffect } from 'react';
+import { Chat } from './components/Chat';
+import { Dashboard } from './components/Dashboard';
+import { KanbanBoard } from './components/KanbanBoard';
+import { Documentation } from './components/Documentation';
+import { FileExplorer } from './components/FileExplorer';
+import { Settings } from './components/Settings';
+import { Account } from './components/Account';
+import { StartScreen } from './components/StartScreen';
+import { 
+  MessageSquare, 
+  BarChart3, 
+  Settings as SettingsIcon,
+  Sparkles,
+  Bot,
+  CheckCircle,
+  GitCommit,
+  Trello,
+  BookOpen,
+  FolderOpen,
+  User,
+  Crown,
+  Folder
+} from 'lucide-react';
+import './App.css';
+
+type ActiveView = 'chat' | 'dashboard' | 'kanban' | 'docs' | 'files' | 'settings' | 'account';
+
+function App() {
+  const [activeView, setActiveView] = useState<ActiveView>('chat');
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'info' | 'warning';
+    message: string;
+  } | null>(null);
+  const [currentFolder, setCurrentFolder] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Set initial view based on whether a folder is loaded
+  useEffect(() => {
+    if (!isInitialized) {
+      setIsInitialized(true);
+      // If no folder is set on initial load, don't default to any specific view
+      if (!currentFolder) {
+        setActiveView('chat'); // This will be overridden by the start screen logic
+      }
+    }
+  }, [isInitialized, currentFolder]);
+
+  const showNotification = (type: 'success' | 'info' | 'warning', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000);
+  };
+
+  const handleOpenFolder = async (folderPath?: string) => {
+    if (folderPath) {
+      setCurrentFolder(folderPath);
+      setActiveView('chat');
+      showNotification('success', `Opened folder: ${folderPath}`);
+    } else {
+      try {
+        // @ts-ignore - electronAPI will be available through preload script
+        const result = await window.electronAPI?.openFolder();
+        if (result && !result.canceled && result.filePaths.length > 0) {
+          setCurrentFolder(result.filePaths[0]);
+          setActiveView('chat');
+          showNotification('success', `Opened folder: ${result.filePaths[0]}`);
+        }
+      } catch (error) {
+        showNotification('warning', 'Failed to open folder');
+      }
+    }
+  };
+
+  // Listen for folder opened from menu
+  useEffect(() => {
+    if (window.electronAPI?.onFolderOpened) {
+      window.electronAPI.onFolderOpened((folderPath: string) => {
+        setCurrentFolder(folderPath);
+        setActiveView('chat');
+        showNotification('success', `Opened folder: ${folderPath}`);
+      });
+    }
+  }, []);
+
+  const navItems = [
+    { 
+      id: 'chat' as const, 
+      label: 'Agent Chat', 
+      icon: MessageSquare,
+      description: 'AI-powered collaborative development'
+    },
+    { 
+      id: 'kanban' as const, 
+      label: 'Task Board', 
+      icon: Trello,
+      description: 'Track AI-generated tasks and workflow'
+    },
+    { 
+      id: 'docs' as const, 
+      label: 'Documentation', 
+      icon: BookOpen,
+      description: 'Project documentation and guides'
+    },
+    { 
+      id: 'files' as const, 
+      label: 'Files', 
+      icon: FolderOpen,
+      description: 'Project structure and file management'
+    },
+    { 
+      id: 'dashboard' as const, 
+      label: 'Analytics', 
+      icon: BarChart3,
+      description: 'Code insights and performance metrics'
+    }
+  ];
+
+  return (
+    <div className="h-screen bg-gray-900 flex flex-col overflow-hidden">
+      {/* Notification */}
+      {notification && (
+        <div className="fixed top-20 right-4 z-50 animate-in slide-in-from-top-2">
+          <div className={`px-4 py-3 rounded-lg shadow-lg border flex items-center space-x-3 ${
+            notification.type === 'success' ? 'bg-green-900 border-green-500 text-green-100' :
+            notification.type === 'warning' ? 'bg-yellow-900 border-yellow-500 text-yellow-100' :
+            'bg-blue-900 border-blue-500 text-blue-100'
+          }`}>
+            {notification.type === 'success' && <CheckCircle className="w-5 h-5" />}
+            {notification.type === 'warning' && <SettingsIcon className="w-5 h-5" />}
+            {notification.type === 'info' && <GitCommit className="w-5 h-5" />}
+            <span className="text-sm font-medium">{notification.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Top Navigation - Fixed header with title bar space */}
+      {currentFolder ? (
+        <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 pt-8 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as any}>
+          <div className="flex items-center justify-between">
+            {/* Left side - Icon Navigation */}
+            <div className="flex items-center space-x-4">
+              {/* Current Folder Indicator */}
+              <div className="flex items-center space-x-2 px-3 py-1 bg-gray-700 rounded text-xs text-gray-300">
+                <Folder className="w-3 h-3" />
+                <span className="truncate max-w-48">{currentFolder.split('/').pop() || currentFolder}</span>
+              </div>
+              
+              {/* Navigation Icons */}
+              <div className="flex items-center space-x-1 bg-gray-700 rounded-lg p-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                {navItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveView(item.id)}
+                    className={`p-2 rounded-md transition-all ${
+                      activeView === item.id
+                        ? 'bg-blue-600 text-white shadow-lg'
+                        : 'text-gray-300 hover:text-white hover:bg-gray-600'
+                    }`}
+                    title={item.label}
+                  >
+                    <item.icon className="w-5 h-5" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Right side - Settings */}
+            <div className="flex items-center space-x-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
+              {/* Account Button */}
+              <button 
+                onClick={() => setActiveView('account')}
+                className={`p-2 rounded-lg transition-colors ${
+                  activeView === 'account' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                title="Account Management"
+              >
+                <div className="relative">
+                  <User className="w-5 h-5" />
+                  <Crown className="w-3 h-3 text-yellow-400 absolute -top-1 -right-1" />
+                </div>
+              </button>
+              
+              <button 
+                onClick={() => setActiveView('settings')}
+                className={`p-2 rounded-lg transition-colors ${
+                  activeView === 'settings' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                title="Settings"
+              >
+                <SettingsIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Minimal header when no folder is open */
+        <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 pt-8 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as any}>
+          <div className="flex items-center justify-end">
+            <div className="flex items-center space-x-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
+              {/* Account Button */}
+              <button 
+                onClick={() => setActiveView('account')}
+                className={`p-2 rounded-lg transition-colors ${
+                  activeView === 'account' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                title="Account Management"
+              >
+                <div className="relative">
+                  <User className="w-5 h-5" />
+                  <Crown className="w-3 h-3 text-yellow-400 absolute -top-1 -right-1" />
+                </div>
+              </button>
+              
+              <button 
+                onClick={() => setActiveView('settings')}
+                className={`p-2 rounded-lg transition-colors ${
+                  activeView === 'settings' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                title="Settings"
+              >
+                <SettingsIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content Area - Scrollable */}
+      <div className="flex-1 overflow-hidden">
+        {!currentFolder ? (
+          /* Show start screen when no folder is open */
+          activeView === 'account' ? (
+            <Account />
+          ) : activeView === 'settings' ? (
+            <Settings />
+          ) : (
+            <StartScreen onOpenFolder={handleOpenFolder} />
+          )
+        ) : (
+          /* Show normal views when a folder is open */
+          <>
+            {activeView === 'chat' && (
+              <Chat onCodeReview={() => showNotification('info', 'Code review initiated')} />
+            )}
+            
+            {activeView === 'kanban' && (
+              <KanbanBoard />
+            )}
+            
+            {activeView === 'docs' && (
+              <Documentation />
+            )}
+            
+            {activeView === 'files' && (
+              <FileExplorer currentFolder={currentFolder} />
+            )}
+            
+            {activeView === 'dashboard' && (
+              <Dashboard />
+            )}
+
+            {activeView === 'settings' && (
+              <Settings />
+            )}
+
+            {activeView === 'account' && (
+              <Account />
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Status Bar - Only show when folder is open */}
+      {currentFolder && (
+        <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between text-xs text-gray-400 flex-shrink-0">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <span>6 agents active</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+              <span>Chat ready</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+              <span>Review available</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+              <span>Git tracking</span>
+            </div>
+          </div>
+          <div>
+            LabRats.ai v1.0.0
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;

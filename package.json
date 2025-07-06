@@ -1,0 +1,82 @@
+{
+  "name": "labrats.ai",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:3000 && npm run dev:electron\"",
+    "dev:renderer": "webpack serve --config webpack.config.js --mode development",
+    "dev:electron": "NODE_ENV=development electron .",
+    "build": "webpack --config webpack.config.js --mode production",
+    "build:electron": "electron-builder",
+    "start": "npm run build && electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "build": {
+    "appId": "com.labrats.ai-ide",
+    "productName": "LabRats AI IDE",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kobozo/labrats.ai.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/kobozo/labrats.ai/issues"
+  },
+  "homepage": "https://github.com/kobozo/labrats.ai#readme",
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.0",
+    "css-loader": "^7.1.2",
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12",
+    "html-webpack-plugin": "^5.6.3",
+    "lucide-react": "^0.525.0",
+    "postcss": "^8.5.6",
+    "postcss-loader": "^8.1.1",
+    "style-loader": "^4.0.0",
+    "tailwindcss": "^3.4.17",
+    "ts-loader": "^9.5.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "wait-on": "^8.0.3",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.2"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vscode/codicons": "^0.0.36",
+    "electron-store": "^10.1.0",
+    "js-yaml": "^4.1.0",
+    "monaco-editor": "^0.52.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}

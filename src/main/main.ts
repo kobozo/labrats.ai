@@ -1,0 +1,494 @@
+import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, shell } from 'electron';
+import * as path from 'path';
+import * as fs from 'fs';
+import Store from 'electron-store';
+import { ConfigManager } from './config';
+
+const isDev = process.env.NODE_ENV === 'development';
+
+interface RecentProject {
+  path: string;
+  lastOpened: string;
+  name: string;
+}
+
+interface WindowState {
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  isMaximized: boolean;
+  projectPath: string;
+}
+
+const store = new Store({
+  defaults: {
+    recentProjects: [] as RecentProject[],
+    windowStates: [] as WindowState[],
+    lastActiveWindows: [] as string[]
+  }
+});
+
+const windows = new Map<number, BrowserWindow>();
+const windowProjects = new Map<number, string>();
+const configManager = new ConfigManager();
+
+function createWindow(projectPath?: string, windowState?: WindowState): BrowserWindow {
+  const defaultBounds = {
+    width: configManager.get('window', 'defaultWidth'),
+    height: configManager.get('window', 'defaultHeight'),
+    x: undefined as number | undefined,
+    y: undefined as number | undefined
+  };
+
+  const bounds = windowState?.bounds || defaultBounds;
+
+  const window = new BrowserWindow({
+    ...bounds,
+    title: 'LabRats.ai',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 20, y: 20 },
+  });
+
+  if (windowState?.isMaximized) {
+    window.maximize();
+  }
+
+  windows.set(window.id, window);
+  
+  if (projectPath) {
+    windowProjects.set(window.id, projectPath);
+    updateRecentProjects(projectPath);
+  }
+
+  if (isDev) {
+    window.loadURL('http://localhost:3000');
+    if (configManager.get('development', 'showDevTools')) {
+      window.webContents.openDevTools();
+    }
+  } else {
+    window.loadFile(path.join(__dirname, '../renderer/index.html'));
+    if (configManager.get('development', 'showDevTools')) {
+      window.webContents.openDevTools();
+    }
+  }
+
+  // Send the project path once the window is ready
+  window.webContents.once('did-finish-load', () => {
+    if (projectPath) {
+      window.webContents.send('folder-opened', projectPath);
+    }
+  });
+
+  // Track window state changes
+  window.on('resize', () => saveWindowState(window));
+  window.on('move', () => saveWindowState(window));
+  window.on('maximize', () => saveWindowState(window));
+  window.on('unmaximize', () => saveWindowState(window));
+
+  window.on('closed', () => {
+    windows.delete(window.id);
+    windowProjects.delete(window.id);
+    saveOpenWindows();
+  });
+
+  return window;
+}
+
+function updateRecentProjects(projectPath: string): void {
+  const recentProjects = store.get('recentProjects', []) as RecentProject[];
+  const projectName = path.basename(projectPath);
+  
+  // Remove if already exists
+  const filtered = recentProjects.filter(p => p.path !== projectPath);
+  
+  // Add to beginning
+  filtered.unshift({
+    path: projectPath,
+    name: projectName,
+    lastOpened: new Date().toISOString()
+  });
+  
+  // Keep only last 10
+  const trimmed = filtered.slice(0, 10);
+  
+  store.set('recentProjects', trimmed);
+}
+
+function saveWindowState(window: BrowserWindow): void {
+  if (!window || window.isDestroyed()) return;
+  
+  const projectPath = windowProjects.get(window.id);
+  if (!projectPath) return;
+  
+  const bounds = window.getBounds();
+  const isMaximized = window.isMaximized();
+  
+  const windowStates = store.get('windowStates', []) as WindowState[];
+  const filtered = windowStates.filter(ws => ws.projectPath !== projectPath);
+  
+  filtered.push({
+    bounds,
+    isMaximized,
+    projectPath
+  });
+  
+  store.set('windowStates', filtered);
+}
+
+function saveOpenWindows(): void {
+  const openProjects = Array.from(windowProjects.values());
+  store.set('lastActiveWindows', openProjects);
+}
+
+function createMenu(window?: BrowserWindow): void {
+  const template: any = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Window',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => {
+            createWindow();
+          }
+        },
+        {
+          label: 'Open Folder...',
+          accelerator: 'CmdOrCtrl+O',
+          click: async () => {
+            const targetWindow = window || BrowserWindow.getFocusedWindow() || Array.from(windows.values())[0];
+            const result = await dialog.showOpenDialog(targetWindow, {
+              properties: ['openDirectory'],
+              title: 'Select Folder to Open'
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              const projectPath = result.filePaths[0];
+              targetWindow.webContents.send('folder-opened', projectPath);
+              windowProjects.set(targetWindow.id, projectPath);
+              updateRecentProjects(projectPath);
+              saveOpenWindows();
+            }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Open Recent',
+          submenu: []
+        },
+        { type: 'separator' },
+        {
+          label: 'Preferences...',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => {
+            configManager.openConfigFile();
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Close Window',
+          accelerator: process.platform === 'darwin' ? 'Cmd+W' : 'Ctrl+W',
+          click: () => {
+            const focused = BrowserWindow.getFocusedWindow();
+            if (focused) {
+              focused.close();
+            }
+          }
+        }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'close' }
+      ]
+    }
+  ];
+
+  if (process.platform === 'darwin') {
+    template.unshift({
+      label: app.getName(),
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    });
+
+    // Window menu
+    template[4].submenu = [
+      { role: 'close' },
+      { role: 'minimize' },
+      { role: 'zoom' },
+      { type: 'separator' },
+      { role: 'front' }
+    ];
+  }
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
+// Update recent projects menu
+function updateRecentProjectsMenu(): void {
+  const recentProjects = store.get('recentProjects', []) as RecentProject[];
+  const menu = Menu.getApplicationMenu();
+  if (!menu) return;
+  
+  const fileMenu = menu.items.find(item => item.label === 'File');
+  if (!fileMenu || !fileMenu.submenu) return;
+  
+  const recentItem = fileMenu.submenu.items.find(item => item.label === 'Open Recent');
+  if (!recentItem || !recentItem.submenu) return;
+  
+  // Clear existing items
+  (recentItem.submenu as any).clear();
+  
+  if (recentProjects.length === 0) {
+    (recentItem.submenu as any).append(new MenuItem({
+      label: 'No Recent Projects',
+      enabled: false
+    }));
+  } else {
+    recentProjects.forEach(project => {
+      (recentItem.submenu as any).append(new MenuItem({
+        label: project.name,
+        sublabel: project.path,
+        click: () => {
+          const focusedWindow = BrowserWindow.getFocusedWindow();
+          if (focusedWindow) {
+            focusedWindow.webContents.send('folder-opened', project.path);
+            windowProjects.set(focusedWindow.id, project.path);
+            updateRecentProjects(project.path);
+            saveOpenWindows();
+          } else {
+            createWindow(project.path);
+          }
+        }
+      }));
+    });
+    
+    (recentItem.submenu as any).append(new MenuItem({ type: 'separator' }));
+    (recentItem.submenu as any).append(new MenuItem({
+      label: 'Clear Recent Projects',
+      click: () => {
+        store.set('recentProjects', []);
+        updateRecentProjectsMenu();
+      }
+    }));
+  }
+}
+
+
+// IPC handlers
+ipcMain.handle('open-folder', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+    title: 'Select Folder to Open'
+  });
+  return result;
+});
+
+ipcMain.handle('get-recent-projects', async () => {
+  return store.get('recentProjects', []);
+});
+
+ipcMain.handle('remove-recent-project', async (event, projectPath: string) => {
+  const recentProjects = store.get('recentProjects', []) as RecentProject[];
+  const filtered = recentProjects.filter(p => p.path !== projectPath);
+  store.set('recentProjects', filtered);
+  updateRecentProjectsMenu();
+  return filtered;
+});
+
+ipcMain.handle('read-directory', async (event, dirPath: string) => {
+  try {
+    const items = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const fileTree = [];
+    const showHiddenFiles = configManager.get('fileExplorer', 'showHiddenFiles');
+    const excludePatterns = configManager.get('fileExplorer', 'excludePatterns');
+    
+    for (const item of items) {
+      // Skip hidden files if configured
+      if (!showHiddenFiles && item.name.startsWith('.')) {
+        continue;
+      }
+      
+      // Skip excluded patterns
+      const shouldExclude = excludePatterns.some(pattern => {
+        if (pattern.includes('*')) {
+          const regex = new RegExp(pattern.replace(/\*/g, '.*'));
+          return regex.test(item.name);
+        }
+        return item.name === pattern;
+      });
+      
+      if (shouldExclude) {
+        continue;
+      }
+      
+      const fullPath = path.join(dirPath, item.name);
+      const stats = await fs.promises.stat(fullPath);
+      
+      fileTree.push({
+        id: fullPath,
+        name: item.name,
+        type: item.isDirectory() ? 'folder' : 'file',
+        path: fullPath,
+        lastModified: stats.mtime.toISOString(),
+        size: item.isFile() ? formatFileSize(stats.size) : null,
+        isExpanded: false,
+        children: item.isDirectory() ? [] : undefined
+      });
+    }
+    
+    const sortBy = configManager.get('fileExplorer', 'sortBy');
+    
+    return fileTree.sort((a, b) => {
+      // Folders first, then files
+      if (a.type === 'folder' && b.type === 'file') return -1;
+      if (a.type === 'file' && b.type === 'folder') return 1;
+      
+      // Then sort by configured method
+      switch (sortBy) {
+        case 'modified':
+          return new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime();
+        case 'size':
+          if (a.type === 'file' && b.type === 'file') {
+            const aSize = parseInt(a.size || '0');
+            const bSize = parseInt(b.size || '0');
+            return bSize - aSize;
+          }
+          return a.name.localeCompare(b.name);
+        case 'name':
+        default:
+          return a.name.localeCompare(b.name);
+      }
+    });
+  } catch (error) {
+    console.error('Error reading directory:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('read-file', async (event, filePath: string) => {
+  try {
+    const content = await fs.promises.readFile(filePath, 'utf-8');
+    return content;
+  } catch (error) {
+    console.error('Error reading file:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-env', async (event, key: string) => {
+  return process.env[key];
+});
+
+// Config IPC handlers
+ipcMain.handle('get-config', async (event, key?: string, property?: string) => {
+  if (key && property) {
+    return configManager.get(key as any, property as any);
+  } else if (key) {
+    return configManager.get(key as any);
+  } else {
+    return configManager.getAll();
+  }
+});
+
+ipcMain.handle('set-config', async (event, key: string, propertyOrValue: any, value?: any) => {
+  if (value !== undefined) {
+    configManager.set(key as any, propertyOrValue, value);
+  } else {
+    configManager.set(key as any, propertyOrValue);
+  }
+});
+
+ipcMain.handle('reset-config', async () => {
+  configManager.reset();
+});
+
+ipcMain.handle('get-config-path', async () => {
+  return configManager.getConfigPath();
+});
+
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+app.whenReady().then(() => {
+  // Restore previous windows or create new one
+  const lastActiveWindows = store.get('lastActiveWindows', []) as string[];
+  const windowStates = store.get('windowStates', []) as WindowState[];
+  
+  if (configManager.get('window', 'restoreWindows') && lastActiveWindows.length > 0) {
+    // Restore all previously open windows
+    lastActiveWindows.forEach(projectPath => {
+      const windowState = windowStates.find(ws => ws.projectPath === projectPath);
+      createWindow(projectPath, windowState);
+    });
+  } else {
+    // Create a single new window
+    createWindow();
+  }
+  
+  createMenu();
+  updateRecentProjectsMenu();
+
+  app.on('activate', function () {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', function () {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  saveOpenWindows();
+});

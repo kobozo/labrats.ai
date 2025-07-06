@@ -36,6 +36,9 @@ function App() {
   } | null>(null);
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [gitStatus, setGitStatus] = useState<{ current: string; ahead: number; behind: number } | null>(null);
+  const [branches, setBranches] = useState<{ current: string; all: string[] }>({ current: '', all: [] });
+  const [showBranchMenu, setShowBranchMenu] = useState(false);
 
   // Set initial view based on whether a folder is loaded
   useEffect(() => {
@@ -83,6 +86,66 @@ function App() {
       });
     }
   }, []);
+
+  // Load git status for status bar
+  useEffect(() => {
+    if (currentFolder) {
+      loadGitInfo();
+      // Refresh git info every 10 seconds
+      const interval = setInterval(loadGitInfo, 10000);
+      return () => clearInterval(interval);
+    } else {
+      setGitStatus(null);
+      setBranches({ current: '', all: [] });
+    }
+  }, [currentFolder]);
+
+  const loadGitInfo = async () => {
+    try {
+      const [statusResult, branchesResult] = await Promise.all([
+        window.electronAPI?.git.getStatus(),
+        window.electronAPI?.git.getBranches()
+      ]);
+      
+      if (statusResult) {
+        setGitStatus({
+          current: statusResult.current,
+          ahead: statusResult.ahead,
+          behind: statusResult.behind
+        });
+      }
+      
+      if (branchesResult) {
+        setBranches(branchesResult);
+      }
+    } catch (error) {
+      console.error('Error loading git info:', error);
+    }
+  };
+
+  const handleSwitchBranch = async (branchName: string) => {
+    try {
+      await window.electronAPI?.git.switchBranch(branchName);
+      await loadGitInfo();
+      setShowBranchMenu(false);
+      showNotification('success', `Switched to branch: ${branchName}`);
+    } catch (error) {
+      console.error('Error switching branch:', error);
+      showNotification('warning', `Failed to switch to branch: ${branchName}`);
+    }
+  };
+
+  // Close branch menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showBranchMenu) {
+        setShowBranchMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showBranchMenu]);
 
   const navItems = [
     { 
@@ -304,10 +367,47 @@ function App() {
               <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
               <span>Review available</span>
             </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
-              <span>Git tracking</span>
-            </div>
+            {gitStatus && (
+              <div className="flex items-center space-x-2 relative">
+                <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+                <button
+                  onClick={() => setShowBranchMenu(!showBranchMenu)}
+                  className="flex items-center space-x-1 hover:text-gray-200 transition-colors cursor-pointer"
+                  title="Click to switch branch"
+                >
+                  <GitBranch className="w-3 h-3" />
+                  <span className="max-w-32 truncate">{gitStatus.current}</span>
+                  {(gitStatus.ahead > 0 || gitStatus.behind > 0) && (
+                    <span className="text-xs">
+                      {gitStatus.ahead > 0 && <span className="text-green-400">↑{gitStatus.ahead}</span>}
+                      {gitStatus.behind > 0 && <span className="text-red-400">↓{gitStatus.behind}</span>}
+                    </span>
+                  )}
+                </button>
+                
+                {/* Branch Dropdown */}
+                {showBranchMenu && (
+                  <div className="absolute bottom-full left-0 mb-2 bg-gray-800 border border-gray-600 rounded shadow-lg z-[9999] py-1 min-w-48">
+                    <div className="px-3 py-2 text-xs text-gray-400 font-medium border-b border-gray-600">
+                      Switch Branch
+                    </div>
+                    {branches.all.map(branch => (
+                      <button
+                        key={branch}
+                        onClick={() => handleSwitchBranch(branch)}
+                        className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 flex items-center space-x-2 ${
+                          branch === branches.current ? 'text-green-400' : 'text-gray-300'
+                        }`}
+                      >
+                        <GitBranch className="w-4 h-4" />
+                        <span className="truncate">{branch}</span>
+                        {branch === branches.current && <span className="text-xs ml-auto">current</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div>
             LabRats.ai v1.0.0

@@ -856,33 +856,6 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
     );
   };
 
-  const renderBranchDropdown = () => {
-    if (!showBranchMenu) return null;
-    
-    return (
-      <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg z-[9999] py-1 min-w-48">
-        <div className="px-3 py-2 text-xs text-gray-400 font-medium border-b border-gray-600">
-          Switch Branch
-        </div>
-        {branches.all.map(branch => (
-          <button
-            key={branch}
-            onClick={() => {
-              handleSwitchBranch(branch);
-              setShowBranchMenu(false);
-            }}
-            className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 flex items-center space-x-2 ${
-              branch === branches.current ? 'text-green-400' : 'text-gray-300'
-            }`}
-          >
-            <GitBranch className="w-4 h-4" />
-            <span>{branch}</span>
-            {branch === branches.current && <Check className="w-4 h-4 ml-auto" />}
-          </button>
-        ))}
-      </div>
-    );
-  };
 
   const renderStashDropdown = () => {
     if (!showStashMenu) return null;
@@ -1006,78 +979,64 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
             </button>
           </div>
 
-          {/* Branch info and controls */}
+          {/* Git Actions Bar */}
           {gitStatus && (
-            <div className="mb-4 space-y-2">
-              <div className="p-2 bg-gray-700 rounded text-sm text-gray-300">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <GitBranch className="w-4 h-4" />
-                    <span>{gitStatus.current}</span>
-                    {gitStatus.ahead > 0 && (
-                      <button
-                        onClick={handlePush}
-                        disabled={isPushing}
-                        className={`text-green-400 hover:text-green-300 transition-colors cursor-pointer ${
-                          isPushing ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        title={isPushing ? 'Pushing...' : `Push ${gitStatus.ahead} commit(s) to remote`}
-                      >
-                        {isPushing ? '↑...' : `↑${gitStatus.ahead}`}
-                      </button>
-                    )}
-                    {gitStatus.behind > 0 && (
-                      <button
-                        onClick={handlePull}
-                        disabled={isPulling}
-                        className={`text-red-400 hover:text-red-300 transition-colors cursor-pointer ${
-                          isPulling ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        title={isPulling ? 'Pulling...' : `Pull ${gitStatus.behind} commit(s) from remote`}
-                      >
-                        {isPulling ? '↓...' : `↓${gitStatus.behind}`}
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowBranchMenu(!showBranchMenu)}
-                        className="p-1 text-gray-400 hover:text-white transition-colors"
-                        title="Switch Branch"
-                      >
-                        <GitMerge className="w-4 h-4" />
-                      </button>
-                      {renderBranchDropdown()}
-                    </div>
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowStashMenu(!showStashMenu)}
-                        className="p-1 text-gray-400 hover:text-white transition-colors"
-                        title="Stash"
-                      >
-                        <Archive className="w-4 h-4" />
-                      </button>
-                      {renderStashDropdown()}
-                    </div>
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowHistoryMenu(!showHistoryMenu)}
-                        className="p-1 text-gray-400 hover:text-white transition-colors"
-                        title="History"
-                      >
-                        <History className="w-4 h-4" />
-                      </button>
-                      {renderHistoryDropdown()}
-                    </div>
+            <div className="mb-4">
+              <div className="flex items-center justify-between p-2 bg-gray-700 rounded text-sm">
+                {gitStatus.ahead > 0 && (
+                  <button
+                    onClick={handlePush}
+                    disabled={isPushing}
+                    className={`flex items-center space-x-1 px-2 py-1 rounded text-green-400 hover:text-green-300 hover:bg-gray-600 transition-colors ${
+                      isPushing ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                    title={isPushing ? 'Pushing...' : `Push ${gitStatus.ahead} commit(s) to remote`}
+                  >
+                    <span>{isPushing ? '↑...' : `↑${gitStatus.ahead}`}</span>
+                    <span className="text-xs">Push</span>
+                  </button>
+                )}
+                {gitStatus.behind > 0 && (
+                  <button
+                    onClick={handlePull}
+                    disabled={isPulling}
+                    className={`flex items-center space-x-1 px-2 py-1 rounded text-red-400 hover:text-red-300 hover:bg-gray-600 transition-colors ${
+                      isPulling ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                    title={isPulling ? 'Pulling...' : `Pull ${gitStatus.behind} commit(s) from remote`}
+                  >
+                    <span>{isPulling ? '↓...' : `↓${gitStatus.behind}`}</span>
+                    <span className="text-xs">Pull</span>
+                  </button>
+                )}
+                <div className="flex items-center space-x-1 ml-auto">
+                  <div className="relative">
                     <button
-                      onClick={(e) => handleContextMenu(e, null, 'general')}
+                      onClick={() => setShowStashMenu(!showStashMenu)}
                       className="p-1 text-gray-400 hover:text-white transition-colors"
-                      title="More Actions"
+                      title="Stash"
                     >
-                      <MoreVertical className="w-4 h-4" />
+                      <Archive className="w-4 h-4" />
                     </button>
+                    {renderStashDropdown()}
                   </div>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowHistoryMenu(!showHistoryMenu)}
+                      className="p-1 text-gray-400 hover:text-white transition-colors"
+                      title="History"
+                    >
+                      <History className="w-4 h-4" />
+                    </button>
+                    {renderHistoryDropdown()}
+                  </div>
+                  <button
+                    onClick={(e) => handleContextMenu(e, null, 'general')}
+                    className="p-1 text-gray-400 hover:text-white transition-colors"
+                    title="More Actions"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>

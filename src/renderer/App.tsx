@@ -4,6 +4,7 @@ import { Dashboard } from './components/Dashboard';
 import { KanbanBoard } from './components/KanbanBoard';
 import { Documentation } from './components/Documentation';
 import { FileExplorer } from './components/FileExplorer';
+import { GitExplorer } from './components/GitExplorer';
 import { Settings } from './components/Settings';
 import { Account } from './components/Account';
 import { StartScreen } from './components/StartScreen';
@@ -18,13 +19,14 @@ import {
   Trello,
   BookOpen,
   FolderOpen,
+  GitBranch,
   User,
   Crown,
   Folder
 } from 'lucide-react';
 import './App.css';
 
-type ActiveView = 'chat' | 'dashboard' | 'kanban' | 'docs' | 'files' | 'settings' | 'account';
+type ActiveView = 'chat' | 'dashboard' | 'kanban' | 'docs' | 'files' | 'git' | 'settings' | 'account';
 
 function App() {
   const [activeView, setActiveView] = useState<ActiveView>('chat');
@@ -108,6 +110,12 @@ function App() {
       description: 'Project structure and file management'
     },
     { 
+      id: 'git' as const, 
+      label: 'Source Control', 
+      icon: GitBranch,
+      description: 'Git version control and diff viewer'
+    },
+    { 
       id: 'dashboard' as const, 
       label: 'Analytics', 
       icon: BarChart3,
@@ -135,18 +143,17 @@ function App() {
 
       {/* Top Navigation - Fixed header with title bar space */}
       {currentFolder ? (
-        <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 pt-8 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as any}>
-          <div className="flex items-center justify-between">
-            {/* Left side - Icon Navigation */}
-            <div className="flex items-center space-x-4">
-              {/* Current Folder Indicator */}
-              <div className="flex items-center space-x-2 px-3 py-1 bg-gray-700 rounded text-xs text-gray-300">
-                <Folder className="w-3 h-3" />
-                <span className="truncate max-w-48">{currentFolder.split('/').pop() || currentFolder}</span>
-              </div>
-              
+        <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as any}>
+          <div className="flex flex-col items-center space-y-2">
+            {/* Application & Folder Name (centered full-width) */}
+            <div className="w-full text-center truncate text-sm font-medium text-gray-200 select-none">
+              LabRats.AI{currentFolder ? ` • ${currentFolder.split('/').pop()}` : ''}
+            </div>
+
+            {/* Row with navigation + settings */}
+            <div className="flex items-center justify-between w-full" style={{ WebkitAppRegion: 'no-drag' } as any}>
               {/* Navigation Icons */}
-              <div className="flex items-center space-x-1 bg-gray-700 rounded-lg p-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
+              <div className="flex items-center space-x-1 bg-gray-700 rounded-lg p-1">
                 {navItems.map((item) => (
                   <button
                     key={item.id}
@@ -162,43 +169,42 @@ function App() {
                   </button>
                 ))}
               </div>
-            </div>
 
-            {/* Right side - Settings */}
-            <div className="flex items-center space-x-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
-              {/* Account Button */}
-              <button 
-                onClick={() => setActiveView('account')}
-                className={`p-2 rounded-lg transition-colors ${
-                  activeView === 'account' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
-                }`}
-                title="Account Management"
-              >
-                <div className="relative">
-                  <User className="w-5 h-5" />
-                  <Crown className="w-3 h-3 text-yellow-400 absolute -top-1 -right-1" />
-                </div>
-              </button>
-              
-              <button 
-                onClick={() => setActiveView('settings')}
-                className={`p-2 rounded-lg transition-colors ${
-                  activeView === 'settings' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
-                }`}
-                title="Settings"
-              >
-                <SettingsIcon className="w-5 h-5" />
-              </button>
+              {/* Right side - Settings */}
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => setActiveView('account')}
+                  className={`p-2 rounded-lg transition-colors ${
+                    activeView === 'account' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  }`}
+                  title="Account Management"
+                >
+                  <div className="relative">
+                    <User className="w-5 h-5" />
+                    <Crown className="w-3 h-3 text-yellow-400 absolute -top-1 -right-1" />
+                  </div>
+                </button>
+                
+                <button 
+                  onClick={() => setActiveView('settings')}
+                  className={`p-2 rounded-lg transition-colors ${
+                    activeView === 'settings' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  }`}
+                  title="Settings"
+                >
+                  <SettingsIcon className="w-5 h-5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
       ) : (
         /* Minimal header when no folder is open */
-        <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 pt-8 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as any}>
+        <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as any}>
           <div className="flex items-center justify-end">
             <div className="flex items-center space-x-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
               {/* Account Button */}
@@ -261,6 +267,10 @@ function App() {
             
             {activeView === 'files' && (
               <FileExplorer currentFolder={currentFolder} />
+            )}
+            
+            {activeView === 'git' && (
+              <GitExplorer currentFolder={currentFolder} />
             )}
             
             {activeView === 'dashboard' && (

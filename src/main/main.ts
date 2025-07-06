@@ -1,8 +1,10 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import Store from 'electron-store';
 import { ConfigManager } from './config';
+import { GitService } from './gitService';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -23,7 +25,17 @@ interface WindowState {
   projectPath: string;
 }
 
-const store = new Store({
+// Ensure the LabRats configuration directory exists before we attempt to
+// write any files into it. While `electron-store` will also create the
+// directory lazily, doing it explicitly keeps our behaviour clear and
+// avoids relying on implementation details.
+const labratsConfigDir = path.join(os.homedir(), '.labrats');
+if (!fs.existsSync(labratsConfigDir)) {
+  fs.mkdirSync(labratsConfigDir, { recursive: true });
+}
+
+const store: any = new Store({
+  cwd: labratsConfigDir,
   defaults: {
     recentProjects: [] as RecentProject[],
     windowStates: [] as WindowState[],
@@ -34,6 +46,7 @@ const store = new Store({
 const windows = new Map<number, BrowserWindow>();
 const windowProjects = new Map<number, string>();
 const configManager = new ConfigManager();
+const gitServices = new Map<number, GitService>();
 
 function createWindow(projectPath?: string, windowState?: WindowState): BrowserWindow {
   const defaultBounds = {
@@ -66,6 +79,16 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
   if (projectPath) {
     windowProjects.set(window.id, projectPath);
     updateRecentProjects(projectPath);
+    
+    // Initialize git service for this window
+    const gitService = new GitService();
+    gitService.initializeRepo(projectPath).then(success => {
+      console.log(`Git initialization for ${projectPath}: ${success}`);
+      if (success) {
+        console.log(`Git repo root: ${gitService.getCurrentRepo()}`);
+      }
+    });
+    gitServices.set(window.id, gitService);
   }
 
   if (isDev) {
@@ -96,6 +119,7 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
   window.on('closed', () => {
     windows.delete(window.id);
     windowProjects.delete(window.id);
+    gitServices.delete(window.id);
     saveOpenWindows();
   });
 
@@ -449,6 +473,81 @@ ipcMain.handle('reset-config', async () => {
 
 ipcMain.handle('get-config-path', async () => {
   return configManager.getConfigPath();
+});
+
+// Git IPC handlers
+ipcMain.handle('git-get-status', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return null;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return null;
+  
+  return await gitService.getStatus();
+});
+
+ipcMain.handle('git-get-diff', async (event, filePath: string, staged: boolean = false) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return null;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return null;
+  
+  return await gitService.getDiff(filePath, staged);
+});
+
+ipcMain.handle('git-stage-file', async (event, filePath: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.stageFile(filePath);
+});
+
+ipcMain.handle('git-unstage-file', async (event, filePath: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.unstageFile(filePath);
+});
+
+ipcMain.handle('git-discard-changes', async (event, filePath: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.discardChanges(filePath);
+});
+
+ipcMain.handle('git-commit', async (event, message: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.commit(message);
+});
+
+ipcMain.handle('git-initialize', async (event, repoPath: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id) || new GitService();
+  const success = await gitService.initializeRepo(repoPath);
+  
+  if (success) {
+    gitServices.set(window.id, gitService);
+  }
+  
+  return success;
 });
 
 function formatFileSize(bytes: number): string {

@@ -215,6 +215,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder }) => 
     file.path.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Helper to get the folder name from a full path
+  const getFolderName = (folderPath: string): string => {
+    if (!folderPath) return '';
+    const parts = folderPath.replace(/\\/g, '/').split('/');
+    return parts[parts.length - 1] || folderPath;
+  };
+
   return (
     <div 
       className="h-full w-full bg-gray-900 flex overflow-hidden min-h-0"
@@ -226,6 +233,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder }) => 
           style={isDebugMode ? { border: '2px solid blue' } : {}}
         >
         <div className="mb-4 flex-shrink-0">
+          {/* Current Folder Display - full width, centered */}
+          {currentFolder && (
+            <div className="mb-3 w-full text-center text-sm font-medium text-gray-300 truncate">
+              📁 {getFolderName(currentFolder)}
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">Files</h2>
             <div className="flex items-center space-x-2">
@@ -244,13 +258,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder }) => 
               </button>
             </div>
           </div>
-          
-          {/* Current Folder Display */}
-          {currentFolder && (
-            <div className="mb-3 p-2 bg-gray-700 rounded text-xs text-gray-300 break-all">
-              📁 {currentFolder}
-            </div>
-          )}
           
           {/* Search */}
           <div className="relative">

@@ -17,4 +17,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     reset: () => ipcRenderer.invoke('reset-config'),
     getPath: () => ipcRenderer.invoke('get-config-path'),
   },
+  
+  // Git API
+  git: {
+    getStatus: () => ipcRenderer.invoke('git-get-status'),
+    getDiff: (filePath: string, staged?: boolean) => ipcRenderer.invoke('git-get-diff', filePath, staged),
+    stageFile: (filePath: string) => ipcRenderer.invoke('git-stage-file', filePath),
+    unstageFile: (filePath: string) => ipcRenderer.invoke('git-unstage-file', filePath),
+    discardChanges: (filePath: string) => ipcRenderer.invoke('git-discard-changes', filePath),
+    commit: (message: string) => ipcRenderer.invoke('git-commit', message),
+    initialize: (repoPath: string) => ipcRenderer.invoke('git-initialize', repoPath),
+  },
 });

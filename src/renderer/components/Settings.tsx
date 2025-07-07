@@ -919,7 +919,7 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
+    <div className="h-full w-full bg-gray-900 flex overflow-hidden min-h-0">
       {/* Master Key Setup Modal */}
       <MasterKeySetup
         isOpen={showMasterKeySetup}
@@ -928,40 +928,51 @@ export const Settings: React.FC = () => {
       />
 
       {/* Sidebar */}
-      <aside className="w-64 bg-gray-800 p-4 border-r border-gray-700">
-        <h1 className="text-2xl font-bold mb-8">Settings</h1>
-        <nav className="space-y-2">
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors text-left ${
-                activeCategory === cat.id
-                  ? 'bg-blue-600 text-white'
-                  : 'hover:bg-gray-700'
-              }`}
-            >
-              <cat.icon className="w-5 h-5" />
-              <span>{cat.label}</span>
-            </button>
-          ))}
+      <aside className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col h-full overflow-hidden min-h-0">
+        <div className="p-4 flex-shrink-0">
+          <h1 className="text-2xl font-bold text-white">Settings</h1>
+        </div>
+        <nav className="flex-1 overflow-y-auto p-4 pt-0">
+          <div className="space-y-2">
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors text-left ${
+                  activeCategory === cat.id
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-300 hover:text-white hover:bg-gray-700'
+                }`}
+              >
+                <cat.icon className="w-5 h-5" />
+                <span>{cat.label}</span>
+              </button>
+            ))}
+          </div>
         </nav>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 min-h-0 p-8 overflow-y-auto">
-        <div className="max-w-4xl mx-auto">
-          {(() => {
-            const activeCat = categories.find(c => c.id === activeCategory);
-            return (
-              <div className="mb-8">
-                <h2 className="text-3xl font-bold">{activeCat?.label}</h2>
-                <p className="text-gray-400 mt-1">{activeCat?.description}</p>
-              </div>
-            );
-          })()}
-          
-          {renderCategoryContent()}
+      <main className="flex-1 flex flex-col h-full overflow-hidden min-h-0">
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto p-8">
+            {(() => {
+              const activeCat = categories.find(c => c.id === activeCategory);
+              return (
+                <div className="mb-8">
+                  <h2 className="text-3xl font-bold text-white">{activeCat?.label}</h2>
+                  <p className="text-gray-400 mt-1">{activeCat?.description}</p>
+                </div>
+              );
+            })()}
+            
+            <div className="text-white">
+              {renderCategoryContent()}
+            </div>
+            
+            {/* Add bottom padding to ensure last item is visible */}
+            <div className="h-16"></div>
+          </div>
         </div>
       </main>
     </div>

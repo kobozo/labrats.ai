@@ -32,6 +32,7 @@ type ActiveView = 'chat' | 'dashboard' | 'kanban' | 'docs' | 'files' | 'git' | '
 
 function App() {
   const [activeView, setActiveView] = useState<ActiveView>('chat');
+  const [previousView, setPreviousView] = useState<ActiveView>('chat');
   const [notification, setNotification] = useState<{
     type: 'success' | 'info' | 'warning';
     message: string;
@@ -56,6 +57,52 @@ function App() {
   const showNotification = (type: 'success' | 'info' | 'warning', message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 5000);
+  };
+
+  // Handle navigation changes and track previous view
+  const handleViewChange = (newView: ActiveView) => {
+    if (newView !== 'settings' && newView !== 'account') {
+      setPreviousView(activeView);
+    }
+    setActiveView(newView);
+  };
+
+  // Toggle settings view - return to previous view if already on settings
+  const handleSettingsToggle = () => {
+    if (activeView === 'settings') {
+      // Return to previous view, but only if we have a folder open
+      if (currentFolder) {
+        setActiveView(previousView);
+      } else {
+        // If no folder is open, go back to start screen
+        setActiveView('chat'); // This will show StartScreen
+      }
+    } else {
+      // Track the current view before going to settings
+      if (activeView !== 'account') {
+        setPreviousView(activeView);
+      }
+      setActiveView('settings');
+    }
+  };
+
+  // Toggle account view - return to previous view if already on account
+  const handleAccountToggle = () => {
+    if (activeView === 'account') {
+      // Return to previous view, but only if we have a folder open
+      if (currentFolder) {
+        setActiveView(previousView);
+      } else {
+        // If no folder is open, go back to start screen
+        setActiveView('chat'); // This will show StartScreen
+      }
+    } else {
+      // Track the current view before going to account
+      if (activeView !== 'settings') {
+        setPreviousView(activeView);
+      }
+      setActiveView('account');
+    }
   };
 
   const handleOpenFolder = async (folderPath?: string) => {
@@ -228,7 +275,7 @@ function App() {
                 {navItems.map((item) => (
                   <button
                     key={item.id}
-                    onClick={() => setActiveView(item.id)}
+                    onClick={() => handleViewChange(item.id)}
                     className={`p-2 rounded-md transition-all ${
                       activeView === item.id
                         ? 'bg-blue-600 text-white shadow-lg'
@@ -244,7 +291,7 @@ function App() {
               {/* Right side - Settings */}
               <div className="flex items-center space-x-2">
                 <button 
-                  onClick={() => setActiveView('account')}
+                  onClick={handleAccountToggle}
                   className={`p-2 rounded-lg transition-colors ${
                     activeView === 'account' 
                       ? 'bg-blue-600 text-white' 
@@ -259,7 +306,7 @@ function App() {
                 </button>
                 
                 <button 
-                  onClick={() => setActiveView('settings')}
+                  onClick={handleSettingsToggle}
                   className={`p-2 rounded-lg transition-colors ${
                     activeView === 'settings' 
                       ? 'bg-blue-600 text-white' 
@@ -280,7 +327,7 @@ function App() {
             <div className="flex items-center space-x-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
               {/* Account Button */}
               <button 
-                onClick={() => setActiveView('account')}
+                onClick={handleAccountToggle}
                 className={`p-2 rounded-lg transition-colors ${
                   activeView === 'account' 
                     ? 'bg-blue-600 text-white' 
@@ -295,7 +342,7 @@ function App() {
               </button>
               
               <button 
-                onClick={() => setActiveView('settings')}
+                onClick={handleSettingsToggle}
                 className={`p-2 rounded-lg transition-colors ${
                   activeView === 'settings' 
                     ? 'bg-blue-600 text-white' 

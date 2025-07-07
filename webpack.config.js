@@ -87,6 +87,19 @@ module.exports = [
     },
     resolve: {
       extensions: ['.tsx', '.ts', '.js', '.prompt'],
+      fallback: {
+        "path": false,
+        "fs": false,
+        "os": false,
+        "crypto": false,
+        "stream": false,
+        "assert": false,
+        "http": false,
+        "https": false,
+        "url": false,
+        "buffer": false,
+        "util": false
+      },
     },
     plugins: [
       new HtmlWebpackPlugin({

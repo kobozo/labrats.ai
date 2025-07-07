@@ -142,7 +142,13 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
         const terminalElement = terminalRefs.current[terminalId];
         if (terminalElement && fitAddon) {
           terminal.open(terminalElement);
-          fitAddon.fit();
+          
+          // Force a slight delay then fit to ensure proper sizing
+          setTimeout(() => {
+            if (fitAddon) {
+              fitAddon.fit();
+            }
+          }, 50);
           
           // Start the terminal process after mounting
           const terminalProcess = await window.electronAPI?.terminal?.create({
@@ -211,10 +217,20 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
               }
             });
 
-            // Handle terminal resize
+            // Handle terminal resize with scrollbar consideration
             terminal.onResize((size) => {
               window.electronAPI?.terminal?.resize(terminalProcess.pid, size.cols, size.rows);
             });
+            
+            // Add resize observer for better responsive behavior
+            const resizeObserver = new ResizeObserver(() => {
+              if (fitAddon) {
+                setTimeout(() => {
+                  fitAddon.fit();
+                }, 10);
+              }
+            });
+            resizeObserver.observe(terminalElement);
 
             // Listen for data from the terminal process (output)
             window.electronAPI?.terminal?.onData(terminalProcess.pid, (data: string) => {
@@ -305,19 +321,29 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
     }
   }, []);
 
-  // Handle window resize
+  // Handle window resize with debouncing
   useEffect(() => {
+    let resizeTimeout: NodeJS.Timeout;
     const handleResize = () => {
-      terminals.forEach(terminal => {
-        const fitAddon = (terminal.terminal as any).fitAddon;
-        if (fitAddon) {
-          fitAddon.fit();
-        }
-      });
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        terminals.forEach(terminal => {
+          if (terminal.fitAddon && terminal.terminal) {
+            try {
+              terminal.fitAddon.fit();
+            } catch (error) {
+              console.warn('Error fitting terminal:', error);
+            }
+          }
+        });
+      }, 100);
     };
 
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(resizeTimeout);
+    };
   }, [terminals]);
 
   // Helper to get the folder name from a full path
@@ -439,7 +465,8 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
                     terminalRefs.current[activeTerminalId] = el;
                   }
                 }}
-                className="flex-1 p-4"
+                className="flex-1 p-3"
+                style={{ marginRight: '20px' }}
               />
               
               {/* File Search Overlay */}

@@ -146,106 +146,106 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
           terminal.open(terminalElement);
           
           // Force a slight delay then fit to ensure proper sizing
-          setTimeout(() => {
+          setTimeout(async () => {
             if (fitAddon) {
               fitAddon.fit();
-            }
-          }, 50);
-          
-          // Start the terminal process after mounting
-          const terminalProcess = await window.electronAPI?.terminal?.create({
-            cwd: currentFolder || process.cwd(),
-            cols: terminal.cols,
-            rows: terminal.rows
-          });
+              
+              // Start the terminal process after fitting with correct dimensions
+              const terminalProcess = await window.electronAPI?.terminal?.create({
+                cwd: currentFolder || process.cwd(),
+                cols: Math.max(terminal.cols - 7, 10), // Account for scrollbar + margin
+                rows: terminal.rows
+              });
 
-          if (terminalProcess) {
-            newTerminal.pid = terminalProcess.pid;
-            
-            // Update the terminals array with the PID
-            setTerminals(prev => prev.map(t => 
-              t.id === terminalId ? { ...t, pid: terminalProcess.pid } : t
-            ));
-            
-            // Handle terminal data (user input) with @ interception
-            terminal.onData((data) => {
-              if (showFileSearch) {
-                // Handle file search navigation
-                if (data === '\x1b[A') { // Up arrow
-                  setSelectedFileIndex(prev => Math.max(0, prev - 1));
-                } else if (data === '\x1b[B') { // Down arrow
-                  setSelectedFileIndex(prev => Math.min(fileSearchResults.length - 1, prev + 1));
-                } else if (data === '\r') { // Enter
-                  if (fileSearchResults[selectedFileIndex]) {
-                    selectFile(fileSearchResults[selectedFileIndex]);
-                  }
-                } else if (data === '\x1b') { // Escape
-                  setShowFileSearch(false);
-                  setFileSearchQuery('');
-                  setAtSymbolPosition(null);
-                } else if (data === '\x7f') { // Backspace
-                  if (fileSearchQuery.length > 0) {
-                    window.electronAPI?.terminal?.write(terminalProcess.pid, data);
-                    const newQuery = fileSearchQuery.slice(0, -1);
-                    setFileSearchQuery(newQuery);
-                    searchFiles(newQuery);
+              if (terminalProcess) {
+                newTerminal.pid = terminalProcess.pid;
+                
+                // Update the terminals array with the PID
+                setTerminals(prev => prev.map(t => 
+                  t.id === terminalId ? { ...t, pid: terminalProcess.pid } : t
+                ));
+                
+                // Handle terminal data (user input) with @ interception
+                terminal.onData((data) => {
+                  if (showFileSearch) {
+                    // Handle file search navigation
+                    if (data === '\x1b[A') { // Up arrow
+                      setSelectedFileIndex(prev => Math.max(0, prev - 1));
+                    } else if (data === '\x1b[B') { // Down arrow
+                      setSelectedFileIndex(prev => Math.min(fileSearchResults.length - 1, prev + 1));
+                    } else if (data === '\r') { // Enter
+                      if (fileSearchResults[selectedFileIndex]) {
+                        selectFile(fileSearchResults[selectedFileIndex]);
+                      }
+                    } else if (data === '\x1b') { // Escape
+                      setShowFileSearch(false);
+                      setFileSearchQuery('');
+                      setAtSymbolPosition(null);
+                    } else if (data === '\x7f') { // Backspace
+                      if (fileSearchQuery.length > 0) {
+                        window.electronAPI?.terminal?.write(terminalProcess.pid, data);
+                        const newQuery = fileSearchQuery.slice(0, -1);
+                        setFileSearchQuery(newQuery);
+                        searchFiles(newQuery);
+                      } else {
+                        // Close search if backspace on empty query
+                        setShowFileSearch(false);
+                        setAtSymbolPosition(null);
+                        window.electronAPI?.terminal?.write(terminalProcess.pid, data);
+                      }
+                    } else if (data.length === 1 && data.charCodeAt(0) >= 32) {
+                      // Regular character input
+                      window.electronAPI?.terminal?.write(terminalProcess.pid, data);
+                      const newQuery = fileSearchQuery + data;
+                      setFileSearchQuery(newQuery);
+                      searchFiles(newQuery);
+                    }
                   } else {
-                    // Close search if backspace on empty query
-                    setShowFileSearch(false);
-                    setAtSymbolPosition(null);
+                    // Check for @ symbol
+                    if (data === '@') {
+                      // Start file search
+                      setShowFileSearch(true);
+                      setAtSymbolPosition({
+                        row: terminal.buffer.active.cursorY,
+                        col: terminal.buffer.active.cursorX
+                      });
+                      setFileSearchQuery('');
+                      searchFiles('');
+                    }
+                    // Forward all input to terminal
                     window.electronAPI?.terminal?.write(terminalProcess.pid, data);
                   }
-                } else if (data.length === 1 && data.charCodeAt(0) >= 32) {
-                  // Regular character input
-                  window.electronAPI?.terminal?.write(terminalProcess.pid, data);
-                  const newQuery = fileSearchQuery + data;
-                  setFileSearchQuery(newQuery);
-                  searchFiles(newQuery);
-                }
-              } else {
-                // Check for @ symbol
-                if (data === '@') {
-                  // Start file search
-                  setShowFileSearch(true);
-                  setAtSymbolPosition({
-                    row: terminal.buffer.active.cursorY,
-                    col: terminal.buffer.active.cursorX
-                  });
-                  setFileSearchQuery('');
-                  searchFiles('');
-                }
-                // Forward all input to terminal
-                window.electronAPI?.terminal?.write(terminalProcess.pid, data);
+                });
+
+                // Handle terminal resize with scrollbar consideration
+                terminal.onResize((size) => {
+                  window.electronAPI?.terminal?.resize(terminalProcess.pid, size.cols, size.rows);
+                });
+                
+                // Add resize observer for better responsive behavior
+                const resizeObserver = new ResizeObserver(() => {
+                  if (fitAddon) {
+                    setTimeout(() => {
+                      fitAddon.fit();
+                    }, 10);
+                  }
+                });
+                resizeObserver.observe(terminalElement);
+
+                // Listen for data from the terminal process (output)
+                window.electronAPI?.terminal?.onData(terminalProcess.pid, (data: string) => {
+                  terminal.write(data);
+                });
+
+                // Handle terminal exit
+                window.electronAPI?.terminal?.onExit(terminalProcess.pid, (code: number) => {
+                  terminal.write(`\r\n\r\nProcess exited with code ${code}\r\n`);
+                });
+                
+                terminal.focus();
               }
-            });
-
-            // Handle terminal resize with scrollbar consideration
-            terminal.onResize((size) => {
-              window.electronAPI?.terminal?.resize(terminalProcess.pid, size.cols, size.rows);
-            });
-            
-            // Add resize observer for better responsive behavior
-            const resizeObserver = new ResizeObserver(() => {
-              if (fitAddon) {
-                setTimeout(() => {
-                  fitAddon.fit();
-                }, 10);
-              }
-            });
-            resizeObserver.observe(terminalElement);
-
-            // Listen for data from the terminal process (output)
-            window.electronAPI?.terminal?.onData(terminalProcess.pid, (data: string) => {
-              terminal.write(data);
-            });
-
-            // Handle terminal exit
-            window.electronAPI?.terminal?.onExit(terminalProcess.pid, (code: number) => {
-              terminal.write(`\r\n\r\nProcess exited with code ${code}\r\n`);
-            });
-            
-            terminal.focus();
-          }
+            }
+          }, 100);
         }
       }, 100);
 
@@ -495,16 +495,22 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
               className="bg-gray-900 rounded-lg border border-gray-700 flex-1 flex flex-col min-h-0 overflow-hidden relative"
               style={isDebugMode ? { border: '2px solid green' } : {}}
             >
-              {/* Actual Terminal */}
-              <div
-                ref={(el) => {
-                  if (el && activeTerminalId) {
-                    terminalRefs.current[activeTerminalId] = el;
-                  }
-                }}
-                className="flex-1 overflow-hidden"
-                style={isDebugMode ? { border: '2px solid red' } : {}}
-              />
+              {/* Terminal Elements - one for each terminal */}
+              {terminals.map(terminal => (
+                <div
+                  key={terminal.id}
+                  ref={(el) => {
+                    if (el) {
+                      terminalRefs.current[terminal.id] = el;
+                    }
+                  }}
+                  className="flex-1 overflow-hidden absolute inset-0"
+                  style={{
+                    display: activeTerminalId === terminal.id ? 'block' : 'none',
+                    ...(isDebugMode ? { border: '2px solid red' } : {})
+                  }}
+                />
+              ))}
               
               {/* File Search Overlay */}
               {showFileSearch && (

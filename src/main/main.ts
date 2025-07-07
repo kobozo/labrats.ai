@@ -803,20 +803,29 @@ ipcMain.handle('git-fetch', async (event) => {
   return await gitService.fetch();
 });
 
+// Set up terminal event forwarding (once, globally)
+terminalService.on('terminal-data', (pid: number, data: string) => {
+  // Send to all renderer processes
+  BrowserWindow.getAllWindows().forEach(window => {
+    if (!window.isDestroyed()) {
+      window.webContents.send('terminal-data', pid, data);
+    }
+  });
+});
+
+terminalService.on('terminal-exit', (pid: number, exitCode: number) => {
+  // Send to all renderer processes
+  BrowserWindow.getAllWindows().forEach(window => {
+    if (!window.isDestroyed()) {
+      window.webContents.send('terminal-exit', pid, exitCode);
+    }
+  });
+});
+
 // Terminal IPC handlers
 ipcMain.handle('terminal-create', async (event, options: { cwd: string; cols: number; rows: number }) => {
   try {
     const terminalProcess = await terminalService.createTerminal(options);
-    
-    // Set up data forwarding for this terminal
-    terminalService.on('terminal-data', (pid: number, data: string) => {
-      event.sender.send('terminal-data', pid, data);
-    });
-    
-    terminalService.on('terminal-exit', (pid: number, exitCode: number) => {
-      event.sender.send('terminal-exit', pid, exitCode);
-    });
-    
     return terminalProcess;
   } catch (error) {
     console.error('Failed to create terminal:', error);

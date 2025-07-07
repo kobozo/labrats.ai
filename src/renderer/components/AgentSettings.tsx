@@ -145,15 +145,16 @@ export const AgentSettings: React.FC = () => {
   };
 
   return (
-    <div className="flex space-x-4">
-      <div className="w-1/3">
-        <h3 className="text-xl font-bold mb-4">Available Agents</h3>
-        <div className="space-y-2">
+    <div className="flex space-x-4 h-full">
+      {/* Agent List Column - Scrollable */}
+      <div className="w-1/3 flex flex-col">
+        <h3 className="text-xl font-bold mb-4 flex-shrink-0">Available Agents</h3>
+        <div className="flex-1 overflow-y-auto space-y-2 pr-2">
           {agents.map((agent) => (
             <div
               key={agent.id}
               onClick={() => handleAgentClick(agent)}
-              className={`p-3 rounded-lg cursor-pointer ${
+              className={`p-3 rounded-lg cursor-pointer flex-shrink-0 ${
                 selectedAgent?.id === agent.id ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
               }`}
             >
@@ -182,46 +183,50 @@ export const AgentSettings: React.FC = () => {
           ))}
         </div>
       </div>
-      <div className="w-2/3">
+      
+      {/* Settings Panel Column - Scrollable */}
+      <div className="w-2/3 flex flex-col">
         {selectedAgent ? (
-          <div>
-            <h3 className="text-xl font-bold mb-4">Configure {selectedAgent.name}</h3>
-            <div className="bg-gray-800 p-4 rounded-lg">
-              <div className="flex items-center space-x-4 mb-4">
-                {selectedAgent.avatar ? (
-                  <img 
-                    src={selectedAgent.avatar} 
-                    alt={selectedAgent.name}
-                    className="w-16 h-16 rounded-full object-cover"
-                    style={{ border: `3px solid ${getAgentColor(selectedAgent)}` }}
-                  />
-                ) : (
-                  <div 
-                    className="w-16 h-16 rounded-full flex items-center justify-center text-4xl"
-                    style={{ backgroundColor: getAgentColor(selectedAgent) }}
-                  >
-                    {selectedAgent.icon}
+          <>
+            <h3 className="text-xl font-bold mb-4 flex-shrink-0">Configure {selectedAgent.name}</h3>
+            <div className="flex-1 overflow-y-auto">
+              <div className="bg-gray-800 p-4 rounded-lg">
+                <div className="flex items-center space-x-4 mb-4">
+                  {selectedAgent.avatar ? (
+                    <img 
+                      src={selectedAgent.avatar} 
+                      alt={selectedAgent.name}
+                      className="w-16 h-16 rounded-full object-cover"
+                      style={{ border: `3px solid ${getAgentColor(selectedAgent)}` }}
+                    />
+                  ) : (
+                    <div 
+                      className="w-16 h-16 rounded-full flex items-center justify-center text-4xl"
+                      style={{ backgroundColor: getAgentColor(selectedAgent) }}
+                    >
+                      {selectedAgent.icon}
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <h4 className="text-2xl font-bold">{selectedAgent.name}</h4>
+                    <p className="text-lg text-gray-400">{selectedAgent.title}</p>
                   </div>
-                )}
-                <div className="flex-1">
-                  <h4 className="text-2xl font-bold">{selectedAgent.name}</h4>
-                  <p className="text-lg text-gray-400">{selectedAgent.title}</p>
+                  <div className="flex flex-col items-center space-y-2">
+                    <span className="text-sm text-gray-400">Color</span>
+                    <ColorPicker
+                      currentColor={getAgentColor(selectedAgent)}
+                      onChange={(color) => handleColorChange(selectedAgent.id, color)}
+                    />
+                  </div>
                 </div>
-                <div className="flex flex-col items-center space-y-2">
-                  <span className="text-sm text-gray-400">Color</span>
-                  <ColorPicker
-                    currentColor={getAgentColor(selectedAgent)}
-                    onChange={(color) => handleColorChange(selectedAgent.id, color)}
-                  />
+                
+                <div>
+                  <h5 className="font-bold mb-2">Configuration</h5>
+                  {renderAgentConfiguration(selectedAgent)}
                 </div>
-              </div>
-              
-              <div>
-                <h5 className="font-bold mb-2">Configuration</h5>
-                {renderAgentConfiguration(selectedAgent)}
               </div>
             </div>
-          </div>
+          </>
         ) : (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-500">Select an agent to configure</p>

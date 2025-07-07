@@ -190,6 +190,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [isAiEnabled, setIsAiEnabled] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const chatService = getLangChainChatService();
   const providerManager = getAIProviderManager();
 
@@ -409,7 +410,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-900 overflow-hidden">
+    <div className="h-full flex flex-col bg-gray-900">
       {/* Header */}
       <div className="p-4 border-b border-gray-700 bg-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -436,7 +437,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 scroll-smooth">
         {messages.map((message) => (
           <div key={message.id} className={`flex space-x-3 ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             {message.sender !== 'user' && (
@@ -514,7 +515,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
           </div>
         )}
         
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-1" />
       </div>
 
       {/* Input */}

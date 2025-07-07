@@ -367,13 +367,13 @@ export class AnthropicProvider implements AIProvider {
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: this.config.models.default,
+          model: this.config.defaultModel,
           max_tokens: 1,
           messages: [{ role: 'user', content: 'Hi' }]
         })
       });
 
-      return response.ok || response.status === 429; // 429 is rate limit, which means API key is valid
+      return testResponse.ok || testResponse.status === 429; // 429 is rate limit, which means API key is valid
     } catch (error) {
       console.error('Error validating Anthropic credentials:', error);
       return false;

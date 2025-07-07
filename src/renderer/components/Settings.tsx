@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Bell, Palette, Zap, Users, Code, Save, Bot, Shield, Key, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink, Monitor, FileText, Terminal, Database, ChevronDown } from 'lucide-react';
 import { MasterKeySetup } from './MasterKeySetup';
 import { openExternalLink } from '../utils/system';
-import { getAIProviderManager } from '../services/ai-provider-manager';
-import { AIProvider, AIModel } from '../types/ai-provider';
+import { getAIProviderManager } from '../../services/ai-provider-manager';
+import { AIProvider, AIModel } from '../../types/ai-provider';
 
 interface AIService {
   id: string;
@@ -311,7 +311,7 @@ export const Settings: React.FC = () => {
         setAvailableModels(models);
         
         // If no model is selected or the current model isn't available, select the first one
-        if (!selectedModel || !models.find(m => m.id === selectedModel)) {
+        if (!selectedModel || !models.find((m: AIModel) => m.id === selectedModel)) {
           if (models.length > 0) {
             setSelectedModel(models[0].id);
           }

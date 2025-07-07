@@ -187,7 +187,7 @@ export class AnthropicCLIProvider implements AIProvider {
       // Test with a simple command
       if (typeof window !== 'undefined' && window.electronAPI?.executeClaudeCommand) {
         const testResult = await window.electronAPI.executeClaudeCommand({
-          model: this.config.models.default,
+          model: this.config.defaultModel,
           messages: [{ role: 'user', content: 'Hello' }],
           maxTokens: 10
         });

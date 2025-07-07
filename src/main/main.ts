@@ -1182,15 +1182,15 @@ ipcMain.handle('execute-claude-command', async (event, request: any) => {
       let output = '';
       let errorOutput = '';
       
-      child.stdout.on('data', (data) => {
+      child.stdout.on('data', (data: Buffer) => {
         output += data.toString();
       });
       
-      child.stderr.on('data', (data) => {
+      child.stderr.on('data', (data: Buffer) => {
         errorOutput += data.toString();
       });
       
-      child.on('close', (code) => {
+      child.on('close', (code: number) => {
         if (code === 0) {
           resolve({
             success: true,
@@ -1209,7 +1209,7 @@ ipcMain.handle('execute-claude-command', async (event, request: any) => {
         }
       });
       
-      child.on('error', (error) => {
+      child.on('error', (error: Error) => {
         resolve({
           success: false,
           error: `Failed to execute Claude CLI: ${error.message}`

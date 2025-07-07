@@ -110,6 +110,56 @@ export interface TerminalAPI {
   checkIterm: () => Promise<boolean>;
 }
 
+export interface AIService {
+  id: string;
+  name: string;
+  description: string;
+  keyRequired: boolean;
+  keyPlaceholder: string;
+  docs?: string;
+  enabled: boolean;
+}
+
+export interface ServiceConfig {
+  id: string;
+  enabled: boolean;
+  hasApiKey: boolean;
+}
+
+export interface AIResult {
+  success: boolean;
+  error?: string;
+}
+
+export interface AIKeyResult extends AIResult {
+  apiKey?: string;
+}
+
+export interface AIValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+export interface AITestResult {
+  success: boolean;
+  error?: string;
+}
+
+export interface AIAPI {
+  isMasterKeySetup: () => Promise<boolean>;
+  setupMasterKey: (masterKey: string) => Promise<AIResult>;
+  generateMasterKey: () => Promise<string>;
+  getSupportedServices: () => Promise<AIService[]>;
+  getServiceConfig: (serviceId: string) => Promise<ServiceConfig>;
+  storeAPIKey: (serviceId: string, apiKey: string) => Promise<AIResult>;
+  getAPIKey: (serviceId: string) => Promise<AIKeyResult>;
+  removeAPIKey: (serviceId: string) => Promise<AIResult>;
+  setServiceEnabled: (serviceId: string, enabled: boolean) => Promise<AIResult>;
+  validateAPIKey: (serviceId: string, apiKey: string) => Promise<AIValidationResult>;
+  testAPIKey: (serviceId: string, apiKey: string) => Promise<AITestResult>;
+  resetConfiguration: () => Promise<AIResult>;
+}
+
 export interface ElectronAPI {
   openFolder: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   readDirectory: (dirPath: string) => Promise<FileNode[]>;
@@ -122,6 +172,7 @@ export interface ElectronAPI {
   config: ConfigAPI;
   git: GitAPI;
   terminal?: TerminalAPI;
+  ai?: AIAPI;
 }
 
 declare global {

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as yaml from 'js-yaml';
 import { app } from 'electron';
+import { LABRATS_CONFIG_DIR, CONFIG_PATHS } from './constants';
 
 export interface LabRatsConfig {
   // Editor settings
@@ -110,9 +111,9 @@ export class ConfigManager {
   private config: LabRatsConfig;
   
   constructor() {
-    // Use ~/.labrats/ directory for config
-    this.configDir = path.join(os.homedir(), '.labrats');
-    this.configPath = path.join(this.configDir, 'config.yaml');
+    // Use centralized config directory and paths
+    this.configDir = LABRATS_CONFIG_DIR;
+    this.configPath = CONFIG_PATHS.configFile;
     this.config = this.loadConfig();
   }
   

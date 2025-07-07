@@ -6,6 +6,7 @@ import Store from 'electron-store';
 import { ConfigManager } from './config';
 import { GitService } from './gitService';
 import { TerminalService } from './terminalService';
+import { LABRATS_CONFIG_DIR } from './constants';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -30,13 +31,12 @@ interface WindowState {
 // write any files into it. While `electron-store` will also create the
 // directory lazily, doing it explicitly keeps our behaviour clear and
 // avoids relying on implementation details.
-const labratsConfigDir = path.join(os.homedir(), '.labrats');
-if (!fs.existsSync(labratsConfigDir)) {
-  fs.mkdirSync(labratsConfigDir, { recursive: true });
+if (!fs.existsSync(LABRATS_CONFIG_DIR)) {
+  fs.mkdirSync(LABRATS_CONFIG_DIR, { recursive: true });
 }
 
 const store: any = new Store({
-  cwd: labratsConfigDir,
+  cwd: LABRATS_CONFIG_DIR,
   name: 'projects',
   defaults: {
     recentProjects: [] as RecentProject[],
@@ -942,4 +942,116 @@ app.on('window-all-closed', function () {
 
 app.on('before-quit', () => {
   saveOpenWindows();
+});
+
+// AI Configuration IPC handlers
+import { AIConfigService } from './aiConfigService';
+
+const aiConfigService = AIConfigService.getInstance();
+
+// Set up AI config event listeners
+aiConfigService.on('api-key-store', (serviceId: string, encryptedKey: string) => {
+  store.set(`ai.services.${serviceId}.apiKey`, encryptedKey);
+});
+
+aiConfigService.on('api-key-remove', (serviceId: string) => {
+  store.delete(`ai.services.${serviceId}.apiKey`);
+});
+
+aiConfigService.on('service-enabled', (serviceId: string, enabled: boolean) => {
+  store.set(`ai.services.${serviceId}.enabled`, enabled);
+});
+
+aiConfigService.on('configuration-reset', () => {
+  store.delete('ai');
+});
+
+// AI Configuration IPC handlers
+ipcMain.handle('ai-is-master-key-setup', async () => {
+  return await aiConfigService.isMasterKeySetup();
+});
+
+ipcMain.handle('ai-setup-master-key', async (event, masterKey: string) => {
+  try {
+    await aiConfigService.setupMasterKey(masterKey);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-generate-master-key', async () => {
+  return aiConfigService.generateMasterKey();
+});
+
+ipcMain.handle('ai-get-supported-services', async () => {
+  return aiConfigService.getSupportedServices();
+});
+
+ipcMain.handle('ai-get-service-config', async (event, serviceId: string) => {
+  const encryptedKey = store.get(`ai.services.${serviceId}.apiKey`) as string;
+  const enabled = store.get(`ai.services.${serviceId}.enabled`, false) as boolean;
+  
+  return {
+    id: serviceId,
+    enabled,
+    hasApiKey: !!encryptedKey
+  };
+});
+
+ipcMain.handle('ai-store-api-key', async (event, serviceId: string, apiKey: string) => {
+  try {
+    await aiConfigService.storeAPIKey(serviceId, apiKey);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-get-api-key', async (event, serviceId: string) => {
+  try {
+    const encryptedKey = store.get(`ai.services.${serviceId}.apiKey`) as string;
+    if (!encryptedKey) {
+      return { success: false, error: 'No API key stored for this service' };
+    }
+    const apiKey = await aiConfigService.getAPIKey(serviceId, encryptedKey);
+    return { success: true, apiKey };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-remove-api-key', async (event, serviceId: string) => {
+  try {
+    await aiConfigService.removeAPIKey(serviceId);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-set-service-enabled', async (event, serviceId: string, enabled: boolean) => {
+  try {
+    await aiConfigService.setServiceEnabled(serviceId, enabled);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-validate-api-key', async (event, serviceId: string, apiKey: string) => {
+  return aiConfigService.validateAPIKey(serviceId, apiKey);
+});
+
+ipcMain.handle('ai-test-api-key', async (event, serviceId: string, apiKey: string) => {
+  return await aiConfigService.testAPIKey(serviceId, apiKey);
+});
+
+ipcMain.handle('ai-reset-configuration', async () => {
+  try {
+    await aiConfigService.resetConfiguration();
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
 });

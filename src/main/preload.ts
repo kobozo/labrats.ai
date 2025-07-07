@@ -79,4 +79,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getTitle: (pid: number) => ipcRenderer.invoke('terminal-get-title', pid),
     setTitle: (pid: number, title: string) => ipcRenderer.invoke('terminal-set-title', pid, title),
   },
+
+  // AI Configuration API
+  ai: {
+    isMasterKeySetup: () => ipcRenderer.invoke('ai-is-master-key-setup'),
+    setupMasterKey: (masterKey: string) => ipcRenderer.invoke('ai-setup-master-key', masterKey),
+    generateMasterKey: () => ipcRenderer.invoke('ai-generate-master-key'),
+    getSupportedServices: () => ipcRenderer.invoke('ai-get-supported-services'),
+    getServiceConfig: (serviceId: string) => ipcRenderer.invoke('ai-get-service-config', serviceId),
+    storeAPIKey: (serviceId: string, apiKey: string) => ipcRenderer.invoke('ai-store-api-key', serviceId, apiKey),
+    getAPIKey: (serviceId: string) => ipcRenderer.invoke('ai-get-api-key', serviceId),
+    removeAPIKey: (serviceId: string) => ipcRenderer.invoke('ai-remove-api-key', serviceId),
+    setServiceEnabled: (serviceId: string, enabled: boolean) => ipcRenderer.invoke('ai-set-service-enabled', serviceId, enabled),
+    validateAPIKey: (serviceId: string, apiKey: string) => ipcRenderer.invoke('ai-validate-api-key', serviceId, apiKey),
+    testAPIKey: (serviceId: string, apiKey: string) => ipcRenderer.invoke('ai-test-api-key', serviceId, apiKey),
+    resetConfiguration: () => ipcRenderer.invoke('ai-reset-configuration'),
+  },
 });

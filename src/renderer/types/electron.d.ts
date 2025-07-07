@@ -170,6 +170,8 @@ export interface ElectronAPI {
   getEnv: (key: string) => Promise<string | undefined>;
   searchFiles: (rootPath: string, query: string, limit?: number) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
   openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
+  checkCommand: (command: string) => Promise<{ available: boolean }>;
+  executeClaudeCommand: (request: any) => Promise<{ success: boolean; content?: string; error?: string; usage?: any }>;
   config: ConfigAPI;
   git: GitAPI;
   terminal?: TerminalAPI;

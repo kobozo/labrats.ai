@@ -98,4 +98,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // System API
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
+  checkCommand: (command: string) => ipcRenderer.invoke('check-command', command),
+  executeClaudeCommand: (request: any) => ipcRenderer.invoke('execute-claude-command', request),
 });

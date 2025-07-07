@@ -1133,3 +1133,101 @@ ipcMain.handle('ai-reset-configuration', async () => {
     return { success: false, error: error.message };
   }
 });
+
+// CLI Detection and Command Execution Handlers
+ipcMain.handle('check-command', async (event, command: string) => {
+  const { exec } = require('child_process');
+  const { promisify } = require('util');
+  const execAsync = promisify(exec);
+  
+  try {
+    // Check if command exists by trying to get its version
+    await execAsync(`${command} --version`);
+    return { available: true };
+  } catch (error) {
+    // Try alternative checks
+    try {
+      await execAsync(`which ${command}`);
+      return { available: true };
+    } catch (error2) {
+      return { available: false };
+    }
+  }
+});
+
+ipcMain.handle('execute-claude-command', async (event, request: any) => {
+  const { spawn } = require('child_process');
+  
+  try {
+    // This is a placeholder for Claude CLI execution
+    // The actual implementation would depend on the Claude CLI API
+    return new Promise((resolve, reject) => {
+      const args = [
+        'chat',
+        '--model', request.model || 'claude-3-5-sonnet-20241022'
+      ];
+      
+      if (request.temperature) {
+        args.push('--temperature', request.temperature.toString());
+      }
+      
+      if (request.maxTokens) {
+        args.push('--max-tokens', request.maxTokens.toString());
+      }
+      
+      const child = spawn('claude', args, {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      let output = '';
+      let errorOutput = '';
+      
+      child.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+      
+      child.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+      
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve({
+            success: true,
+            content: output.trim(),
+            usage: {
+              promptTokens: 0, // Claude CLI might not provide this
+              completionTokens: 0,
+              totalTokens: 0
+            }
+          });
+        } else {
+          resolve({
+            success: false,
+            error: errorOutput || `Claude CLI exited with code ${code}`
+          });
+        }
+      });
+      
+      child.on('error', (error) => {
+        resolve({
+          success: false,
+          error: `Failed to execute Claude CLI: ${error.message}`
+        });
+      });
+      
+      // Send the messages as input
+      const messageText = request.messages
+        .map((msg: any) => `${msg.role}: ${msg.content}`)
+        .join('\n\n');
+      
+      child.stdin.write(messageText);
+      child.stdin.end();
+    });
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});

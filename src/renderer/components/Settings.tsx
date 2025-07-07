@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Bell, Palette, Zap, Users, Code, Save, Bot, Shield, Key, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink, Monitor, FileText, Terminal, Database } from 'lucide-react';
+import { Settings as SettingsIcon, Bell, Palette, Zap, Users, Code, Save, Bot, Shield, Key, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink, Monitor, FileText, Terminal, Database, ChevronDown } from 'lucide-react';
 import { MasterKeySetup } from './MasterKeySetup';
 import { openExternalLink } from '../utils/system';
+import { getAIProviderManager } from '../services/ai-provider-manager';
+import { AIProvider, AIModel } from '../types/ai-provider';
 
 interface AIService {
   id: string;
@@ -124,6 +126,14 @@ export const Settings: React.FC = () => {
   const [showApiKeys, setShowApiKeys] = useState<{[key: string]: boolean}>({});
   const [loading, setLoading] = useState(false);
 
+  // AI Provider and Model Selection state
+  const [availableProviders, setAvailableProviders] = useState<AIProvider[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<string>('');
+  const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [loadingProviders, setLoadingProviders] = useState(false);
+  const [loadingModels, setLoadingModels] = useState(false);
+
   const updateSetting = (category: string, key: string, value: any) => {
     setSettings(prev => ({
       ...prev,
@@ -138,7 +148,16 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     loadAIServices();
     checkMasterKeySetup();
+    loadAIProviders();
+    loadDefaultSelection();
   }, []);
+
+  // Load models when provider changes
+  useEffect(() => {
+    if (selectedProvider) {
+      loadModelsForProvider(selectedProvider);
+    }
+  }, [selectedProvider]);
 
   const checkMasterKeySetup = async () => {
     try {
@@ -254,6 +273,88 @@ export const Settings: React.FC = () => {
       alert('Failed to update service');
     }
   };
+
+  // AI Provider and Model Management Functions
+  const loadAIProviders = async () => {
+    try {
+      setLoadingProviders(true);
+      const providerManager = getAIProviderManager();
+      const providers = await providerManager.getAvailableProviders();
+      setAvailableProviders(providers);
+    } catch (error) {
+      console.error('Error loading AI providers:', error);
+    } finally {
+      setLoadingProviders(false);
+    }
+  };
+
+  const loadDefaultSelection = async () => {
+    try {
+      const providerManager = getAIProviderManager();
+      const defaultSelection = await providerManager.getDefault();
+      if (defaultSelection) {
+        setSelectedProvider(defaultSelection.providerId);
+        setSelectedModel(defaultSelection.modelId);
+      }
+    } catch (error) {
+      console.error('Error loading default selection:', error);
+    }
+  };
+
+  const loadModelsForProvider = async (providerId: string) => {
+    try {
+      setLoadingModels(true);
+      const providerManager = getAIProviderManager();
+      const provider = providerManager.getProvider(providerId);
+      if (provider) {
+        const models = await provider.getModels();
+        setAvailableModels(models);
+        
+        // If no model is selected or the current model isn't available, select the first one
+        if (!selectedModel || !models.find(m => m.id === selectedModel)) {
+          if (models.length > 0) {
+            setSelectedModel(models[0].id);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading models for provider:', error);
+      setAvailableModels([]);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  const handleProviderChange = async (providerId: string) => {
+    setSelectedProvider(providerId);
+    setSelectedModel(''); // Reset model selection
+  };
+
+  const handleModelChange = async (modelId: string) => {
+    setSelectedModel(modelId);
+  };
+
+  const saveDefaultSelection = async () => {
+    if (!selectedProvider || !selectedModel) {
+      return;
+    }
+    
+    try {
+      const providerManager = getAIProviderManager();
+      await providerManager.setDefault(selectedProvider, selectedModel);
+      // You could add a success message here
+    } catch (error) {
+      console.error('Error saving default selection:', error);
+      alert('Failed to save default AI provider and model');
+    }
+  };
+
+  // Auto-save when selection changes
+  useEffect(() => {
+    if (selectedProvider && selectedModel) {
+      saveDefaultSelection();
+    }
+  }, [selectedProvider, selectedModel]);
 
   const renderCategoryContent = () => {
     switch (activeCategory) {
@@ -538,6 +639,119 @@ export const Settings: React.FC = () => {
 
   const renderAgentSettings = () => (
     <div className="space-y-6">
+      {/* Default AI Provider and Model Selection */}
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-4">Default AI Service & Model</h3>
+        <div className="space-y-4">
+          {/* Provider Selection */}
+          <div>
+            <label className="text-white font-medium block mb-2">AI Provider</label>
+            <div className="relative">
+              <select
+                value={selectedProvider}
+                onChange={(e) => handleProviderChange(e.target.value)}
+                disabled={loadingProviders}
+                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
+              >
+                <option value="">
+                  {loadingProviders ? 'Loading providers...' : 'Select AI Provider'}
+                </option>
+                {availableProviders.map(provider => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+            <p className="text-gray-400 text-sm mt-1">
+              Choose the default AI provider for agents to use
+            </p>
+          </div>
+
+          {/* Model Selection */}
+          <div>
+            <label className="text-white font-medium block mb-2">AI Model</label>
+            <div className="relative">
+              <select
+                value={selectedModel}
+                onChange={(e) => handleModelChange(e.target.value)}
+                disabled={loadingModels || !selectedProvider}
+                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none disabled:opacity-50"
+              >
+                <option value="">
+                  {loadingModels ? 'Loading models...' : 'Select AI Model'}
+                </option>
+                {availableModels.map(model => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+            <p className="text-gray-400 text-sm mt-1">
+              Choose the default model for AI operations
+            </p>
+            
+            {/* Model Info */}
+            {selectedModel && availableModels.length > 0 && (
+              <div className="mt-2 p-3 bg-gray-800 rounded-lg border border-gray-600">
+                {(() => {
+                  const model = availableModels.find(m => m.id === selectedModel);
+                  if (!model) return null;
+                  
+                  return (
+                    <div className="space-y-2">
+                      <h4 className="text-white font-medium text-sm">{model.name}</h4>
+                      {model.description && (
+                        <p className="text-gray-400 text-sm">{model.description}</p>
+                      )}
+                      <div className="flex flex-wrap gap-4 text-xs">
+                        <span className="text-gray-300">
+                          Context: {model.contextWindow.toLocaleString()} tokens
+                        </span>
+                        <span className="text-gray-300">
+                          Max output: {model.maxTokens.toLocaleString()} tokens
+                        </span>
+                        {model.inputCost && (
+                          <span className="text-gray-300">
+                            Cost: ${model.inputCost}/${model.outputCost} per 1K tokens
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {model.features.streaming && (
+                          <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
+                            Streaming
+                          </span>
+                        )}
+                        {model.features.functionCalling && (
+                          <span className="px-2 py-1 bg-green-600 text-white text-xs rounded">
+                            Function Calling
+                          </span>
+                        )}
+                        {model.features.vision && (
+                          <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
+                            Vision
+                          </span>
+                        )}
+                        {model.features.codeGeneration && (
+                          <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
+                            Code Generation
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Agent Configuration */}
       <div>
         <h3 className="text-lg font-semibold text-white mb-4">Agent Configuration</h3>
         <div className="space-y-4">

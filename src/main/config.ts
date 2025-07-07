@@ -36,6 +36,7 @@ export interface LabRatsConfig {
   
   // AI settings
   ai: {
+    defaultProvider: string;
     defaultModel: string;
     temperature: number;
     maxTokens: number;
@@ -130,7 +131,8 @@ const DEFAULT_CONFIG: LabRatsConfig = {
   },
   
   ai: {
-    defaultModel: 'gpt-4',
+    defaultProvider: 'anthropic',
+    defaultModel: 'claude-sonnet-4-20250514',
     temperature: 0.7,
     maxTokens: 4096,
     streamResponses: true,

@@ -29,6 +29,7 @@ import DOMPurify from 'dompurify';
 import { getLangChainChatService } from '../../services/langchain-chat-service';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
 import { getPromptManager } from '../../services/prompt-manager';
+import { agents as configAgents, Agent as ConfigAgent } from '../../config/agents';
 
 interface Agent {
   id: string;
@@ -60,125 +61,20 @@ interface ChatProps {
   onCodeReview: (changes: any) => void;
 }
 
-const agents: Agent[] = [
-  {
-    id: 'product-owner',
-    name: 'Cortex',
-    role: 'Product Owner',
-    color: 'teal',
-    icon: Target,
-    isActive: true,
-    specialization: ['product-strategy', 'requirements', 'user-research']
-  },
-  {
-    id: 'team-leader',
-    name: 'Team Leader',
-    role: 'Orchestrator',
-    color: 'blue',
-    icon: Crown,
-    isActive: false,
-    specialization: ['project-management', 'architecture', 'coordination']
-  },
-  {
-    id: 'contrarian',
-    name: 'Scratchy',
-    role: 'Contrarian Analyst',
-    color: 'red', 
-    icon: AlertTriangle,
-    isActive: false,
-    specialization: ['code-review', 'debugging', 'optimization']
-  },
-  {
-    id: 'chaos-monkey',
-    name: 'Ziggy',
-    role: 'Chaos Monkey',
-    color: 'orange',
-    icon: Zap,
-    isActive: false,
-    specialization: ['testing', 'edge-cases', 'reliability']
-  },
-  {
-    id: 'backend-dev',
-    name: 'Patchy',
-    role: 'Backend Developer',
-    color: 'green',
-    icon: Database,
-    isActive: false,
-    specialization: ['apis', 'databases', 'server-logic']
-  },
-  {
-    id: 'frontend-dev',
-    name: 'Shiny',
-    role: 'Frontend Developer',
-    color: 'purple',
-    icon: Palette,
-    isActive: false,
-    specialization: ['ui', 'ux', 'responsive-design']
-  },
-  {
-    id: 'fullstack-dev',
-    name: 'Fullstack Dev',
-    role: 'Full Stack Engineer',
-    color: 'indigo',
-    icon: Code,
-    isActive: false,
-    specialization: ['frontend', 'backend', 'integration']
-  },
-  {
-    id: 'quality-engineer',
-    name: 'Sniffy',
-    role: 'Quality Engineer',
-    color: 'gray',
-    icon: Search,
-    isActive: false,
-    specialization: ['testing', 'quality-assurance', 'test-automation']
-  },
-  {
-    id: 'security-auditor',
-    name: 'Trappy',
-    role: 'Security Auditor',
-    color: 'slate',
-    icon: Shield,
-    isActive: false,
-    specialization: ['security', 'vulnerability-assessment', 'compliance']
-  },
-  {
-    id: 'devops',
-    name: 'Wheelie',
-    role: 'Platform/DevOps',
-    color: 'cyan',
-    icon: Server,
-    isActive: false,
-    specialization: ['infrastructure', 'ci-cd', 'automation']
-  },
-  {
-    id: 'code-reviewer',
-    name: 'Clawsy',
-    role: 'Code Reviewer',
-    color: 'rose',
-    icon: Edit,
-    isActive: false,
-    specialization: ['code-quality', 'standards', 'best-practices']
-  },
-  {
-    id: 'architect',
-    name: 'Nestor',
-    role: 'Architect',
-    color: 'violet',
-    icon: Building,
-    isActive: false,
-    specialization: ['system-design', 'architecture', 'technical-leadership']
-  },
-  {
-    id: 'document-writer',
-    name: 'Quill',
-    role: 'Document Writer',
-    color: 'amber',
-    icon: FileText,
-    isActive: false,
-    specialization: ['documentation', 'technical-writing', 'guides']
-  }
-];
+// Map config agents to Chat component format
+const getDisplayAgents = (): Agent[] => {
+  return configAgents.map(agent => ({
+    id: agent.id,
+    name: agent.name,
+    role: agent.title,
+    color: 'dynamic', // We'll use getAgentColorHex instead
+    icon: Target, // Fallback icon, we'll use avatar images instead
+    isActive: agent.id === 'cortex', // Only Cortex is active by default
+    specialization: [] // Not used in current implementation
+  }));
+};
+
+const agents = getDisplayAgents();
 
 // Configure marked options
 marked.setOptions({
@@ -203,6 +99,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
   const [availableProviders, setAvailableProviders] = useState<any[]>([]);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [isAiEnabled, setIsAiEnabled] = useState(false);
+  const [agentColorOverrides, setAgentColorOverrides] = useState<{ [key: string]: string }>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const chatService = getLangChainChatService();
@@ -220,7 +117,37 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
     // Initialize AI providers with error handling
     console.log('Chat component mounted, initializing AI...');
     initializeAI();
+    loadAgentColorOverrides();
+
+    // Listen for config changes to reload color overrides
+    const handleConfigChange = () => {
+      loadAgentColorOverrides();
+    };
+    
+    // Set up periodic check for config changes (simple solution)
+    const interval = setInterval(loadAgentColorOverrides, 1000);
+    
+    return () => clearInterval(interval);
   }, []);
+
+  const loadAgentColorOverrides = async () => {
+    try {
+      if (window.electronAPI?.config?.get) {
+        const stored = await window.electronAPI.config.get('agents', 'overrides');
+        if (stored && typeof stored === 'object') {
+          const colorOverrides: { [key: string]: string } = {};
+          Object.entries(stored).forEach(([agentId, config]: [string, any]) => {
+            if (config.colorAccent) {
+              colorOverrides[agentId] = config.colorAccent;
+            }
+          });
+          setAgentColorOverrides(colorOverrides);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load agent color overrides', err);
+    }
+  };
 
   const initializeAI = async () => {
     try {
@@ -274,7 +201,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
     if (!isAiEnabled || !currentProviderId || !currentModelId) {
       // Fallback to mock response
       setIsTyping(true);
-      const currentAgent = agents[0]; // Product Owner
+      const currentAgent = agents.find(a => a.id === 'cortex') || agents[0]; // Use Cortex agent
       setTypingAgent(currentAgent);
       
       setTimeout(() => {
@@ -295,7 +222,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
 
     // Use AI provider for real responses
     setIsTyping(true);
-    const currentAgent = agents[0]; // Product Owner is now the first agent
+    const currentAgent = agents.find(a => a.id === 'cortex') || agents[0]; // Use Cortex agent
     setTypingAgent(currentAgent);
 
     try {
@@ -385,6 +312,42 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
     }
   };
 
+  const getAgentColorHex = (agent: Agent): string => {
+    // Check for override first
+    if (agentColorOverrides[agent.id]) {
+      return agentColorOverrides[agent.id];
+    }
+    
+    // Find agent in config and return its color
+    const configAgent = configAgents.find(a => a.id === agent.id);
+    if (configAgent) {
+      return configAgent.colorAccent;
+    }
+    
+    // Fallback to mapping from legacy color names
+    const colors = {
+      blue: '#3b82f6',
+      red: '#ef4444',
+      orange: '#f97316',
+      green: '#22c55e',
+      purple: '#a855f7',
+      indigo: '#6366f1',
+      teal: '#14b8a6',
+      gray: '#6b7280',
+      slate: '#64748b',
+      cyan: '#06b6d4',
+      rose: '#f43f5e',
+      violet: '#8b5cf6',
+      amber: '#f59e0b'
+    };
+    return colors[agent.color as keyof typeof colors] || '#6b7280';
+  };
+
+  const getAgentAvatar = (agent: Agent): string | null => {
+    const configAgent = configAgents.find(a => a.id === agent.id);
+    return configAgent?.avatar || null;
+  };
+
   const getAgentColor = (agent: Agent) => {
     const colors = {
       blue: 'bg-blue-500',
@@ -439,13 +402,27 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
           
           {/* Active Agents */}
           <div className="flex items-center space-x-2">
-            {activeAgents.map((agent) => (
-              <div key={agent.id} className="flex items-center space-x-2 px-3 py-1 bg-gray-700 rounded-full">
-                <div className={`w-2 h-2 rounded-full ${getAgentColor(agent)}`}></div>
-                <agent.icon className="w-4 h-4 text-gray-300" />
-                <span className="text-xs text-gray-300">{agent.name}</span>
-              </div>
-            ))}
+            {activeAgents.map((agent) => {
+              const avatar = getAgentAvatar(agent);
+              return (
+                <div key={agent.id} className="flex items-center space-x-2 px-3 py-1 bg-gray-700 rounded-full">
+                  <div 
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: getAgentColorHex(agent) }}
+                  ></div>
+                  {avatar ? (
+                    <img 
+                      src={avatar} 
+                      alt={agent.name}
+                      className="w-4 h-4 rounded-full object-cover"
+                    />
+                  ) : (
+                    <agent.icon className="w-4 h-4 text-gray-300" />
+                  )}
+                  <span className="text-xs text-gray-300">{agent.name}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -468,11 +445,29 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
               // Agent messages - use full width
               <div className="w-full bg-gray-700 rounded-lg p-4">
                 <div className="flex items-center space-x-3 mb-3">
-                  <div className={`w-8 h-8 rounded-full ${getAgentColor(message.sender as Agent)} flex items-center justify-center flex-shrink-0`}>
-                    {React.createElement((message.sender as Agent).icon, { className: "w-4 h-4 text-white" })}
-                  </div>
+                  {(() => {
+                    const avatar = getAgentAvatar(message.sender as Agent);
+                    return avatar ? (
+                      <img 
+                        src={avatar} 
+                        alt={(message.sender as Agent).name}
+                        className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                        style={{ border: `2px solid ${getAgentColorHex(message.sender as Agent)}` }}
+                      />
+                    ) : (
+                      <div 
+                        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: getAgentColorHex(message.sender as Agent) }}
+                      >
+                        {React.createElement((message.sender as Agent).icon, { className: "w-4 h-4 text-white" })}
+                      </div>
+                    );
+                  })()}
                   <div className="flex items-center space-x-2">
-                    <span className={`font-medium ${getAgentTextColor(message.sender as Agent)}`}>
+                    <span 
+                      className="font-medium"
+                      style={{ color: getAgentColorHex(message.sender as Agent) }}
+                    >
                       {(message.sender as Agent).name}
                     </span>
                     <span className="text-xs text-gray-400">
@@ -524,10 +519,25 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
         {/* Small Typing Indicator */}
         {isTyping && typingAgent && (
           <div className="mb-3 flex items-center space-x-2 text-xs text-gray-400">
-            <div className={`w-4 h-4 rounded-full ${getAgentColor(typingAgent)} flex items-center justify-center flex-shrink-0`}>
-              {React.createElement(typingAgent.icon, { className: "w-2.5 h-2.5 text-white" })}
-            </div>
-            <span className={`${getAgentTextColor(typingAgent)}`}>
+            {(() => {
+              const avatar = getAgentAvatar(typingAgent);
+              return avatar ? (
+                <img 
+                  src={avatar} 
+                  alt={typingAgent.name}
+                  className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                  style={{ border: `1px solid ${getAgentColorHex(typingAgent)}` }}
+                />
+              ) : (
+                <div 
+                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: getAgentColorHex(typingAgent) }}
+                >
+                  {React.createElement(typingAgent.icon, { className: "w-2.5 h-2.5 text-white" })}
+                </div>
+              );
+            })()}
+            <span style={{ color: getAgentColorHex(typingAgent) }}>
               {typingAgent.name} is typing
             </span>
             <div className="flex space-x-0.5">

@@ -83,6 +83,10 @@ module.exports = [
           test: /\.prompt$/,
           type: 'asset/source',
         },
+        {
+          test: /\.(png|jpe?g|gif|svg|webp)$/i,
+          type: 'asset/resource',
+        },
       ],
     },
     resolve: {

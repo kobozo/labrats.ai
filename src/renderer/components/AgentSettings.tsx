@@ -4,10 +4,12 @@ import { AIProviderConfig, AIModel } from '../../types/ai-provider';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
 import { ChevronDown } from 'lucide-react';
 import { ProviderModelSelector } from './ProviderModelSelector';
+import { ColorPicker } from './ColorPicker';
 
 interface AgentConfig {
   provider: string;
   model: string;
+  colorAccent?: string;
 }
 
 const agents = [...allAgents].sort((a, b) => a.name.localeCompare(b.name));
@@ -113,6 +115,15 @@ export const AgentSettings: React.FC = () => {
     });
   };
 
+  const handleColorChange = (agentId: string, color: string) => {
+    handleConfigChange(agentId, 'colorAccent', color);
+  };
+
+  const getAgentColor = (agent: Agent): string => {
+    const config = agentConfigs[agent.id];
+    return config?.colorAccent || agent.colorAccent;
+  };
+
   const renderAgentConfiguration = (agent: Agent) => {
     const config = agentConfigs[agent.id] || { provider: 'inherit', model: 'inherit' };
 
@@ -147,12 +158,21 @@ export const AgentSettings: React.FC = () => {
               }`}
             >
               <div className="flex items-center space-x-3">
-                <div 
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-xl"
-                  style={{ backgroundColor: agent.colorAccent }}
-                >
-                  {agent.icon}
-                </div>
+                {agent.avatar ? (
+                  <img 
+                    src={agent.avatar} 
+                    alt={agent.name}
+                    className="w-8 h-8 rounded-full object-cover"
+                    style={{ border: `2px solid ${getAgentColor(agent)}` }}
+                  />
+                ) : (
+                  <div 
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-xl"
+                    style={{ backgroundColor: getAgentColor(agent) }}
+                  >
+                    {agent.icon}
+                  </div>
+                )}
                 <div>
                   <h4 className="font-bold">{agent.name}</h4>
                   <p className="text-sm text-gray-400">{agent.title}</p>
@@ -168,15 +188,31 @@ export const AgentSettings: React.FC = () => {
             <h3 className="text-xl font-bold mb-4">Configure {selectedAgent.name}</h3>
             <div className="bg-gray-800 p-4 rounded-lg">
               <div className="flex items-center space-x-4 mb-4">
-                <div 
-                  className="w-16 h-16 rounded-full flex items-center justify-center text-4xl"
-                  style={{ backgroundColor: selectedAgent.colorAccent }}
-                >
-                  {selectedAgent.icon}
-                </div>
-                <div>
+                {selectedAgent.avatar ? (
+                  <img 
+                    src={selectedAgent.avatar} 
+                    alt={selectedAgent.name}
+                    className="w-16 h-16 rounded-full object-cover"
+                    style={{ border: `3px solid ${getAgentColor(selectedAgent)}` }}
+                  />
+                ) : (
+                  <div 
+                    className="w-16 h-16 rounded-full flex items-center justify-center text-4xl"
+                    style={{ backgroundColor: getAgentColor(selectedAgent) }}
+                  >
+                    {selectedAgent.icon}
+                  </div>
+                )}
+                <div className="flex-1">
                   <h4 className="text-2xl font-bold">{selectedAgent.name}</h4>
                   <p className="text-lg text-gray-400">{selectedAgent.title}</p>
+                </div>
+                <div className="flex flex-col items-center space-y-2">
+                  <span className="text-sm text-gray-400">Color</span>
+                  <ColorPicker
+                    currentColor={getAgentColor(selectedAgent)}
+                    onChange={(color) => handleColorChange(selectedAgent.id, color)}
+                  />
                 </div>
               </div>
               

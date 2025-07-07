@@ -26,32 +26,6 @@
         "tokensPerMinute": 40000
       }
     },
-    "claude-cli": {
-      "id": "claude-cli",
-      "name": "Claude Code",
-      "description": "Local Claude Code tool - model selection controlled by CLI configuration",
-      "endpoints": {
-        "models": null,
-        "chat": null,
-        "completion": null
-      },
-      "authentication": {
-        "type": "cli"
-      },
-      "defaultModel": "claude-cli-configured",
-      "modelSelectionDisabled": true,
-      "features": {
-        "streaming": true,
-        "functionCalling": true,
-        "vision": true,
-        "maxTokens": 200000,
-        "contextWindow": 200000
-      },
-      "requirements": {
-        "command": "claude",
-        "minVersion": "0.1.0"
-      }
-    },
     "openai": {
       "id": "openai",
       "name": "OpenAI",

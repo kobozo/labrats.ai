@@ -313,7 +313,21 @@ export class OpenAIProvider implements AIProvider {
 
             try {
               const parsed = JSON.parse(data);
-              yield parsed as StreamingChatResponse;
+              
+              // Transform OpenAI response format to our standardized format
+              if (parsed.choices && parsed.choices.length > 0) {
+                const choice = parsed.choices[0];
+                const streamingResponse: StreamingChatResponse = {
+                  id: parsed.id,
+                  model: parsed.model,
+                  delta: {
+                    role: choice.delta?.role,
+                    content: choice.delta?.content
+                  },
+                  finishReason: choice.finish_reason
+                };
+                yield streamingResponse;
+              }
             } catch (error) {
               console.error('Error parsing streaming response:', error);
             }

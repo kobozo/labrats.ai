@@ -1,6 +1,5 @@
 import { AIProvider, AIProviderManager, AIProviderConfig, AIProvidersConfig } from '../types/ai-provider';
 import { AnthropicProvider } from './providers/anthropic';
-import { ClaudeCLIProvider } from './providers/anthropic-cli';
 import { OpenAIProvider } from './providers/openai';
 import aiProvidersConfig from '../config/ai-providers.json';
 
@@ -21,12 +20,7 @@ export class AIProviderManagerImpl implements AIProviderManager {
       this.providers.set('anthropic', anthropicProvider);
     }
 
-    // Initialize Claude Code provider
-    const claudeCliConfig = this.config.providers['claude-cli'];
-    if (claudeCliConfig) {
-      const claudeCliProvider = new ClaudeCLIProvider(claudeCliConfig);
-      this.providers.set('claude-cli', claudeCliProvider);
-    }
+    // Claude CLI and Claude Code SDK providers removed
 
     // Future providers can be added here
     const openaiConfig = this.config.providers.openai;
@@ -95,13 +89,16 @@ export class AIProviderManagerImpl implements AIProviderManager {
           };
         }
 
-        // Return fallback defaults
+        // Return fallback defaults with priority order
         const availableProviders = await this.getAvailableProviders();
         if (availableProviders.length > 0) {
-          const firstProvider = availableProviders[0];
+          // Prefer anthropic provider as primary, fallback to others
+          const preferredProvider = availableProviders.find(p => p.id === 'anthropic') ||
+                                  availableProviders[0];
+
           return {
-            providerId: firstProvider.id,
-            modelId: firstProvider.config.defaultModel
+            providerId: preferredProvider.id,
+            modelId: preferredProvider.config.defaultModel
           };
         }
 

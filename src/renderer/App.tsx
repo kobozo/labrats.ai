@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Chat } from './components/Chat';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Dashboard } from './components/Dashboard';
 import { KanbanBoard } from './components/KanbanBoard';
 import { Documentation } from './components/Documentation';
@@ -372,7 +373,9 @@ function App() {
           /* Show normal views when a folder is open */
           <>
             {activeView === 'chat' && (
-              <Chat onCodeReview={() => showNotification('info', 'Code review initiated')} />
+              <ErrorBoundary>
+                <Chat onCodeReview={() => showNotification('info', 'Code review initiated')} />
+              </ErrorBoundary>
             )}
             
             {activeView === 'kanban' && (

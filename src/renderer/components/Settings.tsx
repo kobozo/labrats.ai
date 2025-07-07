@@ -5,7 +5,6 @@ import { openExternalLink } from '../utils/system';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
 import { AIProvider, AIModel } from '../../types/ai-provider';
 import { AgentSettings } from './AgentSettings';
-import { ProviderModelSelector } from './ProviderModelSelector';
 
 interface AIService {
   id: string;
@@ -130,11 +129,11 @@ export const Settings: React.FC = () => {
 
   // AI Provider and Model Selection state
   const [availableProviders, setAvailableProviders] = useState<AIProvider[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<string>('');
-  const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('');
   const [loadingProviders, setLoadingProviders] = useState(false);
-  const [loadingModels, setLoadingModels] = useState(false);
+  const [defaultProvider, setDefaultProvider] = useState<string>('');
+  const [defaultModel, setDefaultModel] = useState<string>('');
+  const [providerModels, setProviderModels] = useState<{[key: string]: AIModel[]}>({});
+  const [selectedModels, setSelectedModels] = useState<{[key: string]: string}>({});
 
   const updateSetting = (category: string, key: string, value: any) => {
     setSettings(prev => ({
@@ -151,15 +150,7 @@ export const Settings: React.FC = () => {
     loadAIServices();
     checkMasterKeySetup();
     loadAIProviders();
-    loadDefaultSelection();
   }, []);
-
-  // Load models when provider changes
-  useEffect(() => {
-    if (selectedProvider) {
-      loadModelsForProvider(selectedProvider);
-    }
-  }, [selectedProvider]);
 
   const checkMasterKeySetup = async () => {
     try {
@@ -283,6 +274,31 @@ export const Settings: React.FC = () => {
       const providerManager = getAIProviderManager();
       const providers = await providerManager.getAvailableProviders();
       setAvailableProviders(providers);
+      
+      // Load models for each provider
+      const modelsMap: {[key: string]: AIModel[]} = {};
+      for (const provider of providers) {
+        try {
+          const models = await provider.getModels();
+          modelsMap[provider.id] = models;
+        } catch (error) {
+          console.error(`Error loading models for ${provider.id}:`, error);
+          modelsMap[provider.id] = [];
+        }
+      }
+      setProviderModels(modelsMap);
+      
+      // Load current default
+      const defaultConfig = await providerManager.getDefault();
+      if (defaultConfig) {
+        setDefaultProvider(defaultConfig.providerId);
+        setDefaultModel(defaultConfig.modelId);
+        // Set the selected model for the default provider
+        setSelectedModels(prev => ({
+          ...prev,
+          [defaultConfig.providerId]: defaultConfig.modelId
+        }));
+      }
     } catch (error) {
       console.error('Error loading AI providers:', error);
     } finally {
@@ -290,73 +306,32 @@ export const Settings: React.FC = () => {
     }
   };
 
-  const loadDefaultSelection = async () => {
-    try {
-      const providerManager = getAIProviderManager();
-      const defaultSelection = await providerManager.getDefault();
-      if (defaultSelection) {
-        setSelectedProvider(defaultSelection.providerId);
-        setSelectedModel(defaultSelection.modelId);
-      }
-    } catch (error) {
-      console.error('Error loading default selection:', error);
-    }
+  const handleModelSelection = (providerId: string, modelId: string) => {
+    setSelectedModels(prev => ({
+      ...prev,
+      [providerId]: modelId
+    }));
   };
 
-  const loadModelsForProvider = async (providerId: string) => {
+  const makeDefault = async (providerId: string, modelId: string) => {
     try {
-      setLoadingModels(true);
+      setLoading(true);
       const providerManager = getAIProviderManager();
-      const provider = providerManager.getProvider(providerId);
-      if (provider) {
-        const models = await provider.getModels();
-        setAvailableModels(models);
-        
-        // If no model is selected or the current model isn't available, select the first one
-        if (!selectedModel || !models.find((m: AIModel) => m.id === selectedModel)) {
-          if (models.length > 0) {
-            setSelectedModel(models[0].id);
-          }
-        }
-      }
+      await providerManager.setDefault(providerId, modelId);
+      setDefaultProvider(providerId);
+      setDefaultModel(modelId);
+      // Update selected model for this provider
+      setSelectedModels(prev => ({
+        ...prev,
+        [providerId]: modelId
+      }));
     } catch (error) {
-      console.error('Error loading models for provider:', error);
-      setAvailableModels([]);
+      console.error('Error setting default:', error);
+      alert('Failed to set as default');
     } finally {
-      setLoadingModels(false);
+      setLoading(false);
     }
   };
-
-  const handleProviderChange = async (providerId: string) => {
-    setSelectedProvider(providerId);
-    setSelectedModel(''); // Reset model selection
-  };
-
-  const handleModelChange = async (modelId: string) => {
-    setSelectedModel(modelId);
-  };
-
-  const saveDefaultSelection = async () => {
-    if (!selectedProvider || !selectedModel) {
-      return;
-    }
-    
-    try {
-      const providerManager = getAIProviderManager();
-      await providerManager.setDefault(selectedProvider, selectedModel);
-      // You could add a success message here
-    } catch (error) {
-      console.error('Error saving default selection:', error);
-      alert('Failed to save default AI provider and model');
-    }
-  };
-
-  // Auto-save when selection changes
-  useEffect(() => {
-    if (selectedProvider && selectedModel) {
-      saveDefaultSelection();
-    }
-  }, [selectedProvider, selectedModel]);
 
   const renderCategoryContent = () => {
     switch (activeCategory) {
@@ -727,86 +702,6 @@ export const Settings: React.FC = () => {
 
     return (
       <div className="space-y-6">
-        <div>
-          <h3 className="text-lg font-semibold text-white mb-4">Default AI Service & Model</h3>
-          <div className="space-y-4">
-            <ProviderModelSelector
-              showInherit={false}
-              availableProviders={availableProviders.map(p => p.config)}
-              availableModels={availableModels}
-              loadingProviders={loadingProviders}
-              loadingModels={loadingModels}
-              selectedProvider={selectedProvider}
-              selectedModel={selectedModel}
-              onProviderChange={handleProviderChange}
-              onModelChange={handleModelChange}
-            />
-
-            {/* Model Info */}
-            {selectedModel && availableModels.length > 0 && (
-              <div className="mt-2 p-3 bg-gray-800 rounded-lg border border-gray-600">
-                {(() => {
-                  const model = availableModels.find(m => m.id === selectedModel);
-                  if (!model) return null;
-                  
-                  const selectedProviderObj = availableProviders.find(p => p.id === selectedProvider);
-                  const isModelSelectionDisabled = selectedProviderObj?.config.modelSelectionDisabled;
-                  
-                  return (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-white font-medium text-sm">{model.name}</h4>
-                        {isModelSelectionDisabled && (
-                          <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded">
-                            CLI Controlled
-                          </span>
-                        )}
-                      </div>
-                      {model.description && (
-                        <p className="text-gray-400 text-sm">{model.description}</p>
-                      )}
-                      <div className="flex flex-wrap gap-4 text-xs">
-                        <span className="text-gray-300">
-                          Context: {model.contextWindow.toLocaleString()} tokens
-                        </span>
-                        <span className="text-gray-300">
-                          Max output: {model.maxTokens.toLocaleString()} tokens
-                        </span>
-                        {model.inputCost && (
-                          <span className="text-gray-300">
-                            Cost: ${model.inputCost}/${model.outputCost} per 1K tokens
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {model.features.streaming && (
-                          <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
-                            Streaming
-                          </span>
-                        )}
-                        {model.features.functionCalling && (
-                          <span className="px-2 py-1 bg-green-600 text-white text-xs rounded">
-                            Function Calling
-                          </span>
-                        )}
-                        {model.features.vision && (
-                          <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
-                            Vision
-                          </span>
-                        )}
-                        {model.features.codeGeneration && (
-                          <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
-                            Code Generation
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* AI Service Configuration */}
         <div>
@@ -854,7 +749,7 @@ export const Settings: React.FC = () => {
                   </div>
 
                   {service.keyRequired && (
-                    <div className="mt-4">
+                    <div className="mt-4 space-y-4">
                       {isEditing ? (
                         <div className="space-y-2">
                           <div className="relative">
@@ -905,6 +800,108 @@ export const Settings: React.FC = () => {
                               {loading ? 'Removing...' : 'Remove'}
                             </button>
                           )}
+                        </div>
+                      )}
+
+                      {/* Model Selection */}
+                      {hasKey && isEnabled && providerModels[service.id] && providerModels[service.id].length > 0 && (
+                        <div className="border-t border-gray-600 pt-4">
+                          <h5 className="text-white font-medium mb-3">Model Selection</h5>
+                          
+                          {/* Model Dropdown */}
+                          <div className="mb-4">
+                            <label className="text-sm text-gray-300 block mb-2">Select Model:</label>
+                            <div className="relative">
+                              <select
+                                value={selectedModels[service.id] || ''}
+                                onChange={(e) => handleModelSelection(service.id, e.target.value)}
+                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-10"
+                              >
+                                <option value="">Select a model...</option>
+                                {providerModels[service.id].map(model => (
+                                  <option key={model.id} value={model.id}>
+                                    {model.name}
+                                    {defaultProvider === service.id && defaultModel === model.id ? ' (Default)' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            </div>
+                          </div>
+
+                          {/* Selected Model Details */}
+                          {selectedModels[service.id] && (() => {
+                            const selectedModel = providerModels[service.id].find(m => m.id === selectedModels[service.id]);
+                            if (!selectedModel) return null;
+                            const isDefault = defaultProvider === service.id && defaultModel === selectedModel.id;
+                            
+                            return (
+                              <div className="p-4 bg-gray-700 rounded-lg">
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="flex items-center space-x-2">
+                                    <h6 className="text-white font-medium">{selectedModel.name}</h6>
+                                    {isDefault && (
+                                      <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">
+                                        Default
+                                      </span>
+                                    )}
+                                  </div>
+                                  {!isDefault && (
+                                    <button
+                                      onClick={() => makeDefault(service.id, selectedModel.id)}
+                                      disabled={loading}
+                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 text-white text-sm rounded-md font-medium"
+                                    >
+                                      {loading ? 'Setting...' : 'Make Default'}
+                                    </button>
+                                  )}
+                                </div>
+                                
+                                <p className="text-gray-400 text-sm mb-3">{selectedModel.description}</p>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-gray-400 mb-3">
+                                  <div className="flex items-center space-x-1">
+                                    <span className="text-gray-300 font-medium">Context:</span>
+                                    <span>{selectedModel.contextWindow.toLocaleString()} tokens</span>
+                                  </div>
+                                  <div className="flex items-center space-x-1">
+                                    <span className="text-gray-300 font-medium">Max Tokens:</span>
+                                    <span>{selectedModel.maxTokens.toLocaleString()}</span>
+                                  </div>
+                                  {selectedModel.inputCost && (
+                                    <div className="flex items-center space-x-1">
+                                      <span className="text-gray-300 font-medium">Cost:</span>
+                                      <span>${selectedModel.inputCost}/${selectedModel.outputCost} per 1K tokens</span>
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {/* Features */}
+                                <div className="flex flex-wrap gap-2">
+                                  {selectedModel.features.streaming && (
+                                    <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
+                                      Streaming
+                                    </span>
+                                  )}
+                                  {selectedModel.features.functionCalling && (
+                                    <span className="px-2 py-1 bg-green-600 text-white text-xs rounded">
+                                      Function Calling
+                                    </span>
+                                  )}
+                                  {selectedModel.features.vision && (
+                                    <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
+                                      Vision
+                                    </span>
+                                  )}
+                                  {selectedModel.features.codeGeneration && (
+                                    <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
+                                      Code Generation
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>

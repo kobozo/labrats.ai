@@ -14,8 +14,11 @@ import {
   Clock,
   MessageSquare,
   Users,
-  Brain
+  Brain,
+  Settings
 } from 'lucide-react';
+import { getLangChainChatService } from '../../services/langchain-chat-service';
+import { getAIProviderManager } from '../../services/ai-provider-manager';
 
 interface Agent {
   id: string;
@@ -38,6 +41,9 @@ interface Message {
     filesAffected?: string[];
     reviewStatus?: 'pending' | 'approved' | 'rejected';
   };
+  providerId?: string;
+  modelId?: string;
+  isStreaming?: boolean;
 }
 
 interface ChatProps {
@@ -145,7 +151,14 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
   const [activeAgents, setActiveAgents] = useState(agents.filter(a => a.isActive));
   const [isTyping, setIsTyping] = useState(false);
   const [typingAgent, setTypingAgent] = useState<Agent | null>(null);
+  const [currentProviderId, setCurrentProviderId] = useState<string | null>(null);
+  const [currentModelId, setCurrentModelId] = useState<string | null>(null);
+  const [availableProviders, setAvailableProviders] = useState<any[]>([]);
+  const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [isAiEnabled, setIsAiEnabled] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatService = getLangChainChatService();
+  const providerManager = getAIProviderManager();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -154,6 +167,44 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    // Initialize AI providers with error handling
+    console.log('Chat component mounted, initializing AI...');
+    initializeAI();
+  }, []);
+
+  const initializeAI = async () => {
+    try {
+      console.log('Getting available providers...');
+      // Get available providers
+      const providers = await providerManager.getAvailableProviders();
+      console.log('Available providers:', providers.map(p => ({ id: p.id, name: p.name })));
+      setAvailableProviders(providers);
+      
+      // Get default provider and model
+      const defaultConfig = await providerManager.getDefault();
+      console.log('Default config:', defaultConfig);
+      if (defaultConfig) {
+        setCurrentProviderId(defaultConfig.providerId);
+        setCurrentModelId(defaultConfig.modelId);
+        setIsAiEnabled(true);
+        console.log(`Selected provider: ${defaultConfig.providerId} with model: ${defaultConfig.modelId}`);
+      } else if (providers.length > 0) {
+        // Use first available provider
+        const firstProvider = providers[0];
+        setCurrentProviderId(firstProvider.id);
+        setCurrentModelId(firstProvider.config.defaultModel);
+        setIsAiEnabled(true);
+        console.log(`Fallback to first provider: ${firstProvider.id} with model: ${firstProvider.config.defaultModel}`);
+      }
+      console.log('AI initialization complete');
+    } catch (error) {
+      console.error('Failed to initialize AI providers:', error);
+      // Don't fail completely, just disable AI features
+      setIsAiEnabled(false);
+    }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,19 +219,20 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = inputValue;
     setInputValue('');
     
-    // Simulate agent responses
-    setIsTyping(true);
-    
-    setTimeout(() => {
+    // Check if AI is enabled and providers are available
+    if (!isAiEnabled || !currentProviderId || !currentModelId) {
+      // Fallback to mock response
+      setIsTyping(true);
       const teamLeader = agents[0];
       setTypingAgent(teamLeader);
       
       setTimeout(() => {
         const response: Message = {
           id: (Date.now() + 1).toString(),
-          content: `I understand your request. Let me analyze the requirements and determine which specialists we need for this task. I'm thinking we'll need our Frontend Dev for the UI components.`,
+          content: `AI providers are not configured yet. Please configure your AI provider in settings to enable real AI responses.`,
           sender: teamLeader,
           timestamp: new Date(),
           type: 'text'
@@ -189,30 +241,92 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
         setMessages(prev => [...prev, response]);
         setIsTyping(false);
         setTypingAgent(null);
-        
-        // Simulate adding a new agent to the conversation
-        setTimeout(() => {
-          if (!activeAgents.find(a => a.id === 'frontend-dev')) {
-            const frontendDev = agents.find(a => a.id === 'frontend-dev')!;
-            setActiveAgents(prev => [...prev, frontendDev]);
-            
-            setTimeout(() => {
-              const frontendResponse: Message = {
-                id: (Date.now() + 2).toString(),
-                content: `Great to be here! I'm reviewing the UI requirements. We'll need responsive design, smooth animations, and excellent accessibility. I suggest we implement a component-based architecture with proper state management.`,
-                sender: frontendDev,
-                timestamp: new Date(),
-                type: 'text'
-              };
-              setMessages(prev => [...prev, frontendResponse]);
-            }, 1500);
-          }
-        }, 1000);
       }, 2000);
-    }, 1000);
+      return;
+    }
+
+    // Use AI provider for real responses
+    setIsTyping(true);
+    const teamLeader = agents[0];
+    setTypingAgent(teamLeader);
+
+    try {
+      // Create streaming response
+      const streamingMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: '',
+        sender: teamLeader,
+        timestamp: new Date(),
+        type: 'text',
+        providerId: currentProviderId,
+        modelId: currentModelId,
+        isStreaming: true
+      };
+
+      setMessages(prev => [...prev, streamingMessage]);
+
+      // Stream the response
+      const generator = chatService.sendMessageStream(currentInput, {
+        providerId: currentProviderId,
+        modelId: currentModelId,
+        agentId: teamLeader.id,
+        systemPrompt: `You are ${teamLeader.name}, a ${teamLeader.role} in a software development team. Your specializations are: ${teamLeader.specialization.join(', ')}. 
+        
+        You are part of a multi-agent AI development team. Be concise, professional, and focus on your area of expertise. 
+        If the user's request requires other specialists, mention which team members should be involved.
+        
+        Current conversation context: You are in an AI-powered IDE chat interface where multiple AI agents collaborate on development tasks.`
+      });
+
+      let fullContent = '';
+      for await (const chunk of generator) {
+        if (chunk.delta) {
+          fullContent += chunk.delta;
+          setMessages(prev => prev.map(msg => 
+            msg.id === streamingMessage.id 
+              ? { ...msg, content: fullContent }
+              : msg
+          ));
+        }
+
+        if (chunk.isComplete) {
+          setMessages(prev => prev.map(msg => 
+            msg.id === streamingMessage.id 
+              ? { ...msg, isStreaming: false }
+              : msg
+          ));
+          setIsTyping(false);
+          setTypingAgent(null);
+          
+          if (chunk.error) {
+            setMessages(prev => prev.map(msg => 
+              msg.id === streamingMessage.id 
+                ? { ...msg, content: `Error: ${chunk.error}. Please check your AI provider configuration.` }
+                : msg
+            ));
+          }
+          break;
+        }
+      }
+    } catch (error) {
+      console.error('AI response error:', error);
+      setIsTyping(false);
+      setTypingAgent(null);
+      
+      // Add error message
+      const errorMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        content: `Sorry, I encountered an error while processing your request: ${error instanceof Error ? error.message : 'Unknown error'}. Please check your AI provider configuration.`,
+        sender: teamLeader,
+        timestamp: new Date(),
+        type: 'text'
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    }
     
     // Trigger code review workflow after certain messages
-    if (inputValue.toLowerCase().includes('implement') || inputValue.toLowerCase().includes('code')) {
+    if (currentInput.toLowerCase().includes('implement') || currentInput.toLowerCase().includes('code')) {
       setTimeout(() => {
         onCodeReview({
           files: ['src/components/Chat.tsx', 'src/components/Sidebar.tsx'],
@@ -377,9 +491,20 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
           </button>
         </form>
         
-        <div className="mt-2 text-xs text-gray-400">
-          Team Leader will orchestrate the response and add specialized agents as needed.
+        <div className="mt-2 flex items-center justify-between">
+          <div className="text-xs text-gray-400">
+            Team Leader will orchestrate the response and add specialized agents as needed.
+          </div>
+          <div className="flex items-center space-x-2">
+            {isAiEnabled && currentProviderId && (
+              <div className="text-xs text-green-400 flex items-center space-x-1">
+                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                <span>{currentProviderId}</span>
+              </div>
+            )}
+          </div>
         </div>
+
       </div>
     </div>
   );

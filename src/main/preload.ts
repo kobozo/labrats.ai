@@ -94,6 +94,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     validateAPIKey: (serviceId: string, apiKey: string) => ipcRenderer.invoke('ai-validate-api-key', serviceId, apiKey),
     testAPIKey: (serviceId: string, apiKey: string) => ipcRenderer.invoke('ai-test-api-key', serviceId, apiKey),
     resetConfiguration: () => ipcRenderer.invoke('ai-reset-configuration'),
+    getProviders: () => ipcRenderer.invoke('ai-get-providers'),
+    getModels: (providerId: string) => ipcRenderer.invoke('ai-get-models', providerId),
+    getAvailableProviders: () => ipcRenderer.invoke('ai-get-available-providers'),
   },
 
   // System API

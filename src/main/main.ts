@@ -7,6 +7,8 @@ import { ConfigManager } from './config';
 import { GitService } from './gitService';
 import { TerminalService } from './terminalService';
 import { LABRATS_CONFIG_DIR } from './constants';
+import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
+import { getAIProviderManager } from '../services/ai-provider-manager';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -1126,12 +1128,22 @@ ipcMain.handle('ai-test-api-key', async (event, serviceId: string, apiKey: strin
 });
 
 ipcMain.handle('ai-reset-configuration', async () => {
-  try {
-    await aiConfigService.resetConfiguration();
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  return aiConfigService.resetConfiguration();
+});
+
+ipcMain.handle('ai-get-providers', async (): Promise<AIProviderConfig[]> => {
+  const providerManager = getAIProviderManager();
+  // Return only the serializable config objects for each provider
+  return providerManager.getProviders().map((p) => p.config);
+});
+
+ipcMain.handle('ai-get-models', async (event, providerId: string): Promise<AIModel[]> => {
+  const providerManager = getAIProviderManager();
+  const provider = providerManager.getProvider(providerId);
+  if (provider) {
+    return provider.getModels();
   }
+  return [];
 });
 
 // CLI Detection and Command Execution Handlers
@@ -1230,4 +1242,10 @@ ipcMain.handle('execute-claude-command', async (event, request: any) => {
       error: error.message
     };
   }
+});
+
+ipcMain.handle('ai-get-available-providers', async (): Promise<AIProviderConfig[]> => {
+  const providerManager = getAIProviderManager();
+  const availableProviders = await providerManager.getAvailableProviders();
+  return availableProviders.map((p) => p.config);
 });

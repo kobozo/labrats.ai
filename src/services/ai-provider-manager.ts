@@ -1,6 +1,7 @@
 import { AIProvider, AIProviderManager, AIProviderConfig, AIProvidersConfig } from '../types/ai-provider';
 import { AnthropicProvider } from './providers/anthropic';
 import { ClaudeCLIProvider } from './providers/anthropic-cli';
+import { OpenAIProvider } from './providers/openai';
 import aiProvidersConfig from '../config/ai-providers.json';
 
 export class AIProviderManagerImpl implements AIProviderManager {
@@ -28,11 +29,11 @@ export class AIProviderManagerImpl implements AIProviderManager {
     }
 
     // Future providers can be added here
-    // const openaiConfig = this.config.providers.openai;
-    // if (openaiConfig) {
-    //   const openaiProvider = new OpenAIProvider(openaiConfig);
-    //   this.providers.set('openai', openaiProvider);
-    // }
+    const openaiConfig = this.config.providers.openai;
+    if (openaiConfig) {
+      const openaiProvider = new OpenAIProvider(openaiConfig);
+      this.providers.set('openai', openaiProvider);
+    }
   }
 
   getProviders(): AIProvider[] {

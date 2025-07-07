@@ -158,6 +158,9 @@ export interface AIAPI {
   validateAPIKey: (serviceId: string, apiKey: string) => Promise<AIValidationResult>;
   testAPIKey: (serviceId: string, apiKey: string) => Promise<AITestResult>;
   resetConfiguration: () => Promise<AIResult>;
+  getProviders: () => Promise<any[]>;
+  getAvailableProviders: () => Promise<any[]>;
+  getModels: (providerId: string) => Promise<any[]>;
 }
 
 export interface ElectronAPI {

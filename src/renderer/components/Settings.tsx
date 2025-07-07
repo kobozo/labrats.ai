@@ -4,6 +4,8 @@ import { MasterKeySetup } from './MasterKeySetup';
 import { openExternalLink } from '../utils/system';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
 import { AIProvider, AIModel } from '../../types/ai-provider';
+import { AgentSettings } from './AgentSettings';
+import { ProviderModelSelector } from './ProviderModelSelector';
 
 interface AIService {
   id: string;
@@ -174,8 +176,6 @@ export const Settings: React.FC = () => {
   const loadAIServices = async () => {
     try {
       const services = await window.electronAPI?.ai?.getSupportedServices();
-      setAiServices(services || []);
-      
       // Load configurations for each service
       const configs: {[key: string]: ServiceConfig} = {};
       for (const service of services || []) {
@@ -184,7 +184,9 @@ export const Settings: React.FC = () => {
           configs[service.id] = config;
         }
       }
+
       setServiceConfigs(configs);
+      setAiServices(services || []);
     } catch (error) {
       console.error('Error loading AI services:', error);
     }
@@ -638,204 +640,7 @@ export const Settings: React.FC = () => {
   );
 
   const renderAgentSettings = () => (
-    <div className="space-y-6">
-      {/* Default AI Provider and Model Selection */}
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-4">Default AI Service & Model</h3>
-        <div className="space-y-4">
-          {/* Provider Selection */}
-          <div>
-            <label className="text-white font-medium block mb-2">AI Provider</label>
-            <div className="relative">
-              <select
-                value={selectedProvider}
-                onChange={(e) => handleProviderChange(e.target.value)}
-                disabled={loadingProviders}
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
-              >
-                <option value="">
-                  {loadingProviders ? 'Loading providers...' : 'Select AI Provider'}
-                </option>
-                {availableProviders.map(provider => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            </div>
-            <p className="text-gray-400 text-sm mt-1">
-              Choose the default AI provider for agents to use
-            </p>
-          </div>
-
-          {/* Model Selection */}
-          <div>
-            <label className="text-white font-medium block mb-2">AI Model</label>
-            <div className="relative">
-              {(() => {
-                const selectedProviderObj = availableProviders.find(p => p.id === selectedProvider);
-                const isModelSelectionDisabled = selectedProviderObj?.config.modelSelectionDisabled;
-                
-                return (
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => handleModelChange(e.target.value)}
-                    disabled={loadingModels || !selectedProvider || isModelSelectionDisabled}
-                    className={`w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none disabled:opacity-50 ${
-                      isModelSelectionDisabled ? 'cursor-not-allowed' : ''
-                    }`}
-                  >
-                    <option value="">
-                      {loadingModels ? 'Loading models...' : 
-                       isModelSelectionDisabled ? 'Model controlled by CLI configuration' : 
-                       'Select AI Model'}
-                    </option>
-                    {availableModels.map(model => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
-                      </option>
-                    ))}
-                  </select>
-                );
-              })()}
-              <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            </div>
-            <p className="text-gray-400 text-sm mt-1">
-              {(() => {
-                const selectedProviderObj = availableProviders.find(p => p.id === selectedProvider);
-                const isModelSelectionDisabled = selectedProviderObj?.config.modelSelectionDisabled;
-                
-                return isModelSelectionDisabled 
-                  ? 'Model selection is controlled by the CLI configuration. Use the Claude Code to change models.'
-                  : 'Choose the default model for AI operations';
-              })()}
-            </p>
-            
-            {/* Model Info */}
-            {selectedModel && availableModels.length > 0 && (
-              <div className="mt-2 p-3 bg-gray-800 rounded-lg border border-gray-600">
-                {(() => {
-                  const model = availableModels.find(m => m.id === selectedModel);
-                  if (!model) return null;
-                  
-                  const selectedProviderObj = availableProviders.find(p => p.id === selectedProvider);
-                  const isModelSelectionDisabled = selectedProviderObj?.config.modelSelectionDisabled;
-                  
-                  return (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-white font-medium text-sm">{model.name}</h4>
-                        {isModelSelectionDisabled && (
-                          <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded">
-                            CLI Controlled
-                          </span>
-                        )}
-                      </div>
-                      {model.description && (
-                        <p className="text-gray-400 text-sm">{model.description}</p>
-                      )}
-                      <div className="flex flex-wrap gap-4 text-xs">
-                        <span className="text-gray-300">
-                          Context: {model.contextWindow.toLocaleString()} tokens
-                        </span>
-                        <span className="text-gray-300">
-                          Max output: {model.maxTokens.toLocaleString()} tokens
-                        </span>
-                        {model.inputCost && (
-                          <span className="text-gray-300">
-                            Cost: ${model.inputCost}/${model.outputCost} per 1K tokens
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {model.features.streaming && (
-                          <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
-                            Streaming
-                          </span>
-                        )}
-                        {model.features.functionCalling && (
-                          <span className="px-2 py-1 bg-green-600 text-white text-xs rounded">
-                            Function Calling
-                          </span>
-                        )}
-                        {model.features.vision && (
-                          <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
-                            Vision
-                          </span>
-                        )}
-                        {model.features.codeGeneration && (
-                          <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
-                            Code Generation
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Agent Configuration */}
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-4">Agent Configuration</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <label className="text-white font-medium">Auto-activate Agents</label>
-              <p className="text-gray-400 text-sm">Automatically bring in relevant agents for tasks</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings.agents.autoActivate}
-                onChange={(e) => updateSetting('agents', 'autoActivate', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-700 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-          
-          <div>
-            <label className="text-white font-medium block mb-2">Maximum Active Agents</label>
-            <input
-              type="range"
-              min="2"
-              max="10"
-              value={settings.agents.maxActive}
-              onChange={(e) => updateSetting('agents', 'maxActive', parseInt(e.target.value))}
-              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-            />
-            <div className="flex justify-between text-sm text-gray-400 mt-1">
-              <span>2</span>
-              <span className="text-white font-medium">{settings.agents.maxActive}</span>
-              <span>10</span>
-            </div>
-          </div>
-          
-          <div>
-            <label className="text-white font-medium block mb-2">Response Delay (ms)</label>
-            <input
-              type="range"
-              min="500"
-              max="5000"
-              step="500"
-              value={settings.agents.responseDelay}
-              onChange={(e) => updateSetting('agents', 'responseDelay', parseInt(e.target.value))}
-              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-            />
-            <div className="flex justify-between text-sm text-gray-400 mt-1">
-              <span>500ms</span>
-              <span className="text-white font-medium">{settings.agents.responseDelay}ms</span>
-              <span>5000ms</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AgentSettings />
   );
 
   const renderDataSettings = () => (
@@ -923,138 +728,183 @@ export const Settings: React.FC = () => {
     return (
       <div className="space-y-6">
         <div>
-          <div className="flex items-center space-x-3 mb-4">
-            <h3 className="text-lg font-semibold text-white">AI Services</h3>
-            <Shield className="w-5 h-5 text-green-400" />
-          </div>
-          
-          <p className="text-gray-400 text-sm mb-6">
-            Configure your AI service API keys. All keys are encrypted using your master key.
-          </p>
+          <h3 className="text-lg font-semibold text-white mb-4">Default AI Service & Model</h3>
+          <div className="space-y-4">
+            <ProviderModelSelector
+              showInherit={false}
+              availableProviders={availableProviders.map(p => p.config)}
+              availableModels={availableModels}
+              loadingProviders={loadingProviders}
+              loadingModels={loadingModels}
+              selectedProvider={selectedProvider}
+              selectedModel={selectedModel}
+              onProviderChange={handleProviderChange}
+              onModelChange={handleModelChange}
+            />
 
+            {/* Model Info */}
+            {selectedModel && availableModels.length > 0 && (
+              <div className="mt-2 p-3 bg-gray-800 rounded-lg border border-gray-600">
+                {(() => {
+                  const model = availableModels.find(m => m.id === selectedModel);
+                  if (!model) return null;
+                  
+                  const selectedProviderObj = availableProviders.find(p => p.id === selectedProvider);
+                  const isModelSelectionDisabled = selectedProviderObj?.config.modelSelectionDisabled;
+                  
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-white font-medium text-sm">{model.name}</h4>
+                        {isModelSelectionDisabled && (
+                          <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded">
+                            CLI Controlled
+                          </span>
+                        )}
+                      </div>
+                      {model.description && (
+                        <p className="text-gray-400 text-sm">{model.description}</p>
+                      )}
+                      <div className="flex flex-wrap gap-4 text-xs">
+                        <span className="text-gray-300">
+                          Context: {model.contextWindow.toLocaleString()} tokens
+                        </span>
+                        <span className="text-gray-300">
+                          Max output: {model.maxTokens.toLocaleString()} tokens
+                        </span>
+                        {model.inputCost && (
+                          <span className="text-gray-300">
+                            Cost: ${model.inputCost}/${model.outputCost} per 1K tokens
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {model.features.streaming && (
+                          <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
+                            Streaming
+                          </span>
+                        )}
+                        {model.features.functionCalling && (
+                          <span className="px-2 py-1 bg-green-600 text-white text-xs rounded">
+                            Function Calling
+                          </span>
+                        )}
+                        {model.features.vision && (
+                          <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
+                            Vision
+                          </span>
+                        )}
+                        {model.features.codeGeneration && (
+                          <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
+                            Code Generation
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* AI Service Configuration */}
+        <div>
+          <h3 className="text-lg font-semibold text-white mb-4">AI Service Configuration</h3>
           <div className="space-y-4">
             {aiServices.map(service => {
               const config = serviceConfigs[service.id];
               const isEditing = editingService === service.id;
-              const showKey = showApiKeys[service.id];
+              const hasKey = config?.hasApiKey;
+              const isEnabled = config?.enabled;
 
               return (
-                <div key={service.id} className="border border-gray-600 rounded-lg p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3">
-                        <h4 className="text-white font-medium">{service.name}</h4>
-                        {config?.hasApiKey && (
-                          <div className="flex items-center space-x-1 text-green-400">
-                            <CheckCircle className="w-4 h-4" />
-                            <span className="text-xs">Configured</span>
-                          </div>
-                        )}
-                        {service.docs && (
-                          <button
-                            onClick={() => openExternalLink(service.docs!)}
-                            className="text-blue-400 hover:text-blue-300 transition-colors"
-                            title="API Documentation"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-gray-400 text-sm mt-1">{service.description}</p>
+                <div key={service.id} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-white font-medium">{service.name}</h4>
+                      <p className="text-gray-400 text-sm">{service.description}</p>
+                      {service.docs && (
+                        <button 
+                          onClick={() => openExternalLink(service.docs!)}
+                          className="text-blue-400 hover:text-blue-300 text-sm mt-1 flex items-center"
+                        >
+                          API Documentation <ExternalLink className="w-3 h-3 ml-1" />
+                        </button>
+                      )}
                     </div>
-                    
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={config?.enabled || false}
-                        onChange={(e) => handleToggleService(service.id, e.target.checked)}
-                        className="sr-only peer"
-                        disabled={loading}
-                      />
-                      <div className="w-11 h-6 bg-gray-700 peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                    </label>
+                    <div className="flex items-center space-x-4">
+                      {hasKey && (
+                        <span className="flex items-center text-green-400 text-sm">
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          API Key set
+                        </span>
+                      )}
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isEnabled}
+                          onChange={(e) => handleToggleService(service.id, e.target.checked)}
+                          className="sr-only peer"
+                          disabled={!hasKey}
+                        />
+                        <div className="w-11 h-6 bg-gray-700 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
                   </div>
 
                   {service.keyRequired && (
-                    <div className="mt-3">
-                      {!isEditing ? (
-                        <div className="flex items-center space-x-3">
-                          {config?.hasApiKey ? (
-                            <>
-                              <div className="flex-1 flex items-center space-x-2">
-                                <Key className="w-4 h-4 text-green-400" />
-                                <span className="text-green-400 text-sm">API Key configured</span>
-                              </div>
-                              <button
-                                onClick={() => setEditingService(service.id)}
-                                className="px-3 py-1 text-blue-400 hover:text-blue-300 text-sm transition-colors"
-                              >
-                                Update
-                              </button>
-                              <button
-                                onClick={() => handleRemoveAPIKey(service.id)}
-                                className="px-3 py-1 text-red-400 hover:text-red-300 text-sm transition-colors"
-                                disabled={loading}
-                              >
-                                Remove
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex-1 flex items-center space-x-2">
-                                <AlertCircle className="w-4 h-4 text-yellow-400" />
-                                <span className="text-yellow-400 text-sm">API Key required</span>
-                              </div>
-                              <button
-                                onClick={() => setEditingService(service.id)}
-                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
-                              >
-                                Add Key
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">
-                              API Key
-                            </label>
-                            <div className="relative">
-                              <input
-                                type={showKey ? 'text' : 'password'}
-                                value={apiKeyInputs[service.id] || ''}
-                                onChange={(e) => setApiKeyInputs(prev => ({ ...prev, [service.id]: e.target.value }))}
-                                placeholder={service.keyPlaceholder}
-                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                              />
-                              <button
-                                onClick={() => setShowApiKeys(prev => ({ ...prev, [service.id]: !showKey }))}
-                                className="absolute right-3 top-2.5 text-gray-400 hover:text-white transition-colors"
-                              >
-                                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                              </button>
-                            </div>
+                    <div className="mt-4">
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <input
+                              type={showApiKeys[service.id] ? 'text' : 'password'}
+                              placeholder={service.keyPlaceholder}
+                              value={apiKeyInputs[service.id] || ''}
+                              onChange={(e) => setApiKeyInputs(prev => ({ ...prev, [service.id]: e.target.value }))}
+                              className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 pr-10 focus:ring-2 focus:ring-blue-500"
+                            />
+                            <button
+                              onClick={() => setShowApiKeys(prev => ({ ...prev, [service.id]: !prev[service.id] }))}
+                              className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-gray-400 hover:text-white"
+                            >
+                              {showApiKeys[service.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
                           </div>
-                          
                           <div className="flex space-x-2">
                             <button
                               onClick={() => handleSaveAPIKey(service.id)}
-                              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded transition-colors disabled:opacity-50"
-                              disabled={loading || !apiKeyInputs[service.id]}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md font-medium"
+                              disabled={loading}
                             >
-                              Save
+                              {loading ? 'Saving...' : 'Save'}
                             </button>
                             <button
-                              onClick={() => {
-                                setEditingService(null);
-                                setApiKeyInputs(prev => ({ ...prev, [service.id]: '' }));
-                              }}
-                              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded transition-colors"
+                              onClick={() => setEditingService(null)}
+                              className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-md font-medium"
                             >
                               Cancel
                             </button>
                           </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-4">
+                          <button
+                            onClick={() => setEditingService(service.id)}
+                            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white text-sm rounded-md font-medium"
+                          >
+                            {hasKey ? 'Update API Key' : 'Add API Key'}
+                          </button>
+                          {hasKey && (
+                            <button
+                              onClick={() => handleRemoveAPIKey(service.id)}
+                              className="px-4 py-2 bg-red-800 hover:bg-red-700 text-white text-sm rounded-md font-medium"
+                              disabled={loading}
+                            >
+                              {loading ? 'Removing...' : 'Remove'}
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1069,73 +919,51 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full bg-gray-900">
-      {/* Sidebar */}
-      <div className="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
-        <div className="p-6 border-b border-gray-700">
-          <h1 className="text-xl font-bold text-white mb-2">Settings</h1>
-          <p className="text-gray-400 text-sm">Configure your AI-first development environment</p>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4">
-          <nav className="space-y-1">
-            {categories.map(category => {
-              const Icon = category.icon;
-              const isActive = activeCategory === category.id;
-              
-              return (
-                <button
-                  key={category.id}
-                  onClick={() => setActiveCategory(category.id)}
-                  className={`w-full flex items-start p-3 rounded-lg transition-colors ${
-                    isActive 
-                      ? 'bg-blue-600 text-white' 
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  }`}
-                >
-                  <Icon className={`w-5 h-5 mt-0.5 mr-3 flex-shrink-0 ${
-                    isActive ? 'text-white' : 'text-gray-400'
-                  }`} />
-                  <div className="text-left">
-                    <div className="font-medium">{category.label}</div>
-                    <div className={`text-xs mt-1 ${
-                      isActive ? 'text-blue-100' : 'text-gray-500'
-                    }`}>
-                      {category.description}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        <div className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-4xl">
-            {renderCategoryContent()}
-          </div>
-        </div>
-
-        {/* Save Button */}
-        <div className="border-t border-gray-700 p-6">
-          <div className="max-w-4xl flex justify-end">
-            <button className="flex items-center space-x-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
-              <Save className="w-4 h-4" />
-              <span>Save Settings</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Master Key Setup Dialog */}
+    <div className="flex h-screen bg-gray-900 text-white">
+      {/* Master Key Setup Modal */}
       <MasterKeySetup
         isOpen={showMasterKeySetup}
         onComplete={handleMasterKeySetup}
         onCancel={() => setShowMasterKeySetup(false)}
       />
+
+      {/* Sidebar */}
+      <aside className="w-64 bg-gray-800 p-4 border-r border-gray-700">
+        <h1 className="text-2xl font-bold mb-8">Settings</h1>
+        <nav className="space-y-2">
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors text-left ${
+                activeCategory === cat.id
+                  ? 'bg-blue-600 text-white'
+                  : 'hover:bg-gray-700'
+              }`}
+            >
+              <cat.icon className="w-5 h-5" />
+              <span>{cat.label}</span>
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 min-h-0 p-8 overflow-y-auto">
+        <div className="max-w-4xl mx-auto">
+          {(() => {
+            const activeCat = categories.find(c => c.id === activeCategory);
+            return (
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold">{activeCat?.label}</h2>
+                <p className="text-gray-400 mt-1">{activeCat?.description}</p>
+              </div>
+            );
+          })()}
+          
+          {renderCategoryContent()}
+        </div>
+      </main>
     </div>
   );
 };

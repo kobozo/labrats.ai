@@ -37,6 +37,7 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
   const [fileSearchResults, setFileSearchResults] = useState<FileSearchResult[]>([]);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [atSymbolPosition, setAtSymbolPosition] = useState<{row: number, col: number} | null>(null);
+  const [isDebugMode, setIsDebugMode] = useState(false);
   const terminalRefs = useRef<{[key: string]: HTMLDivElement}>({});
   const fileSearchRef = useRef<HTMLDivElement>(null);
 
@@ -365,6 +366,20 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
     };
   }, [terminals]);
 
+  // Check for debug mode environment variable
+  useEffect(() => {
+    const checkDebugMode = async () => {
+      try {
+        const debugValue = await window.electronAPI.getEnv?.('LABRATS_DEBUG');
+        setIsDebugMode(debugValue === 'true');
+      } catch (error) {
+        console.error('Error checking debug mode:', error);
+        setIsDebugMode(false);
+      }
+    };
+    checkDebugMode();
+  }, []);
+
   // Helper to get the folder name from a full path
   const getFolderName = (folderPath: string): string => {
     if (!folderPath) return '';
@@ -476,7 +491,10 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
             </div>
 
             {/* Terminal Container */}
-            <div className="bg-gray-900 rounded-lg border border-gray-700 flex-1 flex flex-col min-h-0 overflow-hidden relative">
+            <div
+              className="bg-gray-900 rounded-lg border border-gray-700 flex-1 flex flex-col min-h-0 overflow-hidden relative"
+              style={isDebugMode ? { border: '2px solid green' } : {}}
+            >
               {/* Actual Terminal */}
               <div
                 ref={(el) => {
@@ -484,8 +502,8 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
                     terminalRefs.current[activeTerminalId] = el;
                   }
                 }}
-                className="flex-1 p-3"
-                style={{ marginRight: '20px' }}
+                className="flex-1 overflow-hidden"
+                style={isDebugMode ? { border: '2px solid red' } : {}}
               />
               
               {/* File Search Overlay */}

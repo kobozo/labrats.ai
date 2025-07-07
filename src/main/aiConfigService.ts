@@ -22,8 +22,8 @@ export class AIConfigService extends EventEmitter {
   private cryptoService: CryptoService;
   private supportedServices: AIService[] = [
     {
-      id: 'claude-code',
-      name: 'Claude Code',
+      id: 'anthropic',
+      name: 'anthropic',
       description: 'Anthropic\'s Claude for code assistance and development',
       keyRequired: true,
       keyPlaceholder: 'sk-ant-api03-...',
@@ -161,9 +161,9 @@ export class AIConfigService extends EventEmitter {
 
     // Service-specific validation
     switch (serviceId) {
-      case 'claude-code':
+      case 'anthropic':
         if (!apiKey.startsWith('sk-ant-api03-')) {
-          return { valid: false, error: 'Claude API keys should start with "sk-ant-api03-"' };
+          return { valid: false, error: 'Anthropic API keys should start with "sk-ant-api03-"' };
         }
         break;
       case 'openai':

@@ -54,39 +54,40 @@ export class AnthropicProvider implements AIProvider {
 
   async getModels(): Promise<AIModel[]> {
     try {
-      const apiKey = await this.getApiKey();
-      
       // Try to fetch models from Anthropic API
       // Note: Anthropic doesn't have a public models endpoint, so we'll attempt it
       // but fall back to a curated list of known models
       try {
-        const response = await fetch(this.config.endpoints.models, {
-          headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json'
-          }
-        });
+        if (this.config.endpoints.models) {
+          const apiKey = await this.getApiKey();
+          const response = await fetch(this.config.endpoints.models, {
+            headers: {
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01',
+              'content-type': 'application/json'
+            }
+          });
 
-        if (response.ok) {
-          const data = await response.json();
-          // Transform Anthropic API response to our model format
-          if (data.data && Array.isArray(data.data)) {
-            return data.data.map((model: any) => ({
-              id: model.id,
-              name: model.display_name || model.id,
-              description: this.getModelDescription(model.id),
-              contextWindow: this.getContextWindow(model.id),
-              maxTokens: this.getMaxTokens(model.id),
-              inputCost: this.getInputCost(model.id),
-              outputCost: this.getOutputCost(model.id),
-              features: {
-                streaming: this.config.features.streaming,
-                functionCalling: this.config.features.functionCalling,
-                vision: this.config.features.vision,
-                codeGeneration: true
-              }
-            }));
+          if (response.ok) {
+            const data = await response.json();
+            // Transform Anthropic API response to our model format
+            if (data.data && Array.isArray(data.data)) {
+              return data.data.map((model: any) => ({
+                id: model.id,
+                name: model.display_name || model.id,
+                description: this.getModelDescription(model.id),
+                contextWindow: this.getContextWindow(model.id),
+                maxTokens: this.getMaxTokens(model.id),
+                inputCost: this.getInputCost(model.id),
+                outputCost: this.getOutputCost(model.id),
+                features: {
+                  streaming: this.config.features.streaming,
+                  functionCalling: this.config.features.functionCalling,
+                  vision: this.config.features.vision,
+                  codeGeneration: true
+                }
+              }));
+            }
           }
         }
       } catch (apiError) {
@@ -264,62 +265,63 @@ export class AnthropicProvider implements AIProvider {
   }
 
   async chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
-    const apiKey = await this.getApiKey();
-    
-    // Convert our standard format to Anthropic's format
-    const anthropicRequest = this.convertToAnthropicFormat(request);
-    
-    const response = await fetch(this.config.endpoints.chat, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify(anthropicRequest)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Anthropic API error: ${response.status} ${errorText}`);
+    if (!this.config.endpoints.chat) {
+      throw new Error('Chat endpoint is not configured for this provider.');
     }
 
-    const data = await response.json();
-    return this.convertFromAnthropicFormat(data, request.model);
+    try {
+      const apiKey = await this.getApiKey();
+      const body = this.convertToAnthropicFormat(request);
+
+      const response = await fetch(this.config.endpoints.chat, {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return this.convertFromAnthropicFormat(data, request.model);
+    } catch (error) {
+      console.error('Error in chatCompletion:', error);
+      throw error;
+    }
   }
 
   async *streamChatCompletion(request: ChatCompletionRequest): AsyncGenerator<StreamingChatResponse> {
+    if (!this.config.endpoints.chat) {
+      throw new Error('Chat endpoint is not configured for this provider.');
+    }
     const apiKey = await this.getApiKey();
-    
-    const anthropicRequest = {
-      ...this.convertToAnthropicFormat(request),
-      stream: true
-    };
-    
-    const response = await fetch(this.config.endpoints.chat, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify(anthropicRequest)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Anthropic API error: ${response.status} ${errorText}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
+    const body = this.convertToAnthropicFormat({ ...request, stream: true });
 
     try {
+      const response = await fetch(this.config.endpoints.chat, {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+          'accept': 'text/event-stream'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!response.body) {
+        throw new Error('Response body is null');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -330,50 +332,40 @@ export class AnthropicProvider implements AIProvider {
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-              return;
-            }
-
-            try {
-              const parsed = JSON.parse(data);
-              const converted = this.convertStreamFromAnthropicFormat(parsed, request.model);
-              if (converted) {
-                yield converted;
-              }
-            } catch (error) {
-              console.error('Error parsing streaming response:', error);
+            const jsonStr = line.substring(6);
+            const data = JSON.parse(jsonStr);
+            const chunk = this.convertStreamFromAnthropicFormat(data, request.model);
+            if (chunk) {
+              yield chunk;
             }
           }
         }
       }
-    } finally {
-      reader.releaseLock();
+    } catch (error) {
+      console.error('Error in streamChatCompletion:', error);
+      throw error;
     }
   }
 
   async validateCredentials(apiKey?: string): Promise<boolean> {
-    const keyToValidate = apiKey || this.apiKey;
-    if (!keyToValidate) {
-      return false;
+    const keyToValidate = apiKey || await this.getApiKey();
+    if (!keyToValidate) return false;
+
+    if (!this.config.endpoints.models) {
+      // If no models endpoint, we can't truly validate, so we'll rely on a basic format check
+      return keyToValidate.startsWith('sk-ant-api03-');
     }
 
     try {
-      const testResponse = await fetch(this.config.endpoints.chat, {
-        method: 'POST',
+      const response = await fetch(this.config.endpoints.models, {
+        method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
           'x-api-key': keyToValidate,
           'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: this.config.defaultModel,
-          max_tokens: 1,
-          messages: [{ role: 'user', content: 'Hi' }]
-        })
+        }
       });
 
-      return testResponse.ok || testResponse.status === 429; // 429 is rate limit, which means API key is valid
+      return response.ok || response.status === 429; // 429 is rate limit, which means API key is valid
     } catch (error) {
       console.error('Error validating Anthropic credentials:', error);
       return false;
@@ -386,12 +378,11 @@ export class AnthropicProvider implements AIProvider {
       if (!isValid) {
         return { success: false, error: 'Invalid API key' };
       }
-
       return { success: true };
     } catch (error) {
       return { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+        error: error instanceof Error ? error.message : 'An unknown error occurred' 
       };
     }
   }

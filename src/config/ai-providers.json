@@ -26,19 +26,20 @@
         "tokensPerMinute": 40000
       }
     },
-    "anthropic-cli": {
-      "id": "anthropic-cli",
-      "name": "Claude CLI",
-      "description": "Local Claude CLI tool for development",
+    "claude-cli": {
+      "id": "claude-cli",
+      "name": "Claude Code",
+      "description": "Local Claude Code tool - model selection controlled by CLI configuration",
       "endpoints": {
-        "models": "local://claude/models",
-        "chat": "local://claude/chat",
-        "completion": "local://claude/complete"
+        "models": null,
+        "chat": null,
+        "completion": null
       },
       "authentication": {
-        "type": "local"
+        "type": "cli"
       },
-      "defaultModel": "claude-sonnet-4-20250514",
+      "defaultModel": "claude-cli-configured",
+      "modelSelectionDisabled": true,
       "features": {
         "streaming": true,
         "functionCalling": true,

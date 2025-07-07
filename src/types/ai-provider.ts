@@ -15,13 +15,13 @@ export interface AIModel {
 }
 
 export interface AIProviderEndpoints {
-  models: string;
-  chat: string;
-  completion: string;
+  models: string | null;
+  chat: string | null;
+  completion: string | null;
 }
 
 export interface AIProviderAuthentication {
-  type: 'bearer' | 'api-key' | 'local';
+  type: 'bearer' | 'api-key' | 'local' | 'cli';
   header?: string;
 }
 
@@ -50,6 +50,7 @@ export interface AIProviderConfig {
   endpoints: AIProviderEndpoints;
   authentication: AIProviderAuthentication;
   defaultModel: string;
+  modelSelectionDisabled?: boolean;
   features: AIProviderFeatures;
   rateLimit?: AIProviderRateLimit;
   requirements?: AIProviderRequirements;

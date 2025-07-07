@@ -48,6 +48,9 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async getModels(): Promise<AIModel[]> {
+    if (!this.config.endpoints.models) {
+      return this.getFallbackModels();
+    }
     try {
       const apiKey = await this.getApiKey();
       
@@ -225,6 +228,9 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
+    if (!this.config.endpoints.chat) {
+      throw new Error('Chat endpoint is not configured for this provider.');
+    }
     const apiKey = await this.getApiKey();
     
     const openaiRequest = {
@@ -254,6 +260,9 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async *streamChatCompletion(request: ChatCompletionRequest): AsyncGenerator<StreamingChatResponse> {
+    if (!this.config.endpoints.chat) {
+      throw new Error('Chat endpoint is not configured for this provider.');
+    }
     const apiKey = await this.getApiKey();
     
     const openaiRequest = {
@@ -317,9 +326,12 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async validateCredentials(apiKey?: string): Promise<boolean> {
-    const keyToValidate = apiKey || this.apiKey;
-    if (!keyToValidate) {
-      return false;
+    const keyToValidate = apiKey || await this.getApiKey();
+    if (!keyToValidate) return false;
+
+    if (!this.config.endpoints.models) {
+      // If no models endpoint, we can't truly validate, so we'll rely on a basic format check
+      return keyToValidate.startsWith('sk-');
     }
 
     try {
@@ -328,7 +340,6 @@ export class OpenAIProvider implements AIProvider {
           'Authorization': `Bearer ${keyToValidate}`
         }
       });
-
       return response.ok;
     } catch (error) {
       console.error('Error validating OpenAI credentials:', error);

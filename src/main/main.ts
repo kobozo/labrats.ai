@@ -1159,8 +1159,8 @@ ipcMain.handle('execute-claude-command', async (event, request: any) => {
   const { spawn } = require('child_process');
   
   try {
-    // This is a placeholder for Claude CLI execution
-    // The actual implementation would depend on the Claude CLI API
+    // This is a placeholder for Claude Code execution
+    // The actual implementation would depend on the Claude Code API
     return new Promise((resolve, reject) => {
       const args = [
         'chat',
@@ -1196,7 +1196,7 @@ ipcMain.handle('execute-claude-command', async (event, request: any) => {
             success: true,
             content: output.trim(),
             usage: {
-              promptTokens: 0, // Claude CLI might not provide this
+              promptTokens: 0, // Claude Code might not provide this
               completionTokens: 0,
               totalTokens: 0
             }
@@ -1204,7 +1204,7 @@ ipcMain.handle('execute-claude-command', async (event, request: any) => {
         } else {
           resolve({
             success: false,
-            error: errorOutput || `Claude CLI exited with code ${code}`
+            error: errorOutput || `Claude Code exited with code ${code}`
           });
         }
       });
@@ -1212,7 +1212,7 @@ ipcMain.handle('execute-claude-command', async (event, request: any) => {
       child.on('error', (error: Error) => {
         resolve({
           success: false,
-          error: `Failed to execute Claude CLI: ${error.message}`
+          error: `Failed to execute Claude Code: ${error.message}`
         });
       });
       

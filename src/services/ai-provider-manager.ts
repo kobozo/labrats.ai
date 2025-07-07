@@ -1,6 +1,6 @@
 import { AIProvider, AIProviderManager, AIProviderConfig, AIProvidersConfig } from '../types/ai-provider';
 import { AnthropicProvider } from './providers/anthropic';
-import { AnthropicCLIProvider } from './providers/anthropic-cli';
+import { ClaudeCLIProvider } from './providers/anthropic-cli';
 import aiProvidersConfig from '../config/ai-providers.json';
 
 export class AIProviderManagerImpl implements AIProviderManager {
@@ -20,11 +20,11 @@ export class AIProviderManagerImpl implements AIProviderManager {
       this.providers.set('anthropic', anthropicProvider);
     }
 
-    // Initialize Anthropic CLI provider
-    const anthropicCliConfig = this.config.providers['anthropic-cli'];
-    if (anthropicCliConfig) {
-      const anthropicCliProvider = new AnthropicCLIProvider(anthropicCliConfig);
-      this.providers.set('anthropic-cli', anthropicCliProvider);
+    // Initialize Claude Code provider
+    const claudeCliConfig = this.config.providers['claude-cli'];
+    if (claudeCliConfig) {
+      const claudeCliProvider = new ClaudeCLIProvider(claudeCliConfig);
+      this.providers.set('claude-cli', claudeCliProvider);
     }
 
     // Future providers can be added here

@@ -673,25 +673,43 @@ export const Settings: React.FC = () => {
           <div>
             <label className="text-white font-medium block mb-2">AI Model</label>
             <div className="relative">
-              <select
-                value={selectedModel}
-                onChange={(e) => handleModelChange(e.target.value)}
-                disabled={loadingModels || !selectedProvider}
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none disabled:opacity-50"
-              >
-                <option value="">
-                  {loadingModels ? 'Loading models...' : 'Select AI Model'}
-                </option>
-                {availableModels.map(model => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
+              {(() => {
+                const selectedProviderObj = availableProviders.find(p => p.id === selectedProvider);
+                const isModelSelectionDisabled = selectedProviderObj?.config.modelSelectionDisabled;
+                
+                return (
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => handleModelChange(e.target.value)}
+                    disabled={loadingModels || !selectedProvider || isModelSelectionDisabled}
+                    className={`w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none disabled:opacity-50 ${
+                      isModelSelectionDisabled ? 'cursor-not-allowed' : ''
+                    }`}
+                  >
+                    <option value="">
+                      {loadingModels ? 'Loading models...' : 
+                       isModelSelectionDisabled ? 'Model controlled by CLI configuration' : 
+                       'Select AI Model'}
+                    </option>
+                    {availableModels.map(model => (
+                      <option key={model.id} value={model.id}>
+                        {model.name}
+                      </option>
+                    ))}
+                  </select>
+                );
+              })()}
               <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             </div>
             <p className="text-gray-400 text-sm mt-1">
-              Choose the default model for AI operations
+              {(() => {
+                const selectedProviderObj = availableProviders.find(p => p.id === selectedProvider);
+                const isModelSelectionDisabled = selectedProviderObj?.config.modelSelectionDisabled;
+                
+                return isModelSelectionDisabled 
+                  ? 'Model selection is controlled by the CLI configuration. Use the Claude Code to change models.'
+                  : 'Choose the default model for AI operations';
+              })()}
             </p>
             
             {/* Model Info */}
@@ -701,9 +719,19 @@ export const Settings: React.FC = () => {
                   const model = availableModels.find(m => m.id === selectedModel);
                   if (!model) return null;
                   
+                  const selectedProviderObj = availableProviders.find(p => p.id === selectedProvider);
+                  const isModelSelectionDisabled = selectedProviderObj?.config.modelSelectionDisabled;
+                  
                   return (
                     <div className="space-y-2">
-                      <h4 className="text-white font-medium text-sm">{model.name}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-white font-medium text-sm">{model.name}</h4>
+                        {isModelSelectionDisabled && (
+                          <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded">
+                            CLI Controlled
+                          </span>
+                        )}
+                      </div>
                       {model.description && (
                         <p className="text-gray-400 text-sm">{model.description}</p>
                       )}

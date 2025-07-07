@@ -7,9 +7,9 @@ import {
   StreamingChatResponse
 } from '../../types/ai-provider';
 
-export class AnthropicCLIProvider implements AIProvider {
-  public readonly id = 'anthropic-cli';
-  public readonly name = 'Claude CLI';
+export class ClaudeCLIProvider implements AIProvider {
+  public readonly id = 'claude-cli';
+  public readonly name = 'Claude Code';
   public readonly config: AIProviderConfig;
 
   constructor(config: AIProviderConfig) {
@@ -18,10 +18,10 @@ export class AnthropicCLIProvider implements AIProvider {
 
   async isAvailable(): Promise<boolean> {
     try {
-      // Check if Claude CLI is installed and accessible
+      // Check if Claude Code is installed and accessible
       return await this.checkClaudeCliInstallation();
     } catch (error) {
-      console.error('Error checking Claude CLI availability:', error);
+      console.error('Error checking Claude Code availability:', error);
       return false;
     }
   }
@@ -42,61 +42,28 @@ export class AnthropicCLIProvider implements AIProvider {
   }
 
   async getModels(): Promise<AIModel[]> {
-    try {
-      // For Claude CLI, we'll use the same models as the API version
-      // but indicate they're running through CLI
-      const models: AIModel[] = [
-        {
-          id: 'claude-3-5-sonnet-20241022',
-          name: 'Claude 3.5 Sonnet (CLI)',
-          description: 'Most intelligent model via Claude CLI',
-          contextWindow: 200000,
-          maxTokens: 8192,
-          features: {
-            streaming: true,
-            functionCalling: true,
-            vision: true,
-            codeGeneration: true
-          }
-        },
-        {
-          id: 'claude-3-opus-20240229',
-          name: 'Claude 3 Opus (CLI)',
-          description: 'Powerful model via Claude CLI',
-          contextWindow: 200000,
-          maxTokens: 4096,
-          features: {
-            streaming: true,
-            functionCalling: true,
-            vision: true,
-            codeGeneration: true
-          }
-        },
-        {
-          id: 'claude-3-sonnet-20240229',
-          name: 'Claude 3 Sonnet (CLI)',
-          description: 'Balance of intelligence and speed via Claude CLI',
-          contextWindow: 200000,
-          maxTokens: 4096,
-          features: {
-            streaming: true,
-            functionCalling: true,
-            vision: true,
-            codeGeneration: true
-          }
+    // Claude Code doesn't allow model selection - it uses whatever model is configured in the CLI
+    // Return a single placeholder model to indicate this
+    return [
+      {
+        id: 'claude-cli-configured',
+        name: 'Claude Code (Configured Model)',
+        description: 'Model selection is controlled by Claude Code configuration.',
+        contextWindow: 200000,
+        maxTokens: 32000,
+        features: {
+          streaming: true,
+          functionCalling: true,
+          vision: true,
+          codeGeneration: true
         }
-      ];
-
-      return models;
-    } catch (error) {
-      console.error('Error fetching Claude CLI models:', error);
-      return [];
-    }
+      }
+    ];
   }
 
   async chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
     try {
-      // This would execute the Claude CLI command through the main process
+      // This would execute the Claude Code command through the main process
       // For now, we'll use a placeholder that would need IPC implementation
       if (typeof window !== 'undefined' && window.electronAPI) {
         const result = await window.electronAPI.executeClaudeCommand?.({
@@ -126,14 +93,14 @@ export class AnthropicCLIProvider implements AIProvider {
         }
       }
 
-      throw new Error('Claude CLI execution failed');
+      throw new Error('Claude Code execution failed');
     } catch (error) {
-      throw new Error(`Claude CLI error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(`Claude Code error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   async *streamChatCompletion(request: ChatCompletionRequest): AsyncGenerator<StreamingChatResponse> {
-    // Claude CLI streaming would be implemented through IPC with the main process
+    // Claude Code streaming would be implemented through IPC with the main process
     // For now, we'll fall back to non-streaming and yield the result
     try {
       const response = await this.chatCompletion(request);
@@ -180,7 +147,7 @@ export class AnthropicCLIProvider implements AIProvider {
       if (!isAvailable) {
         return { 
           success: false, 
-          error: 'Claude CLI not found. Please install it with: npm install -g @anthropic-ai/claude-cli' 
+          error: 'Claude Code not found. Please install it with: npm install -g @anthropic-ai/claude-cli' 
         };
       }
 

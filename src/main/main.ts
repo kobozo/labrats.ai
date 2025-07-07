@@ -5,6 +5,7 @@ import * as os from 'os';
 import Store from 'electron-store';
 import { ConfigManager } from './config';
 import { GitService } from './gitService';
+import { TerminalService } from './terminalService';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -48,6 +49,7 @@ const windows = new Map<number, BrowserWindow>();
 const windowProjects = new Map<number, string>();
 const configManager = new ConfigManager();
 const gitServices = new Map<number, GitService>();
+const terminalService = TerminalService.getInstance();
 
 function createWindow(projectPath?: string, windowState?: WindowState): BrowserWindow {
   const defaultBounds = {
@@ -465,6 +467,50 @@ ipcMain.handle('get-env', async (event, key: string) => {
   return process.env[key];
 });
 
+// File search handler
+ipcMain.handle('search-files', async (event, rootPath: string, query: string, limit: number = 20) => {
+  const results: Array<{ name: string; path: string; type: 'file' | 'directory' }> = [];
+
+  const searchRecursive = async (dir: string) => {
+    try {
+      const items = await fs.promises.readdir(dir, { withFileTypes: true });
+      
+      for (const item of items) {
+        if (results.length >= limit) break;
+        
+        // Skip hidden files and common ignore patterns
+        if (item.name.startsWith('.') || 
+            item.name === 'node_modules' || 
+            item.name === 'dist' || 
+            item.name === '.git') {
+          continue;
+        }
+        
+        const fullPath = path.join(dir, item.name);
+        
+        // Check if name matches query (case-insensitive) or show all if query is empty
+        if (!query || item.name.toLowerCase().includes(query.toLowerCase())) {
+          results.push({
+            name: item.name,
+            path: fullPath,
+            type: item.isDirectory() ? 'directory' : 'file'
+          });
+        }
+        
+        // Recursively search directories
+        if (item.isDirectory() && results.length < limit) {
+          await searchRecursive(fullPath);
+        }
+      }
+    } catch (error) {
+      console.error('Error searching directory:', dir, error);
+    }
+  };
+  
+  await searchRecursive(rootPath);
+  return results;
+});
+
 // Config IPC handlers
 ipcMain.handle('get-config', async (event, key?: string, property?: string) => {
   if (key && property) {
@@ -755,6 +801,96 @@ ipcMain.handle('git-fetch', async (event) => {
   if (!gitService || !gitService.isInitialized()) return { success: false, message: 'Git not initialized' };
   
   return await gitService.fetch();
+});
+
+// Terminal IPC handlers
+ipcMain.handle('terminal-create', async (event, options: { cwd: string; cols: number; rows: number }) => {
+  try {
+    const terminalProcess = await terminalService.createTerminal(options);
+    
+    // Set up data forwarding for this terminal
+    terminalService.on('terminal-data', (pid: number, data: string) => {
+      event.sender.send('terminal-data', pid, data);
+    });
+    
+    terminalService.on('terminal-exit', (pid: number, exitCode: number) => {
+      event.sender.send('terminal-exit', pid, exitCode);
+    });
+    
+    return terminalProcess;
+  } catch (error) {
+    console.error('Failed to create terminal:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('terminal-write', async (event, pid: number, data: string) => {
+  try {
+    terminalService.writeToTerminal(pid, data);
+  } catch (error) {
+    console.error('Failed to write to terminal:', error);
+  }
+});
+
+ipcMain.handle('terminal-resize', async (event, pid: number, cols: number, rows: number) => {
+  try {
+    terminalService.resizeTerminal(pid, cols, rows);
+  } catch (error) {
+    console.error('Failed to resize terminal:', error);
+  }
+});
+
+ipcMain.handle('terminal-kill', async (event, pid: number) => {
+  try {
+    terminalService.killTerminal(pid);
+  } catch (error) {
+    console.error('Failed to kill terminal:', error);
+  }
+});
+
+ipcMain.handle('terminal-check-iterm', async (event) => {
+  try {
+    return await terminalService.checkItermAvailability();
+  } catch (error) {
+    console.error('Failed to check iTerm availability:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('terminal-open-iterm', async (event, cwd: string) => {
+  try {
+    return await terminalService.openInIterm(cwd);
+  } catch (error) {
+    console.error('Failed to open iTerm:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('terminal-change-cwd', async (event, pid: number, newCwd: string) => {
+  try {
+    return await terminalService.changeWorkingDirectory(pid, newCwd);
+  } catch (error) {
+    console.error('Failed to change working directory:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('terminal-get-title', async (event, pid: number) => {
+  try {
+    return await terminalService.getTerminalTitle(pid);
+  } catch (error) {
+    console.error('Failed to get terminal title:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('terminal-set-title', async (event, pid: number, title: string) => {
+  try {
+    return await terminalService.setTerminalTitle(pid, title);
+  } catch (error) {
+    console.error('Failed to set terminal title:', error);
+    return false;
+  }
 });
 
 function formatFileSize(bytes: number): string {

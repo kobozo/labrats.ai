@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRecentProjects: () => ipcRenderer.invoke('get-recent-projects'),
   removeRecentProject: (path: string) => ipcRenderer.invoke('remove-recent-project', path),
   getEnv: (key: string) => ipcRenderer.invoke('get-env', key),
+  searchFiles: (rootPath: string, query: string, limit?: number) => ipcRenderer.invoke('search-files', rootPath, query, limit),
   
   // Config API
   config: {
@@ -46,5 +47,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
     pull: () => ipcRenderer.invoke('git-pull'),
     push: () => ipcRenderer.invoke('git-push'),
     fetch: () => ipcRenderer.invoke('git-fetch'),
+  },
+  
+  // Terminal API
+  terminal: {
+    create: (options: { cwd: string; cols: number; rows: number }) => ipcRenderer.invoke('terminal-create', options),
+    write: (pid: number, data: string) => ipcRenderer.invoke('terminal-write', pid, data),
+    resize: (pid: number, cols: number, rows: number) => ipcRenderer.invoke('terminal-resize', pid, cols, rows),
+    kill: (pid: number) => ipcRenderer.invoke('terminal-kill', pid),
+    onData: (pid: number, callback: (data: string) => void) => {
+      const listener = (_event: any, terminalPid: number, data: string) => {
+        if (terminalPid === pid) {
+          callback(data);
+        }
+      };
+      ipcRenderer.on('terminal-data', listener);
+      return () => ipcRenderer.removeListener('terminal-data', listener);
+    },
+    onExit: (pid: number, callback: (code: number) => void) => {
+      const listener = (_event: any, terminalPid: number, exitCode: number) => {
+        if (terminalPid === pid) {
+          callback(exitCode);
+        }
+      };
+      ipcRenderer.on('terminal-exit', listener);
+      return () => ipcRenderer.removeListener('terminal-exit', listener);
+    },
+    checkIterm: () => ipcRenderer.invoke('terminal-check-iterm'),
+    openInIterm: (cwd: string) => ipcRenderer.invoke('terminal-open-iterm', cwd),
+    changeCwd: (pid: number, newCwd: string) => ipcRenderer.invoke('terminal-change-cwd', pid, newCwd),
+    getTitle: (pid: number) => ipcRenderer.invoke('terminal-get-title', pid),
+    setTitle: (pid: number, title: string) => ipcRenderer.invoke('terminal-set-title', pid, title),
   },
 });

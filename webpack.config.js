@@ -13,6 +13,9 @@ module.exports = [
       path: path.resolve(__dirname, 'dist/main'),
       filename: 'main.js',
     },
+    externals: {
+      'node-pty': 'commonjs2 node-pty'
+    },
     module: {
       rules: [
         {

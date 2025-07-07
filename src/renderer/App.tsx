@@ -5,6 +5,7 @@ import { KanbanBoard } from './components/KanbanBoard';
 import { Documentation } from './components/Documentation';
 import { FileExplorer } from './components/FileExplorer';
 import { GitExplorer } from './components/GitExplorer';
+import { TerminalComponent } from './components/TerminalComponent';
 import { Settings } from './components/Settings';
 import { Account } from './components/Account';
 import { StartScreen } from './components/StartScreen';
@@ -22,11 +23,12 @@ import {
   GitBranch,
   User,
   Crown,
-  Folder
+  Folder,
+  Terminal
 } from 'lucide-react';
 import './App.css';
 
-type ActiveView = 'chat' | 'dashboard' | 'kanban' | 'docs' | 'files' | 'git' | 'settings' | 'account';
+type ActiveView = 'chat' | 'dashboard' | 'kanban' | 'docs' | 'files' | 'git' | 'terminal' | 'settings' | 'account';
 
 function App() {
   const [activeView, setActiveView] = useState<ActiveView>('chat');
@@ -177,6 +179,12 @@ function App() {
       label: 'Source Control', 
       icon: GitBranch,
       description: 'Git version control and diff viewer'
+    },
+    { 
+      id: 'terminal' as const, 
+      label: 'Terminal', 
+      icon: Terminal,
+      description: 'Integrated terminal with multiple sessions'
     },
     { 
       id: 'dashboard' as const, 
@@ -334,6 +342,10 @@ function App() {
             
             {activeView === 'git' && (
               <GitExplorer currentFolder={currentFolder} />
+            )}
+            
+            {activeView === 'terminal' && (
+              <TerminalComponent currentFolder={currentFolder} />
             )}
             
             {activeView === 'dashboard' && (

@@ -1222,9 +1222,6 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
               className="bg-gray-800 rounded-lg border border-gray-700 flex-1 overflow-hidden min-h-0 flex flex-col"
               style={isDebugMode ? { border: '2px solid yellow' } : {}}
             >
-              <div className="p-4 border-b border-gray-700 flex-shrink-0">
-                <h3 className="text-lg font-semibold text-white">Changes2</h3>
-              </div>
               <div 
                 className="flex-1 bg-gray-900 overflow-hidden w-full min-h-0"
                 style={isDebugMode ? { border: '2px solid purple', height: '100%' } : { height: '100%' }}

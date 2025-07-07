@@ -94,6 +94,22 @@ export interface GitAPI {
   fetch: () => Promise<{ success: boolean; message: string }>;
 }
 
+export interface TerminalProcess {
+  pid: number;
+  cols: number;
+  rows: number;
+}
+
+export interface TerminalAPI {
+  create: (options: { cwd: string; cols: number; rows: number }) => Promise<TerminalProcess>;
+  write: (pid: number, data: string) => Promise<void>;
+  resize: (pid: number, cols: number, rows: number) => Promise<void>;
+  kill: (pid: number) => Promise<void>;
+  onData: (pid: number, callback: (data: string) => void) => void;
+  onExit: (pid: number, callback: (code: number) => void) => void;
+  checkIterm: () => Promise<boolean>;
+}
+
 export interface ElectronAPI {
   openFolder: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   readDirectory: (dirPath: string) => Promise<FileNode[]>;
@@ -102,8 +118,10 @@ export interface ElectronAPI {
   getRecentProjects: () => Promise<RecentProject[]>;
   removeRecentProject: (path: string) => Promise<RecentProject[]>;
   getEnv: (key: string) => Promise<string | undefined>;
+  searchFiles: (rootPath: string, query: string, limit?: number) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
   config: ConfigAPI;
   git: GitAPI;
+  terminal?: TerminalAPI;
 }
 
 declare global {

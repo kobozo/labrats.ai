@@ -379,9 +379,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder }) => 
                 className="bg-gray-800 rounded-lg border border-gray-700 flex-1 flex flex-col min-h-0 overflow-hidden w-full"
                 style={isDebugMode ? { border: '2px solid yellow' } : {}}
               >
-                <div className="p-4 border-b border-gray-700 flex-shrink-0">
-                  <h3 className="text-lg font-semibold text-white">File Contents</h3>
-                </div>
                 <div 
                   className="flex-1 bg-gray-900 overflow-hidden w-full"
                   style={isDebugMode ? { border: '2px solid purple' } : {}}

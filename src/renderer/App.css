@@ -57,3 +57,79 @@ body {
   height: 32px;
   font-size: 24px;
 }
+
+/* Syntax highlighting styles for code blocks */
+.hljs {
+  display: block;
+  overflow-x: auto;
+  background: #1f2937 !important;
+  color: #d1d5db !important;
+  padding: 0.75rem !important;
+  border-radius: 0.375rem !important;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #6b7280 !important;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-addition {
+  color: #f59e0b !important;
+}
+
+.hljs-number,
+.hljs-string,
+.hljs-meta .hljs-string,
+.hljs-literal,
+.hljs-doctag,
+.hljs-regexp {
+  color: #10b981 !important;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #3b82f6 !important;
+}
+
+.hljs-attribute,
+.hljs-attr,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-class .hljs-title,
+.hljs-type {
+  color: #8b5cf6 !important;
+}
+
+.hljs-symbol,
+.hljs-bullet,
+.hljs-subst,
+.hljs-meta,
+.hljs-meta .hljs-keyword,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-link {
+  color: #ef4444 !important;
+}
+
+.hljs-built_in,
+.hljs-deletion {
+  color: #f97316 !important;
+}
+
+.hljs-formula {
+  background: #374151 !important;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}

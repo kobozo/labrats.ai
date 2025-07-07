@@ -24,6 +24,9 @@ import {
   Building,
   FileText
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 import { getLangChainChatService } from '../../services/langchain-chat-service';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
 import { getPromptManager } from '../../services/prompt-manager';
@@ -468,7 +471,33 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
                 </div>
                 
                 <div className="pl-11">
-                  <p className="text-white text-sm leading-relaxed">{message.content}</p>
+                  <div className="text-white text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeHighlight]}
+                      components={{
+                        // Custom styling for markdown elements
+                        h1: ({node, ...props}) => <h1 className="text-lg font-bold text-white mb-2" {...props} />,
+                        h2: ({node, ...props}) => <h2 className="text-base font-bold text-white mb-2" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-sm font-bold text-white mb-1" {...props} />,
+                        p: ({node, ...props}) => <p className="text-white mb-2 last:mb-0" {...props} />,
+                        code: ({node, inline, ...props}: any) => 
+                          inline 
+                            ? <code className="bg-gray-800 text-blue-300 px-1 py-0.5 rounded text-xs" {...props} />
+                            : <code className="block bg-gray-800 text-green-300 p-3 rounded mt-2 mb-2 overflow-x-auto text-xs" {...props} />,
+                        pre: ({node, ...props}) => <pre className="bg-gray-800 rounded mt-2 mb-2 overflow-x-auto" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc list-inside text-white mb-2 space-y-1" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal list-inside text-white mb-2 space-y-1" {...props} />,
+                        li: ({node, ...props}) => <li className="text-white" {...props} />,
+                        blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 pl-4 italic text-gray-300 my-2" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-bold text-white" {...props} />,
+                        em: ({node, ...props}) => <em className="italic text-white" {...props} />,
+                        a: ({node, ...props}) => <a className="text-blue-400 hover:text-blue-300 underline" {...props} />,
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  </div>
                   
                   {message.metadata && (
                     <div className="mt-3 p-3 bg-gray-600 rounded border-l-4 border-blue-500">

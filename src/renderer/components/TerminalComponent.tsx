@@ -24,9 +24,10 @@ interface FileSearchResult {
 
 interface TerminalComponentProps {
   currentFolder: string | null;
+  isVisible?: boolean;
 }
 
-export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFolder }) => {
+export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFolder, isVisible = true }) => {
   const [terminals, setTerminals] = useState<TerminalSession[]>([]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -320,6 +321,24 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
       createNewTerminal();
     }
   }, []);
+
+  // Handle visibility changes - refresh terminal when becoming visible
+  useEffect(() => {
+    if (isVisible && terminals.length > 0) {
+      // Refresh terminal display when becoming visible
+      setTimeout(() => {
+        terminals.forEach(terminal => {
+          if (terminal.fitAddon && terminal.terminal) {
+            try {
+              terminal.fitAddon.fit();
+            } catch (error) {
+              console.warn('Error fitting terminal on visibility change:', error);
+            }
+          }
+        });
+      }, 100);
+    }
+  }, [isVisible, terminals]);
 
   // Handle window resize with debouncing
   useEffect(() => {

@@ -344,9 +344,12 @@ function App() {
               <GitExplorer currentFolder={currentFolder} />
             )}
             
-            {activeView === 'terminal' && (
-              <TerminalComponent currentFolder={currentFolder} />
-            )}
+            <div style={{ display: activeView === 'terminal' ? 'block' : 'none', height: '100%' }}>
+              <TerminalComponent 
+                currentFolder={currentFolder} 
+                isVisible={activeView === 'terminal'}
+              />
+            </div>
             
             {activeView === 'dashboard' && (
               <Dashboard />

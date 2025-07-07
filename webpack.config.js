@@ -79,10 +79,14 @@ module.exports = [
           test: /\.css$/,
           use: ['style-loader', 'css-loader', 'postcss-loader'],
         },
+        {
+          test: /\.prompt$/,
+          type: 'asset/source',
+        },
       ],
     },
     resolve: {
-      extensions: ['.tsx', '.ts', '.js'],
+      extensions: ['.tsx', '.ts', '.js', '.prompt'],
     },
     plugins: [
       new HtmlWebpackPlugin({

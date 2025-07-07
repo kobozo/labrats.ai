@@ -601,6 +601,92 @@ ipcMain.handle('get-config-path', async () => {
   return configManager.getConfigPath();
 });
 
+ipcMain.handle('get-config-dir', async () => {
+  return LABRATS_CONFIG_DIR;
+});
+
+// Prompt file handlers
+ipcMain.handle('prompt-read', async (event, agentId: string) => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    const promptPath = path.join(promptsDir, `${agentId}.prompt`);
+    
+    if (fs.existsSync(promptPath)) {
+      return fs.readFileSync(promptPath, 'utf-8');
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`Failed to read prompt for ${agentId}:`, error);
+    return null;
+  }
+});
+
+ipcMain.handle('prompt-write', async (event, agentId: string, content: string) => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    
+    // Ensure prompts directory exists
+    if (!fs.existsSync(promptsDir)) {
+      fs.mkdirSync(promptsDir, { recursive: true });
+    }
+    
+    const promptPath = path.join(promptsDir, `${agentId}.prompt`);
+    fs.writeFileSync(promptPath, content, 'utf-8');
+    
+    return true;
+  } catch (error) {
+    console.error(`Failed to write prompt for ${agentId}:`, error);
+    return false;
+  }
+});
+
+ipcMain.handle('prompt-delete', async (event, agentId: string) => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    const promptPath = path.join(promptsDir, `${agentId}.prompt`);
+    
+    if (fs.existsSync(promptPath)) {
+      fs.unlinkSync(promptPath);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error(`Failed to delete prompt for ${agentId}:`, error);
+    return false;
+  }
+});
+
+ipcMain.handle('prompt-exists', async (event, agentId: string) => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    const promptPath = path.join(promptsDir, `${agentId}.prompt`);
+    
+    return fs.existsSync(promptPath);
+  } catch (error) {
+    console.error(`Failed to check prompt existence for ${agentId}:`, error);
+    return false;
+  }
+});
+
+ipcMain.handle('prompt-list-custom', async () => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    
+    if (!fs.existsSync(promptsDir)) {
+      return [];
+    }
+    
+    const files = fs.readdirSync(promptsDir);
+    return files
+      .filter(file => file.endsWith('.prompt'))
+      .map(file => file.replace('.prompt', ''));
+  } catch (error) {
+    console.error('Failed to list custom prompts:', error);
+    return [];
+  }
+});
+
 // Git IPC handlers
 ipcMain.handle('git-get-status', async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);

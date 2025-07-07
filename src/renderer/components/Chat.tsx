@@ -15,10 +15,18 @@ import {
   MessageSquare,
   Users,
   Brain,
-  Settings
+  Settings,
+  Target,
+  Search,
+  Shield,
+  Server,
+  Edit,
+  Building,
+  FileText
 } from 'lucide-react';
 import { getLangChainChatService } from '../../services/langchain-chat-service';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
+import { getPromptManager } from '../../services/prompt-manager';
 
 interface Agent {
   id: string;
@@ -52,36 +60,45 @@ interface ChatProps {
 
 const agents: Agent[] = [
   {
+    id: 'product-owner',
+    name: 'Cortex',
+    role: 'Product Owner',
+    color: 'teal',
+    icon: Target,
+    isActive: true,
+    specialization: ['product-strategy', 'requirements', 'user-research']
+  },
+  {
     id: 'team-leader',
     name: 'Team Leader',
     role: 'Orchestrator',
     color: 'blue',
     icon: Crown,
-    isActive: true,
+    isActive: false,
     specialization: ['project-management', 'architecture', 'coordination']
   },
   {
     id: 'contrarian',
-    name: 'Contrarian',
-    role: 'Critical Thinker',
+    name: 'Scratchy',
+    role: 'Contrarian Analyst',
     color: 'red', 
     icon: AlertTriangle,
-    isActive: true,
+    isActive: false,
     specialization: ['code-review', 'debugging', 'optimization']
   },
   {
     id: 'chaos-monkey',
-    name: 'Chaos Monkey',
-    role: 'Stress Tester',
+    name: 'Ziggy',
+    role: 'Chaos Monkey',
     color: 'orange',
     icon: Zap,
-    isActive: true,
+    isActive: false,
     specialization: ['testing', 'edge-cases', 'reliability']
   },
   {
     id: 'backend-dev',
-    name: 'Backend Dev',
-    role: 'Server Specialist',
+    name: 'Patchy',
+    role: 'Backend Developer',
     color: 'green',
     icon: Database,
     isActive: false,
@@ -89,8 +106,8 @@ const agents: Agent[] = [
   },
   {
     id: 'frontend-dev',
-    name: 'Frontend Dev',
-    role: 'UI/UX Expert',
+    name: 'Shiny',
+    role: 'Frontend Developer',
     color: 'purple',
     icon: Palette,
     isActive: false,
@@ -104,49 +121,65 @@ const agents: Agent[] = [
     icon: Code,
     isActive: false,
     specialization: ['frontend', 'backend', 'integration']
-  }
-];
-
-const mockMessages: Message[] = [
-  {
-    id: '1',
-    content: 'Welcome to the LabRats AI IDE! I\'m analyzing your project requirements. Based on your request for an AI-first IDE, I\'m bringing in our core team: Contrarian for critical review and Chaos Monkey for stress testing.',
-    sender: agents[0],
-    timestamp: new Date(Date.now() - 10 * 60 * 1000),
-    type: 'text'
   },
   {
-    id: '2', 
-    content: 'I see potential issues with the current architecture. We need to consider edge cases for multi-agent coordination. What happens when agents disagree on implementation?',
-    sender: agents[1],
-    timestamp: new Date(Date.now() - 8 * 60 * 1000),
-    type: 'text'
+    id: 'quality-engineer',
+    name: 'Sniffy',
+    role: 'Quality Engineer',
+    color: 'gray',
+    icon: Search,
+    isActive: false,
+    specialization: ['testing', 'quality-assurance', 'test-automation']
   },
   {
-    id: '3',
-    content: 'Let me stress test this! What if we have 100 concurrent chat sessions? Network failures? Memory leaks? I\'m adding chaos scenarios to our test suite.',
-    sender: agents[2],
-    timestamp: new Date(Date.now() - 6 * 60 * 1000),
-    type: 'text'
+    id: 'security-auditor',
+    name: 'Trappy',
+    role: 'Security Auditor',
+    color: 'slate',
+    icon: Shield,
+    isActive: false,
+    specialization: ['security', 'vulnerability-assessment', 'compliance']
   },
   {
-    id: '4',
-    content: 'I need to create a sophisticated chat interface with multi-agent support, automated code reviews, and git integration.',
-    sender: 'user',
-    timestamp: new Date(Date.now() - 5 * 60 * 1000),
-    type: 'text'
+    id: 'devops',
+    name: 'Wheelie',
+    role: 'Platform/DevOps',
+    color: 'cyan',
+    icon: Server,
+    isActive: false,
+    specialization: ['infrastructure', 'ci-cd', 'automation']
   },
   {
-    id: '5',
-    content: 'Perfect! I\'m bringing in our Frontend Dev for UI expertise. This requires complex state management, real-time updates, and beautiful interactions.',
-    sender: agents[0],
-    timestamp: new Date(Date.now() - 3 * 60 * 1000),
-    type: 'text'
+    id: 'code-reviewer',
+    name: 'Clawsy',
+    role: 'Code Reviewer',
+    color: 'rose',
+    icon: Edit,
+    isActive: false,
+    specialization: ['code-quality', 'standards', 'best-practices']
+  },
+  {
+    id: 'architect',
+    name: 'Nestor',
+    role: 'Architect',
+    color: 'violet',
+    icon: Building,
+    isActive: false,
+    specialization: ['system-design', 'architecture', 'technical-leadership']
+  },
+  {
+    id: 'document-writer',
+    name: 'Quill',
+    role: 'Document Writer',
+    color: 'amber',
+    icon: FileText,
+    isActive: false,
+    specialization: ['documentation', 'technical-writing', 'guides']
   }
 ];
 
 export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
-  const [messages, setMessages] = useState<Message[]>(mockMessages);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [activeAgents, setActiveAgents] = useState(agents.filter(a => a.isActive));
   const [isTyping, setIsTyping] = useState(false);
@@ -226,14 +259,14 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
     if (!isAiEnabled || !currentProviderId || !currentModelId) {
       // Fallback to mock response
       setIsTyping(true);
-      const teamLeader = agents[0];
-      setTypingAgent(teamLeader);
+      const currentAgent = agents[0]; // Product Owner
+      setTypingAgent(currentAgent);
       
       setTimeout(() => {
         const response: Message = {
           id: (Date.now() + 1).toString(),
           content: `AI providers are not configured yet. Please configure your AI provider in settings to enable real AI responses.`,
-          sender: teamLeader,
+          sender: currentAgent,
           timestamp: new Date(),
           type: 'text'
         };
@@ -247,15 +280,19 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
 
     // Use AI provider for real responses
     setIsTyping(true);
-    const teamLeader = agents[0];
-    setTypingAgent(teamLeader);
+    const currentAgent = agents[0]; // Product Owner is now the first agent
+    setTypingAgent(currentAgent);
 
     try {
+      // Get the prompt for the current agent
+      const promptManager = getPromptManager();
+      const agentPrompt = await promptManager.getPrompt(currentAgent.id);
+
       // Create streaming response
       const streamingMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: '',
-        sender: teamLeader,
+        sender: currentAgent,
         timestamp: new Date(),
         type: 'text',
         providerId: currentProviderId,
@@ -269,13 +306,8 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
       const generator = chatService.sendMessageStream(currentInput, {
         providerId: currentProviderId,
         modelId: currentModelId,
-        agentId: teamLeader.id,
-        systemPrompt: `You are ${teamLeader.name}, a ${teamLeader.role} in a software development team. Your specializations are: ${teamLeader.specialization.join(', ')}. 
-        
-        You are part of a multi-agent AI development team. Be concise, professional, and focus on your area of expertise. 
-        If the user's request requires other specialists, mention which team members should be involved.
-        
-        Current conversation context: You are in an AI-powered IDE chat interface where multiple AI agents collaborate on development tasks.`
+        agentId: currentAgent.id,
+        systemPrompt: agentPrompt
       });
 
       let fullContent = '';
@@ -317,7 +349,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
       const errorMessage: Message = {
         id: (Date.now() + 2).toString(),
         content: `Sorry, I encountered an error while processing your request: ${error instanceof Error ? error.message : 'Unknown error'}. Please check your AI provider configuration.`,
-        sender: teamLeader,
+        sender: currentAgent,
         timestamp: new Date(),
         type: 'text'
       };
@@ -345,7 +377,14 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
       orange: 'bg-orange-500',
       green: 'bg-green-500',
       purple: 'bg-purple-500',
-      indigo: 'bg-indigo-500'
+      indigo: 'bg-indigo-500',
+      teal: 'bg-teal-500',
+      gray: 'bg-gray-500',
+      slate: 'bg-slate-500',
+      cyan: 'bg-cyan-500',
+      rose: 'bg-rose-500',
+      violet: 'bg-violet-500',
+      amber: 'bg-amber-500'
     };
     return colors[agent.color as keyof typeof colors] || 'bg-gray-500';
   };
@@ -357,7 +396,14 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
       orange: 'text-orange-400',
       green: 'text-green-400',
       purple: 'text-purple-400',
-      indigo: 'text-indigo-400'
+      indigo: 'text-indigo-400',
+      teal: 'text-teal-400',
+      gray: 'text-gray-400',
+      slate: 'text-slate-400',
+      cyan: 'text-cyan-400',
+      rose: 'text-rose-400',
+      violet: 'text-violet-400',
+      amber: 'text-amber-400'
     };
     return colors[agent.color as keyof typeof colors] || 'text-gray-400';
   };
@@ -493,7 +539,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
         
         <div className="mt-2 flex items-center justify-between">
           <div className="text-xs text-gray-400">
-            Team Leader will orchestrate the response and add specialized agents as needed.
+            Cortex will guide the conversation and provide strategic insights.
           </div>
           <div className="flex items-center space-x-2">
             {isAiEnabled && currentProviderId && (

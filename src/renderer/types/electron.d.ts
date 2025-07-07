@@ -20,6 +20,7 @@ export interface ConfigAPI {
   set: (key: string, propertyOrValue: any, value?: any) => Promise<void>;
   reset: () => Promise<void>;
   getPath: () => Promise<string>;
+  getConfigDir: () => Promise<string>;
 }
 
 export interface GitFileStatus {
@@ -145,6 +146,14 @@ export interface AITestResult {
   error?: string;
 }
 
+export interface PromptAPI {
+  read: (agentId: string) => Promise<string | null>;
+  write: (agentId: string, content: string) => Promise<boolean>;
+  delete: (agentId: string) => Promise<boolean>;
+  exists: (agentId: string) => Promise<boolean>;
+  listCustom: () => Promise<string[]>;
+}
+
 export interface AIAPI {
   isMasterKeySetup: () => Promise<boolean>;
   setupMasterKey: (masterKey: string) => Promise<AIResult>;
@@ -179,6 +188,7 @@ export interface ElectronAPI {
   git: GitAPI;
   terminal?: TerminalAPI;
   ai?: AIAPI;
+  prompt?: PromptAPI;
 }
 
 declare global {

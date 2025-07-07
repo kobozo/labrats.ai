@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     set: (key: string, propertyOrValue: any, value?: any) => ipcRenderer.invoke('set-config', key, propertyOrValue, value),
     reset: () => ipcRenderer.invoke('reset-config'),
     getPath: () => ipcRenderer.invoke('get-config-path'),
+    getConfigDir: () => ipcRenderer.invoke('get-config-dir'),
   },
   
   // Git API
@@ -97,6 +98,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getProviders: () => ipcRenderer.invoke('ai-get-providers'),
     getModels: (providerId: string) => ipcRenderer.invoke('ai-get-models', providerId),
     getAvailableProviders: () => ipcRenderer.invoke('ai-get-available-providers'),
+  },
+
+  // Prompt API
+  prompt: {
+    read: (agentId: string) => ipcRenderer.invoke('prompt-read', agentId),
+    write: (agentId: string, content: string) => ipcRenderer.invoke('prompt-write', agentId, content),
+    delete: (agentId: string) => ipcRenderer.invoke('prompt-delete', agentId),
+    exists: (agentId: string) => ipcRenderer.invoke('prompt-exists', agentId),
+    listCustom: () => ipcRenderer.invoke('prompt-list-custom'),
   },
 
   // System API

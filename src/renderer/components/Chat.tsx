@@ -439,55 +439,61 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
       {/* Messages */}
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 scroll-smooth">
         {messages.map((message) => (
-          <div key={message.id} className={`flex space-x-3 ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {message.sender !== 'user' && (
-              <div className={`w-8 h-8 rounded-full ${getAgentColor(message.sender as Agent)} flex items-center justify-center`}>
-                {React.createElement((message.sender as Agent).icon, { className: "w-4 h-4 text-white" })}
-              </div>
-            )}
-            
-            <div className={`max-w-2xl ${message.sender === 'user' ? 'bg-blue-600' : 'bg-gray-700'} rounded-lg p-4`}>
-              {message.sender !== 'user' && (
-                <div className="flex items-center space-x-2 mb-2">
-                  <span className={`font-medium ${getAgentTextColor(message.sender as Agent)}`}>
-                    {(message.sender as Agent).name}
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    {message.timestamp.toLocaleTimeString()}
-                  </span>
+          <div key={message.id} className={`${message.sender === 'user' ? 'flex space-x-3 justify-end' : 'w-full'}`}>
+            {message.sender === 'user' ? (
+              // User messages - keep existing style with max width
+              <>
+                <div className="max-w-2xl bg-blue-600 rounded-lg p-4">
+                  <p className="text-white text-sm leading-relaxed">{message.content}</p>
                 </div>
-              )}
-              
-              <p className="text-white text-sm leading-relaxed">{message.content}</p>
-              
-              {message.metadata && (
-                <div className="mt-3 p-3 bg-gray-600 rounded border-l-4 border-blue-500">
-                  <div className="flex items-center space-x-4 text-xs text-gray-300">
-                    {message.metadata.codeChanges && (
-                      <span>📝 {message.metadata.codeChanges} changes</span>
-                    )}
-                    {message.metadata.filesAffected && (
-                      <span>📁 {message.metadata.filesAffected.length} files</span>
-                    )}
-                    {message.metadata.reviewStatus && (
-                      <span className={`flex items-center space-x-1 ${
-                        message.metadata.reviewStatus === 'approved' ? 'text-green-400' :
-                        message.metadata.reviewStatus === 'rejected' ? 'text-red-400' : 'text-yellow-400'
-                      }`}>
-                        {message.metadata.reviewStatus === 'approved' && <CheckCircle className="w-3 h-3" />}
-                        {message.metadata.reviewStatus === 'rejected' && <XCircle className="w-3 h-3" />}
-                        {message.metadata.reviewStatus === 'pending' && <Clock className="w-3 h-3" />}
-                        <span>{message.metadata.reviewStatus}</span>
-                      </span>
-                    )}
+                <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                  <User className="w-4 h-4 text-white" />
+                </div>
+              </>
+            ) : (
+              // Agent messages - use full width
+              <div className="w-full bg-gray-700 rounded-lg p-4">
+                <div className="flex items-center space-x-3 mb-3">
+                  <div className={`w-8 h-8 rounded-full ${getAgentColor(message.sender as Agent)} flex items-center justify-center flex-shrink-0`}>
+                    {React.createElement((message.sender as Agent).icon, { className: "w-4 h-4 text-white" })}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className={`font-medium ${getAgentTextColor(message.sender as Agent)}`}>
+                      {(message.sender as Agent).name}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {message.timestamp.toLocaleTimeString()}
+                    </span>
                   </div>
                 </div>
-              )}
-            </div>
-            
-            {message.sender === 'user' && (
-              <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-                <User className="w-4 h-4 text-white" />
+                
+                <div className="pl-11">
+                  <p className="text-white text-sm leading-relaxed">{message.content}</p>
+                  
+                  {message.metadata && (
+                    <div className="mt-3 p-3 bg-gray-600 rounded border-l-4 border-blue-500">
+                      <div className="flex items-center space-x-4 text-xs text-gray-300">
+                        {message.metadata.codeChanges && (
+                          <span>📝 {message.metadata.codeChanges} changes</span>
+                        )}
+                        {message.metadata.filesAffected && (
+                          <span>📁 {message.metadata.filesAffected.length} files</span>
+                        )}
+                        {message.metadata.reviewStatus && (
+                          <span className={`flex items-center space-x-1 ${
+                            message.metadata.reviewStatus === 'approved' ? 'text-green-400' :
+                            message.metadata.reviewStatus === 'rejected' ? 'text-red-400' : 'text-yellow-400'
+                          }`}>
+                            {message.metadata.reviewStatus === 'approved' && <CheckCircle className="w-3 h-3" />}
+                            {message.metadata.reviewStatus === 'rejected' && <XCircle className="w-3 h-3" />}
+                            {message.metadata.reviewStatus === 'pending' && <Clock className="w-3 h-3" />}
+                            <span>{message.metadata.reviewStatus}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -495,17 +501,19 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
         
         {/* Typing Indicator */}
         {isTyping && typingAgent && (
-          <div className="flex space-x-3">
-            <div className={`w-8 h-8 rounded-full ${getAgentColor(typingAgent)} flex items-center justify-center`}>
-              {React.createElement(typingAgent.icon, { className: "w-4 h-4 text-white" })}
-            </div>
-            <div className="bg-gray-700 rounded-lg p-4 max-w-xs">
-              <div className="flex items-center space-x-2 mb-2">
+          <div className="w-full bg-gray-700 rounded-lg p-4">
+            <div className="flex items-center space-x-3 mb-3">
+              <div className={`w-8 h-8 rounded-full ${getAgentColor(typingAgent)} flex items-center justify-center flex-shrink-0`}>
+                {React.createElement(typingAgent.icon, { className: "w-4 h-4 text-white" })}
+              </div>
+              <div className="flex items-center space-x-2">
                 <span className={`font-medium ${getAgentTextColor(typingAgent)}`}>
                   {typingAgent.name}
                 </span>
                 <Brain className="w-4 h-4 text-blue-400 animate-pulse" />
               </div>
+            </div>
+            <div className="pl-11">
               <div className="flex space-x-1">
                 <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                 <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>

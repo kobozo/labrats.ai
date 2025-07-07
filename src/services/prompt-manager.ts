@@ -14,6 +14,7 @@ import codeReviewerPrompt from '../prompts/code-reviewer.prompt';
 import architectPrompt from '../prompts/architect.prompt';
 import documentWriterPrompt from '../prompts/document-writer.prompt';
 import globalLabratsPrompt from '../prompts/global-labrats.prompt';
+import globalPrompt from '../prompts/global.prompt';
 
 // Default prompts mapping
 const DEFAULT_PROMPTS: { [key: string]: string } = {
@@ -80,23 +81,26 @@ export class PromptManager {
 
   /**
    * Get the complete prompt for a specific agent
-   * Includes: global prompt + agent persona + (user override OR default prompt)
+   * Includes: global professional standards + labrats context + agent persona + (user override OR default prompt)
    */
   async getPrompt(agentId: string): Promise<string> {
     try {
       // Build the complete prompt with all components
       let completePrompt = '';
       
-      // 1. Add global LabRats.ai context
+      // 1. Add global professional standards
+      completePrompt += globalPrompt + '\n\n';
+      
+      // 2. Add global LabRats.ai context
       completePrompt += globalLabratsPrompt + '\n\n';
       
-      // 2. Add agent persona (mouse character)
+      // 3. Add agent persona (mouse character)
       const persona = AGENT_PERSONAS[agentId];
       if (persona) {
         completePrompt += persona;
       }
       
-      // 3. Add role-specific prompt (user override or default)
+      // 4. Add role-specific prompt (user override or default)
       let rolePrompt = '';
       
       // Check for user override first

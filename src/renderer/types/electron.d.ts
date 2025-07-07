@@ -169,6 +169,7 @@ export interface ElectronAPI {
   removeRecentProject: (path: string) => Promise<RecentProject[]>;
   getEnv: (key: string) => Promise<string | undefined>;
   searchFiles: (rootPath: string, query: string, limit?: number) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
+  openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
   config: ConfigAPI;
   git: GitAPI;
   terminal?: TerminalAPI;

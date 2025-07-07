@@ -6,15 +6,32 @@ import { app } from 'electron';
 import { LABRATS_CONFIG_DIR, CONFIG_PATHS } from './constants';
 
 export interface LabRatsConfig {
+  // General settings
+  general: {
+    language: string;
+    autoUpdates: boolean;
+    telemetry: boolean;
+    startOnBoot: boolean;
+  };
+
+  // Interface settings
+  interface: {
+    theme: 'dark' | 'light' | 'auto';
+    compactMode: boolean;
+    showAgentAvatars: boolean;
+    sidebarPosition: 'left' | 'right';
+  };
+
   // Editor settings
   editor: {
-    theme: 'dark' | 'light';
+    autoFormat: boolean;
+    autoSave: boolean;
+    showLineNumbers: boolean;
     fontSize: number;
     fontFamily: string;
     tabSize: number;
     wordWrap: boolean;
     minimap: boolean;
-    lineNumbers: boolean;
   };
   
   // AI settings
@@ -24,6 +41,34 @@ export interface LabRatsConfig {
     maxTokens: number;
     streamResponses: boolean;
     autoSuggest: boolean;
+    services: {
+      [serviceId: string]: {
+        enabled: boolean;
+        encryptedApiKey?: string;
+      };
+    };
+  };
+
+  // Notifications settings
+  notifications: {
+    agentActions: boolean;
+    codeReviews: boolean;
+    commits: boolean;
+    errors: boolean;
+  };
+
+  // Agent settings
+  agents: {
+    autoActivate: boolean;
+    maxActive: number;
+    responseDelay: number;
+  };
+
+  // Data & Storage settings
+  data: {
+    cacheSize: string;
+    clearOnExit: boolean;
+    backupEnabled: boolean;
   };
   
   // Window settings
@@ -59,14 +104,29 @@ export interface LabRatsConfig {
 }
 
 const DEFAULT_CONFIG: LabRatsConfig = {
-  editor: {
+  general: {
+    language: 'en',
+    autoUpdates: true,
+    telemetry: false,
+    startOnBoot: false,
+  },
+
+  interface: {
     theme: 'dark',
+    compactMode: false,
+    showAgentAvatars: true,
+    sidebarPosition: 'left',
+  },
+
+  editor: {
+    autoFormat: true,
+    autoSave: true,
+    showLineNumbers: true,
     fontSize: 14,
     fontFamily: 'Monaco, Menlo, Consolas, "Courier New", monospace',
     tabSize: 2,
     wordWrap: true,
     minimap: true,
-    lineNumbers: true,
   },
   
   ai: {
@@ -75,6 +135,26 @@ const DEFAULT_CONFIG: LabRatsConfig = {
     maxTokens: 4096,
     streamResponses: true,
     autoSuggest: true,
+    services: {},
+  },
+
+  notifications: {
+    agentActions: true,
+    codeReviews: true,
+    commits: false,
+    errors: true,
+  },
+
+  agents: {
+    autoActivate: true,
+    maxActive: 6,
+    responseDelay: 1000,
+  },
+
+  data: {
+    cacheSize: '500MB',
+    clearOnExit: false,
+    backupEnabled: true,
   },
   
   window: {
@@ -135,12 +215,46 @@ export class ConfigManager {
         return this.mergeConfigs(DEFAULT_CONFIG, loadedConfig);
       }
     } catch (error) {
-      console.error('Error loading config:', error);
+      console.error('Error loading config.yaml, attempting recovery:', error);
+      return this.recoverCorruptedConfig();
     }
     
-    // If no config exists or error loading, create default config
+    // If no config exists, create default config
     this.saveConfig(DEFAULT_CONFIG);
     return DEFAULT_CONFIG;
+  }
+
+  private recoverCorruptedConfig(): LabRatsConfig {
+    try {
+      // Create backup with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupPath = path.join(this.configDir, `config.backup.${timestamp}.yaml`);
+      
+      console.log(`Backing up corrupted config.yaml to: ${backupPath}`);
+      fs.copyFileSync(this.configPath, backupPath);
+      
+      // Remove corrupted file
+      fs.unlinkSync(this.configPath);
+      console.log('Removed corrupted config.yaml file');
+      
+      // Create fresh config
+      console.log('Creating fresh config.yaml with default values');
+      this.saveConfig(DEFAULT_CONFIG);
+      return DEFAULT_CONFIG;
+      
+    } catch (backupError) {
+      console.error('Failed to backup corrupted config.yaml:', backupError);
+      // Even if backup fails, try to remove the corrupted file and start fresh
+      try {
+        fs.unlinkSync(this.configPath);
+        this.saveConfig(DEFAULT_CONFIG);
+        return DEFAULT_CONFIG;
+      } catch (removeError) {
+        console.error('Failed to remove corrupted config.yaml:', removeError);
+        console.log('Using in-memory default config');
+        return DEFAULT_CONFIG;
+      }
+    }
   }
   
   private mergeConfigs(defaults: LabRatsConfig, loaded: Partial<LabRatsConfig>): LabRatsConfig {

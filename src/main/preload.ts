@@ -95,4 +95,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     testAPIKey: (serviceId: string, apiKey: string) => ipcRenderer.invoke('ai-test-api-key', serviceId, apiKey),
     resetConfiguration: () => ipcRenderer.invoke('ai-reset-configuration'),
   },
+
+  // System API
+  openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
 });

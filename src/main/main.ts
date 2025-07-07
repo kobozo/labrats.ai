@@ -35,15 +35,65 @@ if (!fs.existsSync(LABRATS_CONFIG_DIR)) {
   fs.mkdirSync(LABRATS_CONFIG_DIR, { recursive: true });
 }
 
-const store: any = new Store({
-  cwd: LABRATS_CONFIG_DIR,
-  name: 'projects',
-  defaults: {
-    recentProjects: [] as RecentProject[],
-    windowStates: [] as WindowState[],
-    lastActiveWindows: [] as string[]
+/**
+ * Safely initialize electron-store with automatic backup and recovery
+ * for corrupted JSON files
+ */
+function createSafeStore(): any {
+  const storeConfig = {
+    cwd: LABRATS_CONFIG_DIR,
+    name: 'projects',
+    defaults: {
+      recentProjects: [] as RecentProject[],
+      windowStates: [] as WindowState[],
+      lastActiveWindows: [] as string[]
+    }
+  };
+
+  try {
+    return new Store(storeConfig);
+  } catch (error) {
+    console.error('Failed to load projects.json, attempting recovery:', error);
+    
+    const projectsJsonPath = path.join(LABRATS_CONFIG_DIR, 'projects.json');
+    
+    // Check if the file exists and is corrupted
+    if (fs.existsSync(projectsJsonPath)) {
+      try {
+        // Create backup with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupPath = path.join(LABRATS_CONFIG_DIR, `projects.backup.${timestamp}.json`);
+        
+        console.log(`Backing up corrupted projects.json to: ${backupPath}`);
+        fs.copyFileSync(projectsJsonPath, backupPath);
+        
+        // Remove corrupted file
+        fs.unlinkSync(projectsJsonPath);
+        console.log('Removed corrupted projects.json file');
+        
+        // Create fresh store
+        console.log('Creating fresh projects.json with default values');
+        return new Store(storeConfig);
+        
+      } catch (backupError) {
+        console.error('Failed to backup corrupted file:', backupError);
+        // Even if backup fails, try to remove the corrupted file and start fresh
+        try {
+          fs.unlinkSync(projectsJsonPath);
+          return new Store(storeConfig);
+        } catch (removeError) {
+          console.error('Failed to remove corrupted file:', removeError);
+          throw new Error('Could not recover from corrupted projects.json file');
+        }
+      }
+    } else {
+      // File doesn't exist, which is fine - electron-store will create it
+      return new Store(storeConfig);
+    }
   }
-});
+}
+
+const store: any = createSafeStore();
 
 const windows = new Map<number, BrowserWindow>();
 const windowProjects = new Map<number, string>();
@@ -465,6 +515,17 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
 
 ipcMain.handle('get-env', async (event, key: string) => {
   return process.env[key];
+});
+
+// System API handlers
+ipcMain.handle('open-external', async (event, url: string) => {
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to open external URL:', error);
+    return { success: false, error: String(error) };
+  }
 });
 
 // File search handler
@@ -949,21 +1010,35 @@ import { AIConfigService } from './aiConfigService';
 
 const aiConfigService = AIConfigService.getInstance();
 
-// Set up AI config event listeners
+// Set up AI config event listeners - use ConfigManager
 aiConfigService.on('api-key-store', (serviceId: string, encryptedKey: string) => {
-  store.set(`ai.services.${serviceId}.apiKey`, encryptedKey);
+  const currentServices = configManager.get('ai', 'services') || {};
+  currentServices[serviceId] = {
+    ...currentServices[serviceId],
+    encryptedApiKey: encryptedKey
+  };
+  configManager.set('ai', 'services', currentServices);
 });
 
 aiConfigService.on('api-key-remove', (serviceId: string) => {
-  store.delete(`ai.services.${serviceId}.apiKey`);
+  const currentServices = configManager.get('ai', 'services') || {};
+  if (currentServices[serviceId]) {
+    delete currentServices[serviceId].encryptedApiKey;
+    configManager.set('ai', 'services', currentServices);
+  }
 });
 
 aiConfigService.on('service-enabled', (serviceId: string, enabled: boolean) => {
-  store.set(`ai.services.${serviceId}.enabled`, enabled);
+  const currentServices = configManager.get('ai', 'services') || {};
+  currentServices[serviceId] = {
+    ...currentServices[serviceId],
+    enabled: enabled
+  };
+  configManager.set('ai', 'services', currentServices);
 });
 
 aiConfigService.on('configuration-reset', () => {
-  store.delete('ai');
+  configManager.set('ai', 'services', {});
 });
 
 // AI Configuration IPC handlers
@@ -989,13 +1064,13 @@ ipcMain.handle('ai-get-supported-services', async () => {
 });
 
 ipcMain.handle('ai-get-service-config', async (event, serviceId: string) => {
-  const encryptedKey = store.get(`ai.services.${serviceId}.apiKey`) as string;
-  const enabled = store.get(`ai.services.${serviceId}.enabled`, false) as boolean;
+  const services = configManager.get('ai', 'services') || {};
+  const serviceConfig = services[serviceId] || {};
   
   return {
     id: serviceId,
-    enabled,
-    hasApiKey: !!encryptedKey
+    enabled: serviceConfig.enabled || false,
+    hasApiKey: !!serviceConfig.encryptedApiKey
   };
 });
 
@@ -1010,7 +1085,10 @@ ipcMain.handle('ai-store-api-key', async (event, serviceId: string, apiKey: stri
 
 ipcMain.handle('ai-get-api-key', async (event, serviceId: string) => {
   try {
-    const encryptedKey = store.get(`ai.services.${serviceId}.apiKey`) as string;
+    const services = configManager.get('ai', 'services') || {};
+    const serviceConfig = services[serviceId] || {};
+    const encryptedKey = serviceConfig.encryptedApiKey;
+    
     if (!encryptedKey) {
       return { success: false, error: 'No API key stored for this service' };
     }

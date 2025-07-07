@@ -516,35 +516,28 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
           </div>
         ))}
         
-        {/* Typing Indicator */}
-        {isTyping && typingAgent && (
-          <div className="w-full bg-gray-700 rounded-lg p-4">
-            <div className="flex items-center space-x-3 mb-3">
-              <div className={`w-8 h-8 rounded-full ${getAgentColor(typingAgent)} flex items-center justify-center flex-shrink-0`}>
-                {React.createElement(typingAgent.icon, { className: "w-4 h-4 text-white" })}
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className={`font-medium ${getAgentTextColor(typingAgent)}`}>
-                  {typingAgent.name}
-                </span>
-                <Brain className="w-4 h-4 text-blue-400 animate-pulse" />
-              </div>
-            </div>
-            <div className="pl-11">
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-              </div>
-            </div>
-          </div>
-        )}
-        
         <div ref={messagesEndRef} className="h-1" />
       </div>
 
       {/* Input */}
       <div className="p-4 border-t border-gray-700 bg-gray-800 flex-shrink-0">
+        {/* Small Typing Indicator */}
+        {isTyping && typingAgent && (
+          <div className="mb-3 flex items-center space-x-2 text-xs text-gray-400">
+            <div className={`w-4 h-4 rounded-full ${getAgentColor(typingAgent)} flex items-center justify-center flex-shrink-0`}>
+              {React.createElement(typingAgent.icon, { className: "w-2.5 h-2.5 text-white" })}
+            </div>
+            <span className={`${getAgentTextColor(typingAgent)}`}>
+              {typingAgent.name} is typing
+            </span>
+            <div className="flex space-x-0.5">
+              <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce"></div>
+              <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+              <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+            </div>
+          </div>
+        )}
+        
         <form onSubmit={handleSend} className="flex space-x-3">
           <input
             type="text"

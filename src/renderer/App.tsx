@@ -10,6 +10,7 @@ import { TerminalComponent } from './components/TerminalComponent';
 import { Settings } from './components/Settings';
 import { Account } from './components/Account';
 import { StartScreen } from './components/StartScreen';
+import { stateManager } from '../services/state-manager';
 import { 
   MessageSquare, 
   BarChart3, 
@@ -54,6 +55,41 @@ function App() {
       }
     }
   }, [isInitialized, currentFolder]);
+
+  // Initialize state manager when current folder changes
+  useEffect(() => {
+    const initializeStateManager = async () => {
+      await stateManager.setCurrentProject(currentFolder);
+      
+      if (currentFolder) {
+        // Load persisted navigation state
+        const persistedActiveView = stateManager.getActiveView();
+        const persistedPreviousView = stateManager.getPreviousView();
+        
+        if (persistedActiveView && persistedActiveView !== activeView) {
+          setActiveView(persistedActiveView as ActiveView);
+        }
+        if (persistedPreviousView && persistedPreviousView !== previousView) {
+          setPreviousView(persistedPreviousView as ActiveView);
+        }
+      }
+    };
+    
+    initializeStateManager();
+  }, [currentFolder]);
+
+  // Persist navigation state when it changes
+  useEffect(() => {
+    if (currentFolder) {
+      stateManager.setActiveView(activeView);
+    }
+  }, [activeView, currentFolder]);
+
+  useEffect(() => {
+    if (currentFolder) {
+      stateManager.setPreviousView(previousView);
+    }
+  }, [previousView, currentFolder]);
 
   const showNotification = (type: 'success' | 'info' | 'warning', message: string) => {
     setNotification({ type, message });
@@ -372,27 +408,30 @@ function App() {
         ) : (
           /* Show normal views when a folder is open */
           <>
-            {activeView === 'chat' && (
+            <div style={{ display: activeView === 'chat' ? 'block' : 'none', height: '100%' }}>
               <ErrorBoundary>
-                <Chat onCodeReview={() => showNotification('info', 'Code review initiated')} />
+                <Chat 
+                  onCodeReview={() => showNotification('info', 'Code review initiated')} 
+                  currentFolder={currentFolder}
+                />
               </ErrorBoundary>
-            )}
+            </div>
             
-            {activeView === 'kanban' && (
+            <div style={{ display: activeView === 'kanban' ? 'block' : 'none', height: '100%' }}>
               <KanbanBoard />
-            )}
+            </div>
             
-            {activeView === 'docs' && (
+            <div style={{ display: activeView === 'docs' ? 'block' : 'none', height: '100%' }}>
               <Documentation />
-            )}
+            </div>
             
-            {activeView === 'files' && (
-              <FileExplorer currentFolder={currentFolder} />
-            )}
+            <div style={{ display: activeView === 'files' ? 'block' : 'none', height: '100%' }}>
+              <FileExplorer currentFolder={currentFolder} isVisible={activeView === 'files'} />
+            </div>
             
-            {activeView === 'git' && (
-              <GitExplorer currentFolder={currentFolder} />
-            )}
+            <div style={{ display: activeView === 'git' ? 'block' : 'none', height: '100%' }}>
+              <GitExplorer currentFolder={currentFolder} isVisible={activeView === 'git'} />
+            </div>
             
             <div style={{ display: activeView === 'terminal' ? 'block' : 'none', height: '100%' }}>
               <TerminalComponent 
@@ -401,9 +440,9 @@ function App() {
               />
             </div>
             
-            {activeView === 'dashboard' && (
+            <div style={{ display: activeView === 'dashboard' ? 'block' : 'none', height: '100%' }}>
               <Dashboard />
-            )}
+            </div>
 
             {activeView === 'settings' && (
               <Settings />

@@ -30,6 +30,8 @@ import { getLangChainChatService } from '../../services/langchain-chat-service';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
 import { getPromptManager } from '../../services/prompt-manager';
 import { agents as configAgents, Agent as ConfigAgent } from '../../config/agents';
+import { stateManager } from '../../services/state-manager';
+import { getChatService, ChatServiceMessage } from '../../services/chat-service';
 
 interface Agent {
   id: string;
@@ -59,6 +61,7 @@ interface Message {
 
 interface ChatProps {
   onCodeReview: (changes: any) => void;
+  currentFolder?: string | null;
 }
 
 // Map config agents to Chat component format
@@ -88,7 +91,7 @@ const renderMarkdown = (content: string): string => {
   return DOMPurify.sanitize(rawMarkup as string);
 };
 
-export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
+export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [activeAgents, setActiveAgents] = useState(agents.filter(a => a.isActive));
@@ -104,6 +107,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const chatService = getLangChainChatService();
   const providerManager = getAIProviderManager();
+  const baseChatService = getChatService();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -129,6 +133,70 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview }) => {
     
     return () => clearInterval(interval);
   }, []);
+
+  // Load persisted messages when component mounts or folder changes
+  useEffect(() => {
+    const loadPersistedMessages = async () => {
+      if (currentFolder) {
+        // Set current project in chat services
+        chatService.setCurrentProject(currentFolder);
+        
+        // Load messages from state manager
+        const persistedMessages = stateManager.getChatMessages();
+        if (persistedMessages.length > 0) {
+          // Convert ChatServiceMessage to Message format
+          const convertedMessages: Message[] = persistedMessages.map(msg => ({
+            id: msg.id,
+            content: msg.content,
+            sender: msg.role === 'user' ? 'user' : agents.find(a => a.id === msg.agentId) || agents[0],
+            timestamp: new Date(msg.timestamp),
+            type: 'text' as const,
+            providerId: msg.providerId,
+            modelId: msg.modelId
+          }));
+          setMessages(convertedMessages);
+        }
+        
+        // Load conversation history into chat service
+        const conversationHistory = stateManager.getChatConversationHistory();
+        if (conversationHistory.length > 0) {
+          baseChatService.clearConversation();
+          conversationHistory.forEach(msg => {
+            (baseChatService as any).conversationHistory.push(msg);
+          });
+        }
+      } else {
+        // Clear messages when no folder is open
+        setMessages([]);
+        baseChatService.clearConversation();
+        chatService.setCurrentProject(null);
+      }
+    };
+    
+    loadPersistedMessages();
+  }, [currentFolder]);
+
+  // Persist messages whenever they change
+  useEffect(() => {
+    if (currentFolder && messages.length > 0) {
+      // Convert Message format to ChatServiceMessage
+      const chatServiceMessages: ChatServiceMessage[] = messages.map(msg => ({
+        id: msg.id,
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        agentId: msg.sender !== 'user' ? (msg.sender as Agent).id : undefined,
+        providerId: msg.providerId,
+        modelId: msg.modelId
+      }));
+      
+      stateManager.setChatMessages(chatServiceMessages);
+      
+      // Also persist conversation history from chat service
+      const conversationHistory = baseChatService.getConversationHistory();
+      stateManager.setChatConversationHistory(conversationHistory);
+    }
+  }, [messages, currentFolder]);
 
   const loadAgentColorOverrides = async () => {
     try {

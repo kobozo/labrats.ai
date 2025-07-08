@@ -4,13 +4,15 @@ import Editor from '@monaco-editor/react';
 import { FileNode } from '../types/electron';
 import { getFileIconInfo } from '../utils/fileIcons';
 import { getLanguageFromFileName, getLanguageDisplayName } from '../utils/fileLanguages';
+import { stateManager } from '../../services/state-manager';
 import '@vscode/codicons/dist/codicon.css';
 
 interface FileExplorerProps {
   currentFolder: string | null;
+  isVisible?: boolean;
 }
 
-export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder }) => {
+export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVisible = true }) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +23,88 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder }) => 
 
   // Debug mode flag
   const [isDebugMode, setIsDebugMode] = useState(false);
+  const [isRestoringState, setIsRestoringState] = useState(false);
+
+  // Load persisted state when component mounts or folder changes
+  useEffect(() => {
+    if (currentFolder) {
+      const persistedState = stateManager.getFileExplorerState();
+      if (persistedState) {
+        if (persistedState.searchTerm) {
+          setSearchTerm(persistedState.searchTerm);
+        }
+        if (persistedState.detailsCollapsed !== undefined) {
+          setDetailsCollapsed(persistedState.detailsCollapsed);
+        }
+      }
+    }
+  }, [currentFolder]);
+
+  // Restore selected file and expanded state after file tree loads and component becomes visible
+  useEffect(() => {
+    if (currentFolder && fileTree.length > 0 && isVisible) {
+      const persistedState = stateManager.getFileExplorerState();
+      if (persistedState?.selectedFilePath && !selectedFile && !isRestoringState) {
+        setIsRestoringState(true);
+        const selectedNode = findNodeByPath(fileTree, persistedState.selectedFilePath);
+        if (selectedNode) {
+          setSelectedFile(selectedNode);
+          if (selectedNode.type === 'file') {
+            loadFileContent(selectedNode.path);
+          }
+        }
+        // Reset restoring flag after a short delay
+        setTimeout(() => setIsRestoringState(false), 1000);
+      }
+    }
+  }, [fileTree, currentFolder, selectedFile, isRestoringState, isVisible]);
+
+  // Persist state when it changes (but not during state restoration)
+  useEffect(() => {
+    if (currentFolder && !isRestoringState) {
+      const stateToSave = {
+        searchTerm,
+        detailsCollapsed,
+        selectedFilePath: selectedFile?.path || null,
+        expandedFolders: getExpandedFolders(fileTree)
+      };
+      stateManager.setFileExplorerState(stateToSave);
+    }
+  }, [searchTerm, detailsCollapsed, selectedFile, fileTree, currentFolder, isRestoringState]);
+
+  // Helper function to get expanded folder paths
+  const getExpandedFolders = (nodes: FileNode[]): string[] => {
+    const expanded: string[] = [];
+    const traverse = (nodeList: FileNode[]) => {
+      for (const node of nodeList) {
+        if (node.type === 'folder' && node.isExpanded) {
+          expanded.push(node.path);
+          if (node.children) {
+            traverse(node.children);
+          }
+        }
+      }
+    };
+    traverse(nodes);
+    return expanded;
+  };
+
+  // Helper function to restore expanded state
+  const restoreExpandedState = (nodes: FileNode[], expandedPaths: string[]): FileNode[] => {
+    return nodes.map(node => {
+      if (node.type === 'folder' && expandedPaths.includes(node.path)) {
+        return {
+          ...node,
+          isExpanded: true,
+          children: node.children ? restoreExpandedState(node.children, expandedPaths) : node.children
+        };
+      }
+      return {
+        ...node,
+        children: node.children ? restoreExpandedState(node.children, expandedPaths) : node.children
+      };
+    });
+  };
 
   useEffect(() => {
     const checkDebugMode = async () => {
@@ -51,13 +135,61 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder }) => 
     setError(null);
     try {
       const files = await window.electronAPI.readDirectory(dirPath);
-      setFileTree(files);
+      
+      // Restore expanded state and selected file from persisted state
+      const persistedState = stateManager.getFileExplorerState();
+      let processedFiles = files;
+      
+      if (persistedState?.expandedFolders) {
+        processedFiles = restoreExpandedState(files, persistedState.expandedFolders);
+        
+        // Load children for expanded folders
+        for (const expandedPath of persistedState.expandedFolders) {
+          try {
+            const children = await window.electronAPI.readDirectory(expandedPath);
+            processedFiles = updateNodeChildren(processedFiles, expandedPath, children);
+          } catch (error) {
+            console.warn(`Failed to load expanded folder: ${expandedPath}`, error);
+          }
+        }
+      }
+      
+      setFileTree(processedFiles);
+      
+      // Note: Selected file restoration moved to separate useEffect
     } catch (error) {
       setError(`Failed to load directory: ${error}`);
       setFileTree([]);
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Helper function to update node children
+  const updateNodeChildren = (nodes: FileNode[], targetPath: string, children: FileNode[]): FileNode[] => {
+    return nodes.map(node => {
+      if (node.path === targetPath) {
+        return { ...node, children };
+      }
+      if (node.children) {
+        return { ...node, children: updateNodeChildren(node.children, targetPath, children) };
+      }
+      return node;
+    });
+  };
+  
+  // Helper function to find node by path
+  const findNodeByPath = (nodes: FileNode[], targetPath: string): FileNode | null => {
+    for (const node of nodes) {
+      if (node.path === targetPath) {
+        return node;
+      }
+      if (node.children) {
+        const found = findNodeByPath(node.children, targetPath);
+        if (found) return found;
+      }
+    }
+    return null;
   };
 
   const loadFileContent = async (filePath: string) => {

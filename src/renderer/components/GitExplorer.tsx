@@ -26,12 +26,14 @@ import {
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { GitStatus, GitFileStatus, GitDiff } from '../types/electron';
 import { getFileIconInfo } from '../utils/fileIcons';
+import { stateManager } from '../../services/state-manager';
 
 interface GitExplorerProps {
   currentFolder: string | null;
+  isVisible?: boolean;
 }
 
-export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
+export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisible = true }) => {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [selectedFile, setSelectedFile] = useState<GitFileStatus | null>(null);
   const [selectedDiff, setSelectedDiff] = useState<GitDiff | null>(null);
@@ -54,7 +56,51 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
   const [historyExpanded, setHistoryExpanded] = useState(true);
   const [isPulling, setIsPulling] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
+  const [isRestoringState, setIsRestoringState] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Load persisted state when component mounts or folder changes
+  useEffect(() => {
+    if (currentFolder) {
+      const persistedState = stateManager.getGitExplorerState();
+      if (persistedState) {
+        if (persistedState.stagedExpanded !== undefined) {
+          setStagedExpanded(persistedState.stagedExpanded);
+        }
+        if (persistedState.changesExpanded !== undefined) {
+          setChangesExpanded(persistedState.changesExpanded);
+        }
+        if (persistedState.historyExpanded !== undefined) {
+          setHistoryExpanded(persistedState.historyExpanded);
+        }
+        if (persistedState.commitMessage) {
+          setCommitMessage(persistedState.commitMessage);
+        }
+        if (persistedState.expandedStagedDirectories) {
+          setExpandedStagedDirectories(new Set(persistedState.expandedStagedDirectories));
+        }
+        if (persistedState.expandedChangedDirectories) {
+          setExpandedChangedDirectories(new Set(persistedState.expandedChangedDirectories));
+        }
+      }
+    }
+  }, [currentFolder]);
+
+  // Persist state when it changes (but not during state restoration)
+  useEffect(() => {
+    if (currentFolder && !isRestoringState) {
+      const stateToSave = {
+        stagedExpanded,
+        changesExpanded,
+        historyExpanded,
+        commitMessage,
+        expandedStagedDirectories: Array.from(expandedStagedDirectories),
+        expandedChangedDirectories: Array.from(expandedChangedDirectories),
+        selectedFilePath: selectedFile?.path || null
+      };
+      stateManager.setGitExplorerState(stateToSave);
+    }
+  }, [stagedExpanded, changesExpanded, historyExpanded, commitMessage, expandedStagedDirectories, expandedChangedDirectories, selectedFile, currentFolder, isRestoringState]);
 
   useEffect(() => {
     const checkDebugMode = async () => {
@@ -85,6 +131,19 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
       setCommitHistory([]);
     }
   }, [currentFolder]);
+
+  // Restore selected file after gitStatus loads and component becomes visible
+  useEffect(() => {
+    if (currentFolder && gitStatus && gitStatus.files.length > 0 && isVisible) {
+      const persistedState = stateManager.getGitExplorerState();
+      if (persistedState?.selectedFilePath && !selectedFile && !isRestoringState) {
+        setIsRestoringState(true);
+        restoreSelectedFile(persistedState.selectedFilePath);
+        // Reset restoring flag after a short delay
+        setTimeout(() => setIsRestoringState(false), 1000);
+      }
+    }
+  }, [gitStatus, currentFolder, selectedFile, isRestoringState, isVisible]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -128,6 +187,19 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder }) => {
       case 'viewDiff':
         await loadDiff(file);
         break;
+    }
+  };
+
+  // Helper function to restore selected file from persisted state
+  const restoreSelectedFile = (filePath: string) => {
+    if (!gitStatus) return;
+    
+    // Look for the file in the files array
+    const fileToRestore = gitStatus.files.find(file => file.path === filePath);
+    
+    if (fileToRestore) {
+      setSelectedFile(fileToRestore);
+      loadDiff(fileToRestore);
     }
   };
 

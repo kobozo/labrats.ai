@@ -2,6 +2,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from '@langchain/core/messages';
 import { getAIProviderManager } from './ai-provider-manager';
+import { stateManager } from './state-manager';
 
 export interface LangChainChatMessage {
   id: string;
@@ -22,6 +23,7 @@ export interface LangChainChatResponse {
 export class LangChainChatService {
   private providerManager = getAIProviderManager();
   private conversationHistory: LangChainChatMessage[] = [];
+  private currentProjectPath: string | null = null;
 
   async sendMessage(
     content: string,
@@ -77,6 +79,7 @@ export class LangChainChatService {
         modelId
       };
       this.conversationHistory.push(userMessage);
+      this.persistConversationHistory();
 
       // Get response from LangChain
       const response = await chatModel.invoke(messages);
@@ -93,6 +96,7 @@ export class LangChainChatService {
 
       // Add to conversation history
       this.conversationHistory.push(assistantMessage);
+      this.persistConversationHistory();
 
       return {
         success: true,
@@ -163,6 +167,7 @@ export class LangChainChatService {
         modelId
       };
       this.conversationHistory.push(userMessage);
+      this.persistConversationHistory();
 
       // Stream response from LangChain
       let fullContent = '';
@@ -192,6 +197,7 @@ export class LangChainChatService {
 
       // Add to conversation history
       this.conversationHistory.push(assistantMessage);
+      this.persistConversationHistory();
 
       yield {
         delta: '',
@@ -292,6 +298,21 @@ export class LangChainChatService {
     return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  // Set current project path for state management
+  setCurrentProject(projectPath: string | null): void {
+    this.currentProjectPath = projectPath;
+    if (projectPath) {
+      // Load conversation history from state manager
+      const persistedHistory = stateManager.getChatConversationHistory();
+      this.conversationHistory = persistedHistory.map(msg => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp)
+      }));
+    } else {
+      this.conversationHistory = [];
+    }
+  }
+
   // Get conversation history
   getConversationHistory(): LangChainChatMessage[] {
     return [...this.conversationHistory];
@@ -300,6 +321,16 @@ export class LangChainChatService {
   // Clear conversation history
   clearConversation(): void {
     this.conversationHistory = [];
+    if (this.currentProjectPath) {
+      stateManager.setChatConversationHistory([]);
+    }
+  }
+
+  // Private method to persist conversation history
+  private persistConversationHistory(): void {
+    if (this.currentProjectPath) {
+      stateManager.setChatConversationHistory(this.conversationHistory);
+    }
   }
 
   // Get available providers

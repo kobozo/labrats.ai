@@ -3,6 +3,7 @@ import { Terminal as TerminalIcon, Plus, X, Settings, Folder, AlertCircle, Searc
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { stateManager } from '../../services/state-manager';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalSession {
@@ -316,12 +317,42 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
     ));
   };
 
-  // Create initial terminal when component mounts
+  // Load persisted terminal state when folder changes
   useEffect(() => {
-    if (terminals.length === 0) {
-      createNewTerminal();
+    const loadTerminalState = () => {
+      if (currentFolder) {
+        const persistedSessions = stateManager.getTerminalSessions();
+        const persistedActiveId = stateManager.getActiveTerminalSession();
+        
+        // Only load state if we have sessions and no current terminals
+        if (persistedSessions.length > 0 && terminals.length === 0) {
+          // For now, just create a new terminal since we can't easily restore xterm sessions
+          // In the future, we could store terminal commands/output for restoration
+          createNewTerminal();
+        } else if (terminals.length === 0) {
+          createNewTerminal();
+        }
+      }
+    };
+    
+    loadTerminalState();
+  }, [currentFolder]);
+
+  // Persist terminal state when it changes
+  useEffect(() => {
+    if (currentFolder) {
+      // Create simplified session data for persistence
+      const simplifiedSessions = terminals.map(terminal => ({
+        id: terminal.id,
+        name: terminal.name,
+        cwd: terminal.cwd,
+        isActive: terminal.isActive
+      }));
+      
+      stateManager.setTerminalSessions(simplifiedSessions);
+      stateManager.setActiveTerminalSession(activeTerminalId);
     }
-  }, []);
+  }, [terminals, activeTerminalId, currentFolder]);
 
   // Handle visibility changes - refresh terminal when becoming visible
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { simpleGit, SimpleGit, StatusResult, DiffResult } from 'simple-git';
 import * as path from 'path';
+import * as fs from 'fs';
 
 export interface GitFileStatus {
   path: string;
@@ -47,46 +48,86 @@ export interface GitLine {
 export class GitService {
   private git: SimpleGit | null = null;
   private currentRepo: string | null = null;
+  private initialized: boolean = false;
+  private initPromise: Promise<boolean> | null = null;
 
   async initializeRepo(repoPath: string): Promise<boolean> {
+    // If already initializing, return the existing promise
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    
+    // Create initialization promise
+    this.initPromise = this.doInitialize(repoPath);
+    const result = await this.initPromise;
+    this.initialized = result;
+    return result;
+  }
+  
+  private async doInitialize(repoPath: string): Promise<boolean> {
     try {
+      console.log(`GitService: Initializing repo at path: ${repoPath}`);
+      console.log(`GitService: Current working directory: ${process.cwd()}`);
+      
+      // Ensure the path exists
+      if (!fs.existsSync(repoPath)) {
+        console.error(`GitService: Path does not exist: ${repoPath}`);
+        this.git = null;
+        this.currentRepo = null;
+        return false;
+      }
+      
       this.git = simpleGit(repoPath);
       
       // Check if it's a valid git repository or find the root
+      console.log(`GitService: Checking if ${repoPath} is a git repo...`);
       const isRepo = await this.git.checkIsRepo();
+      console.log(`GitService: Is repo check result: ${isRepo}`);
       
       if (isRepo) {
         // Get the actual repository root
         try {
+          console.log(`GitService: Getting repo root...`);
           const repoRoot = await this.git.revparse(['--show-toplevel']);
           this.currentRepo = repoRoot.trim();
+          console.log(`GitService: Found repo root: ${this.currentRepo}`);
           // Re-initialize with the actual repo root
           this.git = simpleGit(this.currentRepo);
+          console.log(`GitService: Successfully initialized git service`);
           return true;
         } catch (rootError) {
+          console.warn(`GitService: Could not get repo root, using provided path:`, rootError);
           // If we can't get the root, use the provided path
           this.currentRepo = repoPath;
+          console.log(`GitService: Using provided path as repo root: ${this.currentRepo}`);
           return true;
         }
       } else {
         // Try to find git repo in parent directories
+        console.log(`GitService: Path ${repoPath} is not a git repo, searching parent directories...`);
         let currentPath = repoPath;
         const maxDepth = 10; // Prevent infinite loops
         
         for (let i = 0; i < maxDepth; i++) {
           const parentPath = path.dirname(currentPath);
-          if (parentPath === currentPath) break; // Reached root
+          if (parentPath === currentPath) {
+            console.log(`GitService: Reached filesystem root, no git repo found`);
+            break; // Reached root
+          }
           
           try {
+            console.log(`GitService: Checking parent path: ${parentPath}`);
             const parentGit = simpleGit(parentPath);
             const isParentRepo = await parentGit.checkIsRepo();
             
             if (isParentRepo) {
+              console.log(`GitService: Found git repo in parent: ${parentPath}`);
               this.git = parentGit;
               this.currentRepo = parentPath;
               return true;
             }
           } catch (e) {
+            console.log(`GitService: Error checking parent ${parentPath}:`, e);
             // Continue searching
           }
           
@@ -94,6 +135,7 @@ export class GitService {
         }
         
         // No git repository found
+        console.log(`GitService: No git repository found in ${repoPath} or its parents`);
         this.git = null;
         this.currentRepo = null;
         return false;
@@ -541,7 +583,14 @@ export class GitService {
   }
 
   isInitialized(): boolean {
-    return this.git !== null;
+    return this.initialized && this.git !== null;
+  }
+  
+  async waitForInitialization(): Promise<boolean> {
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    return this.initialized;
   }
 
   getCurrentRepo(): string | null {

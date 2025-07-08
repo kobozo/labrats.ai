@@ -13,6 +13,7 @@ import devopsPrompt from '../prompts/devops.prompt';
 import codeReviewerPrompt from '../prompts/code-reviewer.prompt';
 import architectPrompt from '../prompts/architect.prompt';
 import documentWriterPrompt from '../prompts/document-writer.prompt';
+import gitCommitGeneratorPrompt from '../prompts/git-commit-generator.prompt';
 import globalLabratsPrompt from '../prompts/global-labrats.prompt';
 import globalPrompt from '../prompts/global.prompt';
 
@@ -30,7 +31,8 @@ const DEFAULT_PROMPTS: { [key: string]: string } = {
   'devops': devopsPrompt,
   'code-reviewer': codeReviewerPrompt,
   'architect': architectPrompt,
-  'document-writer': documentWriterPrompt
+  'document-writer': documentWriterPrompt,
+  'git-commit-generator': gitCommitGeneratorPrompt
 };
 
 // Mouse character pre-prompts (always included, even with user overrides)
@@ -85,7 +87,21 @@ export class PromptManager {
    */
   async getPrompt(agentId: string): Promise<string> {
     try {
-      // Build the complete prompt with all components
+      // Special handling for git-commit-generator - no personas or global context needed
+      if (agentId === 'git-commit-generator') {
+        // Check for user override first
+        if (typeof window !== 'undefined' && window.electronAPI?.prompt?.read) {
+          const userPrompt = await window.electronAPI.prompt.read(agentId);
+          if (userPrompt) {
+            return userPrompt.trim();
+          }
+        }
+        
+        // Fall back to default prompt
+        return DEFAULT_PROMPTS[agentId] || '';
+      }
+
+      // Build the complete prompt with all components for regular agents
       let completePrompt = '';
       
       // 1. Add global professional standards

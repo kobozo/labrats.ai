@@ -67,31 +67,31 @@ export interface GitDiff {
 }
 
 export interface GitAPI {
-  getStatus: () => Promise<GitStatus | null>;
-  getDiff: (filePath: string, staged?: boolean) => Promise<GitDiff | null>;
-  stageFile: (filePath: string) => Promise<boolean>;
-  unstageFile: (filePath: string) => Promise<boolean>;
+  getStatus: (folderPath?: string) => Promise<GitStatus | null>;
+  getDiff: (filePath: string, staged?: boolean, folderPath?: string) => Promise<GitDiff | null>;
+  stageFile: (filePath: string, folderPath?: string) => Promise<boolean>;
+  unstageFile: (filePath: string, folderPath?: string) => Promise<boolean>;
   discardChanges: (filePath: string) => Promise<boolean>;
-  commit: (message: string) => Promise<boolean>;
+  commit: (message: string, folderPath?: string) => Promise<boolean>;
   initialize: (repoPath: string) => Promise<boolean>;
   revertFile: (filePath: string) => Promise<boolean>;
   stashPush: (message?: string) => Promise<boolean>;
   stashPop: () => Promise<boolean>;
-  stashList: () => Promise<string[]>;
+  stashList: (folderPath?: string) => Promise<string[]>;
   resetSoft: (commitHash?: string) => Promise<boolean>;
   resetHard: (commitHash?: string) => Promise<boolean>;
   resetMixed: (commitHash?: string) => Promise<boolean>;
   stageAllFiles: () => Promise<boolean>;
   unstageAllFiles: () => Promise<boolean>;
   discardAllChanges: () => Promise<boolean>;
-  getBranches: () => Promise<{ current: string; all: string[] }>;
+  getBranches: (folderPath?: string) => Promise<{ current: string; all: string[] }>;
   createBranch: (branchName: string) => Promise<boolean>;
   switchBranch: (branchName: string) => Promise<boolean>;
   deleteBranch: (branchName: string) => Promise<boolean>;
-  getCommitHistory: (count?: number) => Promise<Array<{ hash: string; message: string; author: string; date: string }>>;
+  getCommitHistory: (count?: number, folderPath?: string) => Promise<Array<{ hash: string; message: string; author: string; date: string }>>;
   cleanUntrackedFiles: () => Promise<boolean>;
-  pull: () => Promise<{ success: boolean; message: string }>;
-  push: () => Promise<{ success: boolean; message: string }>;
+  pull: (folderPath?: string) => Promise<{ success: boolean; message: string }>;
+  push: (folderPath?: string) => Promise<{ success: boolean; message: string }>;
   fetch: () => Promise<{ success: boolean; message: string }>;
 }
 

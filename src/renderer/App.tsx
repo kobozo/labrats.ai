@@ -11,6 +11,7 @@ import { Settings } from './components/Settings';
 import { Account } from './components/Account';
 import { StartScreen } from './components/StartScreen';
 import { stateManager } from '../services/state-manager';
+import { gitMonitor } from '../services/git-monitor';
 import { 
   MessageSquare, 
   BarChart3, 
@@ -56,26 +57,33 @@ function App() {
     }
   }, [isInitialized, currentFolder]);
 
-  // Initialize state manager when current folder changes
+  // Initialize state manager and git monitor when current folder changes
   useEffect(() => {
-    const initializeStateManager = async () => {
+    const initializeServices = async () => {
+      console.log('App: Initializing services for folder:', currentFolder);
       await stateManager.setCurrentProject(currentFolder);
+      gitMonitor.setCurrentFolder(currentFolder);
       
       if (currentFolder) {
-        // Load persisted navigation state
+        // Load persisted navigation state, but only if different from default 'chat'
         const persistedActiveView = stateManager.getActiveView();
         const persistedPreviousView = stateManager.getPreviousView();
         
-        if (persistedActiveView && persistedActiveView !== activeView) {
+        // Only restore state if it's not the default 'chat' view or if we're already on a different view
+        if (persistedActiveView && persistedActiveView !== 'chat' && persistedActiveView !== activeView) {
           setActiveView(persistedActiveView as ActiveView);
+        } else {
+          // Default to chat for new projects or when chat was the last view
+          setActiveView('chat');
         }
+        
         if (persistedPreviousView && persistedPreviousView !== previousView) {
           setPreviousView(persistedPreviousView as ActiveView);
         }
       }
     };
     
-    initializeStateManager();
+    initializeServices();
   }, [currentFolder]);
 
   // Persist navigation state when it changes
@@ -173,51 +181,69 @@ function App() {
     }
   }, []);
 
-  // Load git status for status bar
+  // Subscribe to git monitor for status bar updates
   useEffect(() => {
-    if (currentFolder) {
-      loadGitInfo();
-      // Refresh git info every 10 seconds
-      const interval = setInterval(loadGitInfo, 10000);
-      return () => clearInterval(interval);
-    } else {
-      setGitStatus(null);
-      setBranches({ current: '', all: [] });
-    }
-  }, [currentFolder]);
-
-  const loadGitInfo = async () => {
-    try {
-      const [statusResult, branchesResult] = await Promise.all([
-        window.electronAPI?.git.getStatus(),
-        window.electronAPI?.git.getBranches()
-      ]);
-      
-      if (statusResult) {
+    const unsubscribe = gitMonitor.subscribe((gitState) => {
+      console.log('App: Git monitor state update:', gitState);
+      if (gitState.status && gitState.branches.current) {
         setGitStatus({
-          current: statusResult.current,
-          ahead: statusResult.ahead,
-          behind: statusResult.behind
+          current: gitState.branches.current,
+          ahead: gitState.status.ahead,
+          behind: gitState.status.behind
         });
+      } else {
+        setGitStatus(null);
       }
-      
-      if (branchesResult) {
-        setBranches(branchesResult);
-      }
-    } catch (error) {
-      console.error('Error loading git info:', error);
-    }
-  };
+      setBranches(gitState.branches);
+    });
+    
+    return unsubscribe;
+  }, []);
+
+  // No longer needed - git monitor handles this
 
   const handleSwitchBranch = async (branchName: string) => {
     try {
-      await window.electronAPI?.git.switchBranch(branchName);
-      await loadGitInfo();
+      const success = await gitMonitor.switchBranch(branchName);
       setShowBranchMenu(false);
-      showNotification('success', `Switched to branch: ${branchName}`);
+      if (success) {
+        showNotification('success', `Switched to branch: ${branchName}`);
+      } else {
+        showNotification('warning', `Failed to switch to branch: ${branchName}`);
+      }
     } catch (error) {
       console.error('Error switching branch:', error);
       showNotification('warning', `Failed to switch to branch: ${branchName}`);
+    }
+  };
+
+  const handlePull = async () => {
+    try {
+      if (!currentFolder) return;
+      const result = await window.electronAPI.git.pull(currentFolder);
+      if (result.success) {
+        showNotification('success', 'Successfully pulled changes');
+      } else {
+        showNotification('warning', `Pull failed: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error pulling:', error);
+      showNotification('warning', 'Failed to pull changes');
+    }
+  };
+
+  const handlePush = async () => {
+    try {
+      if (!currentFolder) return;
+      const result = await window.electronAPI.git.push(currentFolder);
+      if (result.success) {
+        showNotification('success', 'Successfully pushed changes');
+      } else {
+        showNotification('warning', `Push failed: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error pushing:', error);
+      showNotification('warning', 'Failed to push changes');
     }
   };
 
@@ -474,20 +500,42 @@ function App() {
             {gitStatus && (
               <div className="flex items-center space-x-2 relative">
                 <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
-                <button
-                  onClick={() => setShowBranchMenu(!showBranchMenu)}
-                  className="flex items-center space-x-1 hover:text-gray-200 transition-colors cursor-pointer"
-                  title="Click to switch branch"
-                >
-                  <GitBranch className="w-3 h-3" />
-                  <span className="max-w-32 truncate">{gitStatus.current}</span>
-                  {(gitStatus.ahead > 0 || gitStatus.behind > 0) && (
-                    <span className="text-xs">
-                      {gitStatus.ahead > 0 && <span className="text-green-400">↑{gitStatus.ahead}</span>}
-                      {gitStatus.behind > 0 && <span className="text-red-400">↓{gitStatus.behind}</span>}
-                    </span>
-                  )}
-                </button>
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() => setShowBranchMenu(!showBranchMenu)}
+                    className="flex items-center space-x-1 hover:text-gray-200 transition-colors cursor-pointer"
+                    title="Click to switch branch"
+                  >
+                    <GitBranch className="w-3 h-3" />
+                    <span className="max-w-32 truncate">{gitStatus.current}</span>
+                  </button>
+                  
+                  {/* Separate clickable sync indicators */}
+                  <div className="flex items-center space-x-1 text-xs">
+                      <button
+                        onClick={handlePull}
+                        className={`px-1 rounded transition-colors ${
+                          gitStatus.behind > 0 
+                            ? 'text-red-400 hover:text-red-300 hover:bg-gray-700' 
+                            : 'text-gray-500 hover:text-gray-400 hover:bg-gray-700'
+                        }`}
+                        title={gitStatus.behind > 0 ? `Pull ${gitStatus.behind} commit(s) from remote` : 'No commits to pull'}
+                      >
+                        ↓{gitStatus.behind}
+                      </button>
+                      <button
+                        onClick={handlePush}
+                        className={`px-1 rounded transition-colors ${
+                          gitStatus.ahead > 0 
+                            ? 'text-green-400 hover:text-green-300 hover:bg-gray-700' 
+                            : 'text-gray-500 hover:text-gray-400 hover:bg-gray-700'
+                        }`}
+                        title={gitStatus.ahead > 0 ? `Push ${gitStatus.ahead} commit(s) to remote` : 'No commits to push'}
+                      >
+                        ↑{gitStatus.ahead}
+                      </button>
+                    </div>
+                </div>
                 
                 {/* Branch Dropdown */}
                 {showBranchMenu && (

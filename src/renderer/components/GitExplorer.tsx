@@ -21,12 +21,18 @@ import {
   MoreVertical,
   Settings,
   Zap,
-  AlertTriangle
+  AlertTriangle,
+  List,
+  FolderTree,
+  Sparkles,
+  Bot
 } from 'lucide-react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { GitStatus, GitFileStatus, GitDiff } from '../types/electron';
 import { getFileIconInfo } from '../utils/fileIcons';
 import { stateManager } from '../../services/state-manager';
+import { gitMonitor, GitMonitorState } from '../../services/git-monitor';
+import { PromptManager } from '../../services/prompt-manager';
 
 interface GitExplorerProps {
   currentFolder: string | null;
@@ -34,30 +40,35 @@ interface GitExplorerProps {
 }
 
 export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisible = true }) => {
-  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+  const [gitMonitorState, setGitMonitorState] = useState<GitMonitorState>(gitMonitor.getState());
   const [selectedFile, setSelectedFile] = useState<GitFileStatus | null>(null);
   const [selectedDiff, setSelectedDiff] = useState<GitDiff | null>(null);
-  const [loading, setLoading] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [isCommitting, setIsCommitting] = useState(false);
   const [stagedExpanded, setStagedExpanded] = useState(true);
   const [changesExpanded, setChangesExpanded] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [expandedStagedDirectories, setExpandedStagedDirectories] = useState<Set<string>>(new Set());
   const [expandedChangedDirectories, setExpandedChangedDirectories] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: GitFileStatus | null; type: 'file' | 'staged' | 'changes' | 'general' } | null>(null);
-  const [branches, setBranches] = useState<{ current: string; all: string[] }>({ current: '', all: [] });
   const [showBranchMenu, setShowBranchMenu] = useState(false);
   const [showStashMenu, setShowStashMenu] = useState(false);
-  const [stashList, setStashList] = useState<string[]>([]);
-  const [commitHistory, setCommitHistory] = useState<Array<{ hash: string; message: string; author: string; date: string }>>([]);
   const [showHistoryMenu, setShowHistoryMenu] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(true);
   const [isPulling, setIsPulling] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [isRestoringState, setIsRestoringState] = useState(false);
+  const [isTreeView, setIsTreeView] = useState(true);
+  const [isGeneratingCommitMessage, setIsGeneratingCommitMessage] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Derived state from git monitor
+  const gitStatus = gitMonitorState.status;
+  const branches = gitMonitorState.branches;
+  const commitHistory = gitMonitorState.commitHistory;
+  const stashList = gitMonitorState.stashList;
+  const loading = gitMonitorState.isLoading;
+  const error = gitMonitorState.error;
 
   // Load persisted state when component mounts or folder changes
   useEffect(() => {
@@ -75,6 +86,9 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
         }
         if (persistedState.commitMessage) {
           setCommitMessage(persistedState.commitMessage);
+        }
+        if (persistedState.isTreeView !== undefined) {
+          setIsTreeView(persistedState.isTreeView);
         }
         if (persistedState.expandedStagedDirectories) {
           setExpandedStagedDirectories(new Set(persistedState.expandedStagedDirectories));
@@ -94,13 +108,14 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
         changesExpanded,
         historyExpanded,
         commitMessage,
+        isTreeView,
         expandedStagedDirectories: Array.from(expandedStagedDirectories),
         expandedChangedDirectories: Array.from(expandedChangedDirectories),
         selectedFilePath: selectedFile?.path || null
       };
       stateManager.setGitExplorerState(stateToSave);
     }
-  }, [stagedExpanded, changesExpanded, historyExpanded, commitMessage, expandedStagedDirectories, expandedChangedDirectories, selectedFile, currentFolder, isRestoringState]);
+  }, [stagedExpanded, changesExpanded, historyExpanded, commitMessage, isTreeView, expandedStagedDirectories, expandedChangedDirectories, selectedFile, currentFolder, isRestoringState]);
 
   useEffect(() => {
     const checkDebugMode = async () => {
@@ -117,20 +132,18 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
     checkDebugMode();
   }, []);
 
+  // Subscribe to git monitor updates
   useEffect(() => {
-    if (currentFolder) {
-      loadGitStatus();
-      loadBranches();
-      loadStashList();
-      loadCommitHistory();
-    } else {
-      setGitStatus(null);
-      setError(null);
-      setBranches({ current: '', all: [] });
-      setStashList([]);
-      setCommitHistory([]);
-    }
-  }, [currentFolder]);
+    const unsubscribe = gitMonitor.subscribe((state) => {
+      console.log('GitExplorer: Received git monitor state:', state);
+      setGitMonitorState(state);
+    });
+    
+    // Also log the initial state
+    console.log('GitExplorer: Initial git monitor state:', gitMonitor.getState());
+    
+    return unsubscribe;
+  }, []);
 
   // Restore selected file after gitStatus loads and component becomes visible
   useEffect(() => {
@@ -239,10 +252,8 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
     
     setIsPulling(true);
     try {
-      const result = await window.electronAPI.git.pull();
+      const result = await gitMonitor.pull();
       if (result.success) {
-        await loadGitStatus();
-        await loadCommitHistory();
         console.log('Pull successful:', result.message);
       } else {
         console.error('Pull failed:', result.message);
@@ -261,9 +272,8 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
     
     setIsPushing(true);
     try {
-      const result = await window.electronAPI.git.push();
+      const result = await gitMonitor.push();
       if (result.success) {
-        await loadGitStatus();
         console.log('Push successful:', result.message);
       } else {
         console.error('Push failed:', result.message);
@@ -277,38 +287,11 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
     }
   };
 
-  const loadGitStatus = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // First try to initialize git for the current folder
-      const initialized = await window.electronAPI.git.initialize(currentFolder!);
-      console.log('Git initialization result:', initialized);
-      
-      if (!initialized) {
-        setError('Not a git repository. Initialize git or open a git repository.');
-        setGitStatus(null);
-        return;
-      }
-      
-      const status = await window.electronAPI.git.getStatus();
-      setGitStatus(status);
-      
-      if (!status) {
-        setError('Failed to get git status. Make sure this is a valid git repository.');
-      }
-    } catch (error) {
-      console.error('Error loading git status:', error);
-      setError(`Error: ${error}`);
-      setGitStatus(null);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Git status is now handled by git monitor
 
   const loadDiff = async (file: GitFileStatus) => {
     try {
-      const diff = await window.electronAPI.git.getDiff(file.path, file.staged);
+      const diff = await window.electronAPI.git.getDiff(file.path, file.staged, currentFolder || undefined);
       setSelectedDiff(diff);
       setSelectedFile(file);
     } catch (error) {
@@ -319,8 +302,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
 
   const handleStageFile = async (filePath: string) => {
     try {
-      await window.electronAPI.git.stageFile(filePath);
-      loadGitStatus();
+      await window.electronAPI.git.stageFile(filePath, currentFolder || undefined);
     } catch (error) {
       console.error('Error staging file:', error);
     }
@@ -328,8 +310,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
 
   const handleUnstageFile = async (filePath: string) => {
     try {
-      await window.electronAPI.git.unstageFile(filePath);
-      loadGitStatus();
+      await window.electronAPI.git.unstageFile(filePath, currentFolder || undefined);
     } catch (error) {
       console.error('Error unstaging file:', error);
     }
@@ -338,8 +319,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
   const handleDiscardChanges = async (filePath: string) => {
     if (window.confirm(`Are you sure you want to discard changes to ${filePath}?`)) {
       try {
-        await window.electronAPI.git.discardChanges(filePath);
-        loadGitStatus();
+        await gitMonitor.discardChanges(filePath);
         if (selectedFile?.path === filePath) {
           setSelectedFile(null);
           setSelectedDiff(null);
@@ -353,8 +333,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
   const handleRevertFile = async (filePath: string) => {
     if (window.confirm(`Are you sure you want to revert ${filePath} to HEAD?`)) {
       try {
-        await window.electronAPI.git.revertFile(filePath);
-        loadGitStatus();
+        await gitMonitor.revertFile(filePath);
         if (selectedFile?.path === filePath) {
           setSelectedFile(null);
           setSelectedDiff(null);
@@ -367,10 +346,8 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
 
   const handleStashPush = async (message?: string) => {
     try {
-      const success = await window.electronAPI.git.stashPush(message);
+      const success = await gitMonitor.stashPush(message);
       if (success) {
-        loadGitStatus();
-        loadStashList();
         setSelectedFile(null);
         setSelectedDiff(null);
       }
@@ -381,10 +358,9 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
 
   const handleStashPop = async () => {
     try {
-      const success = await window.electronAPI.git.stashPop();
+      const success = await gitMonitor.stashPop();
       if (success) {
-        loadGitStatus();
-        loadStashList();
+        // Git monitor will automatically update
       }
     } catch (error) {
       console.error('Error popping stash:', error);
@@ -393,8 +369,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
 
   const handleStageAll = async () => {
     try {
-      await window.electronAPI.git.stageAllFiles();
-      loadGitStatus();
+      await gitMonitor.stageAllFiles();
     } catch (error) {
       console.error('Error staging all files:', error);
     }
@@ -402,8 +377,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
 
   const handleUnstageAll = async () => {
     try {
-      await window.electronAPI.git.unstageAllFiles();
-      loadGitStatus();
+      await gitMonitor.unstageAllFiles();
     } catch (error) {
       console.error('Error unstaging all files:', error);
     }
@@ -412,8 +386,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
   const handleDiscardAll = async () => {
     if (window.confirm('Are you sure you want to discard all changes? This cannot be undone.')) {
       try {
-        await window.electronAPI.git.discardAllChanges();
-        loadGitStatus();
+        await gitMonitor.discardAllChanges();
         setSelectedFile(null);
         setSelectedDiff(null);
       } catch (error) {
@@ -425,8 +398,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
   const handleResetSoft = async (commitHash?: string) => {
     if (window.confirm(`Are you sure you want to soft reset to ${commitHash || 'HEAD~1'}?`)) {
       try {
-        await window.electronAPI.git.resetSoft(commitHash);
-        loadGitStatus();
+        await gitMonitor.resetSoft(commitHash);
       } catch (error) {
         console.error('Error soft resetting:', error);
       }
@@ -436,8 +408,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
   const handleResetHard = async (commitHash?: string) => {
     if (window.confirm(`Are you sure you want to hard reset to ${commitHash || 'HEAD~1'}? This will lose all changes.`)) {
       try {
-        await window.electronAPI.git.resetHard(commitHash);
-        loadGitStatus();
+        await gitMonitor.resetHard(commitHash);
         setSelectedFile(null);
         setSelectedDiff(null);
       } catch (error) {
@@ -448,50 +419,22 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
 
   const handleSwitchBranch = async (branchName: string) => {
     try {
-      await window.electronAPI.git.switchBranch(branchName);
-      loadGitStatus();
-      loadBranches();
+      await gitMonitor.switchBranch(branchName);
     } catch (error) {
       console.error('Error switching branch:', error);
     }
   };
 
-  const loadBranches = async () => {
-    try {
-      const branchData = await window.electronAPI.git.getBranches();
-      setBranches(branchData);
-    } catch (error) {
-      console.error('Error loading branches:', error);
-    }
-  };
-
-  const loadStashList = async () => {
-    try {
-      const stashes = await window.electronAPI.git.stashList();
-      setStashList(stashes);
-    } catch (error) {
-      console.error('Error loading stash list:', error);
-    }
-  };
-
-  const loadCommitHistory = async (count: number = 10) => {
-    try {
-      const history = await window.electronAPI.git.getCommitHistory(count);
-      setCommitHistory(history);
-    } catch (error) {
-      console.error('Error loading commit history:', error);
-    }
-  };
+  // Branch, stash, and commit history loading is now handled by git monitor
 
   const handleCommit = async () => {
     if (!commitMessage.trim()) return;
     
     setIsCommitting(true);
     try {
-      const success = await window.electronAPI.git.commit(commitMessage.trim());
+      const success = await window.electronAPI.git.commit(commitMessage.trim(), currentFolder || undefined);
       if (success) {
         setCommitMessage('');
-        loadGitStatus();
         setSelectedFile(null);
         setSelectedDiff(null);
       }
@@ -499,6 +442,137 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
       console.error('Error committing:', error);
     } finally {
       setIsCommitting(false);
+    }
+  };
+
+  const handleSyncOrCommit = async () => {
+    if (commitMessage.trim()) {
+      // If there's a commit message, commit
+      await handleCommit();
+    } else {
+      // If no commit message, sync (pull then push if needed)
+      try {
+        if (gitStatus?.behind && gitStatus.behind > 0) {
+          setIsPulling(true);
+          await handlePull();
+        }
+        if (gitStatus?.ahead && gitStatus.ahead > 0) {
+          setIsPushing(true);
+          await handlePush();
+        }
+      } finally {
+        setIsPulling(false);
+        setIsPushing(false);
+      }
+    }
+  };
+
+  const getFilesInDirectory = (directoryPath: string, files: GitFileStatus[]): GitFileStatus[] => {
+    return files.filter(file => {
+      // Include the directory itself if it's a file
+      if (file.path === directoryPath) return true;
+      
+      // Include files in subdirectories
+      if (file.path.startsWith(directoryPath + '/')) {
+        return true;
+      }
+      
+      return false;
+    });
+  };
+
+  const handleStageDirectory = async (directoryPath: string) => {
+    try {
+      const filesToStage = getFilesInDirectory(directoryPath, changedFiles);
+      console.log(`Staging ${filesToStage.length} files from directory: ${directoryPath}`);
+      
+      // Stage files in parallel for better performance
+      await Promise.all(
+        filesToStage.map(file => 
+          window.electronAPI.git.stageFile(file.path, currentFolder || undefined)
+        )
+      );
+    } catch (error) {
+      console.error('Error staging directory:', error);
+    }
+  };
+
+  const handleUnstageDirectory = async (directoryPath: string) => {
+    try {
+      const filesToUnstage = getFilesInDirectory(directoryPath, stagedFiles);
+      console.log(`Unstaging ${filesToUnstage.length} files from directory: ${directoryPath}`);
+      
+      // Unstage files in parallel for better performance
+      await Promise.all(
+        filesToUnstage.map(file => 
+          window.electronAPI.git.unstageFile(file.path, currentFolder || undefined)
+        )
+      );
+    } catch (error) {
+      console.error('Error unstaging directory:', error);
+    }
+  };
+
+  const generateCommitMessage = async () => {
+    if (!currentFolder || stagedFiles.length === 0) return;
+    
+    setIsGeneratingCommitMessage(true);
+    try {
+      // Initialize prompt manager
+      const promptManager = new PromptManager();
+
+      // Get the diff for staged files
+      const diffs = await Promise.all(
+        stagedFiles.map(file => 
+          window.electronAPI.git.getDiff(file.path, true, currentFolder)
+        )
+      );
+      
+      // Combine all diffs into a single diff text
+      const combinedDiff = diffs
+        .filter(diff => diff !== null)
+        .map(diff => {
+          if (!diff) return '';
+          return `--- a/${diff.file}\n+++ b/${diff.file}\n` + 
+            diff.hunks.map(hunk => 
+              `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@\n` +
+              hunk.lines.map(line => {
+                const prefix = line.type === 'addition' ? '+' : 
+                             line.type === 'deletion' ? '-' : ' ';
+                return prefix + line.content;
+              }).join('\n')
+            ).join('\n');
+        })
+        .join('\n\n');
+
+      if (!combinedDiff.trim()) {
+        console.log('No diff content available for AI generation');
+        return;
+      }
+
+      // Get the AI prompt using PromptManager
+      const prompt = await promptManager.getPrompt('git-commit-generator');
+      if (!prompt) {
+        console.error('AI commit prompt not found');
+        return;
+      }
+
+      // Generate commit message using AI
+      const aiResponse = await window.electronAPI.executeClaudeCommand({
+        prompt: prompt + '\n\nGit Diff:\n```\n' + combinedDiff + '\n```',
+        maxTokens: 150
+      });
+
+      if (aiResponse.success && aiResponse.content) {
+        const generatedMessage = aiResponse.content.trim();
+        setCommitMessage(generatedMessage);
+      } else {
+        console.error('Failed to generate AI commit message:', aiResponse.error);
+      }
+    } catch (error) {
+      console.error('Error generating commit message:', error);
+    } finally {
+      setIsGeneratingCommitMessage(false);
     }
   };
 
@@ -612,6 +686,48 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
     }
   };
 
+  const renderFileList = (files: GitFileStatus[], isStaged: boolean = false): React.ReactNode => {
+    return files.map((file) => (
+      <div
+        key={file.path}
+        className={`flex items-center space-x-2 px-2 py-1 hover:bg-gray-700 rounded transition-colors text-sm cursor-pointer ${
+          selectedFile?.path === file.path ? 'bg-gray-600' : ''
+        }`}
+        onClick={() => loadDiff(file)}
+        onContextMenu={(e) => handleContextMenu(e, file, isStaged ? 'staged' : 'file')}
+      >
+        {getStatusIcon(file)}
+        <span className="flex-1 truncate text-gray-300">{file.path}</span>
+        {getStatusBadge(file.status)}
+        <div className="flex space-x-1">
+          {isStaged ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleUnstageFile(file.path);
+              }}
+              className="p-1 text-red-400 hover:text-red-300 transition-colors"
+              title="Unstage file"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStageFile(file.path);
+              }}
+              className="p-1 text-green-400 hover:text-green-300 transition-colors"
+              title="Stage file"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+    ));
+  };
+
   const renderTreeNode = (node: GitTreeNode, depth: number = 0, isStaged: boolean = false): React.ReactNode => {
     const expandedDirectories = isStaged ? expandedStagedDirectories : expandedChangedDirectories;
     const isExpanded = expandedDirectories.has(node.path);
@@ -623,23 +739,31 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
           // Directory node
           <div>
             <div
-              className="flex items-center space-x-2 p-2 rounded cursor-pointer hover:bg-gray-700 transition-colors"
+              className="flex items-center space-x-2 p-2 rounded hover:bg-gray-700 transition-colors group"
               style={{ paddingLeft: `${depth * 16 + 8}px` }}
-              onClick={() => toggleDirectory(node.path, isStaged)}
             >
-              {hasChildren && (
-                <button className="p-0.5">
-                  {isExpanded ? (
+              <button 
+                className="p-0.5"
+                onClick={() => toggleDirectory(node.path, isStaged)}
+              >
+                {hasChildren ? (
+                  isExpanded ? (
                     <ChevronDown className="w-4 h-4 text-gray-400" />
                   ) : (
                     <ChevronRight className="w-4 h-4 text-gray-400" />
-                  )}
-                </button>
-              )}
-              {!hasChildren && <div className="w-5" />}
+                  )
+                ) : (
+                  <div className="w-5" />
+                )}
+              </button>
               
               <i className="codicon codicon-folder file-icon" style={{ color: '#dcb67a' }} />
-              <span className="flex-1 text-gray-300 text-sm">{node.name}</span>
+              <span 
+                className="flex-1 text-gray-300 text-sm cursor-pointer"
+                onClick={() => toggleDirectory(node.path, isStaged)}
+              >
+                {node.name}
+              </span>
               
               {/* Show count of files in directory */}
               <span className="text-xs text-gray-500">
@@ -647,6 +771,33 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
                   acc + (child.isDirectory ? 0 : child.files.length), 0
                 )}
               </span>
+
+              {/* Stage/Unstage directory button */}
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                {isStaged ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUnstageDirectory(node.path);
+                    }}
+                    className="p-1 text-red-400 hover:text-red-300 transition-colors"
+                    title={`Unstage all files in ${node.name}`}
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStageDirectory(node.path);
+                    }}
+                    className="p-1 text-green-400 hover:text-green-300 transition-colors"
+                    title={`Stage all files in ${node.name}`}
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
             
             {isExpanded && hasChildren && (
@@ -1007,7 +1158,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
           <p className="text-lg mb-2">Git Error</p>
           <p className="text-sm text-gray-500">{error}</p>
           <button
-            onClick={loadGitStatus}
+            onClick={() => gitMonitor.forceUpdate()}
             className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors"
           >
             Retry
@@ -1040,104 +1191,96 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
         style={isDebugMode ? { border: '2px solid blue' } : {}}
       >
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-white">Source Control</h2>
-            <button
-              onClick={loadGitStatus}
-              className="p-1 text-gray-400 hover:text-white transition-colors"
-              title="Refresh"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Git Actions Bar */}
-          {gitStatus && (
-            <div className="mb-4">
-              <div className="flex items-center justify-between p-2 bg-gray-700 rounded text-sm">
-                {gitStatus.ahead > 0 && (
-                  <button
-                    onClick={handlePush}
-                    disabled={isPushing}
-                    className={`flex items-center space-x-1 px-2 py-1 rounded text-green-400 hover:text-green-300 hover:bg-gray-600 transition-colors ${
-                      isPushing ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                    title={isPushing ? 'Pushing...' : `Push ${gitStatus.ahead} commit(s) to remote`}
-                  >
-                    <span>{isPushing ? '↑...' : `↑${gitStatus.ahead}`}</span>
-                    <span className="text-xs">Push</span>
-                  </button>
-                )}
-                {gitStatus.behind > 0 && (
-                  <button
-                    onClick={handlePull}
-                    disabled={isPulling}
-                    className={`flex items-center space-x-1 px-2 py-1 rounded text-red-400 hover:text-red-300 hover:bg-gray-600 transition-colors ${
-                      isPulling ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                    title={isPulling ? 'Pulling...' : `Pull ${gitStatus.behind} commit(s) from remote`}
-                  >
-                    <span>{isPulling ? '↓...' : `↓${gitStatus.behind}`}</span>
-                    <span className="text-xs">Pull</span>
-                  </button>
-                )}
-                <div className="flex items-center space-x-1 ml-auto">
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowStashMenu(!showStashMenu)}
-                      className="p-1 text-gray-400 hover:text-white transition-colors"
-                      title="Stash"
-                    >
-                      <Archive className="w-4 h-4" />
-                    </button>
-                    {renderStashDropdown()}
-                  </div>
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowHistoryMenu(!showHistoryMenu)}
-                      className="p-1 text-gray-400 hover:text-white transition-colors"
-                      title="History"
-                    >
-                      <History className="w-4 h-4" />
-                    </button>
-                    {renderHistoryDropdown()}
-                  </div>
-                  <button
-                    onClick={(e) => handleContextMenu(e, null, 'general')}
-                    className="p-1 text-gray-400 hover:text-white transition-colors"
-                    title="More Actions"
-                  >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Commit section */}
-          {stagedFiles.length > 0 && (
-            <div className="mb-6">
-              <div className="flex items-center space-x-2 mb-2">
-                <MessageSquare className="w-4 h-4 text-gray-400" />
-                <span className="text-sm text-gray-300">Commit Message</span>
-              </div>
-              <textarea
-                value={commitMessage}
-                onChange={(e) => setCommitMessage(e.target.value)}
-                placeholder="Enter commit message..."
-                className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 text-sm resize-none"
-                rows={3}
-              />
+            <div className="flex items-center space-x-1">
+              {/* Tree view toggle */}
               <button
-                onClick={handleCommit}
-                disabled={!commitMessage.trim() || isCommitting}
-                className="w-full mt-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded text-sm transition-colors flex items-center justify-center space-x-2"
+                onClick={() => setIsTreeView(!isTreeView)}
+                className={`p-1 transition-colors ${
+                  isTreeView ? 'text-blue-400 hover:text-blue-300' : 'text-gray-400 hover:text-white'
+                }`}
+                title={isTreeView ? 'Switch to list view' : 'Switch to tree view'}
               >
-                <GitCommit className="w-4 h-4" />
-                <span>{isCommitting ? 'Committing...' : 'Commit'}</span>
+                {isTreeView ? <FolderTree className="w-4 h-4" /> : <List className="w-4 h-4" />}
+              </button>
+              
+              {/* Refresh button */}
+              <button
+                onClick={() => gitMonitor.forceUpdate()}
+                className="p-1 text-gray-400 hover:text-white transition-colors"
+                title="Refresh git status"
+              >
+                <RefreshCw className="w-4 h-4" />
               </button>
             </div>
-          )}
+          </div>
+
+          {/* Commit/Sync section */}
+          <div className="mb-4 space-y-2">
+            {stagedFiles.length > 0 && (
+              <div className="relative">
+                <input
+                  value={commitMessage}
+                  onChange={(e) => setCommitMessage(e.target.value)}
+                  placeholder="Enter commit message..."
+                  className="w-full p-2 pr-10 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.metaKey) {
+                      handleSyncOrCommit();
+                    }
+                  }}
+                />
+                <button
+                  onClick={generateCommitMessage}
+                  disabled={isGeneratingCommitMessage || stagedFiles.length === 0}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-purple-400 hover:text-purple-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
+                  title={isGeneratingCommitMessage ? 'Generating commit message...' : 'Generate commit message with AI'}
+                >
+                  {isGeneratingCommitMessage ? (
+                    <div className="animate-spin">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                  ) : (
+                    <Bot className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            )}
+            <button
+              onClick={handleSyncOrCommit}
+              disabled={isCommitting || isPulling || isPushing || (stagedFiles.length > 0 && !commitMessage.trim())}
+              className={`w-full px-3 py-2 rounded text-sm transition-colors flex items-center justify-center space-x-2 ${
+                commitMessage.trim() && stagedFiles.length > 0
+                  ? 'bg-green-600 hover:bg-green-700 disabled:bg-gray-600'
+                  : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600'
+              } text-white`}
+            >
+              {commitMessage.trim() && stagedFiles.length > 0 ? (
+                <>
+                  <GitCommit className="w-4 h-4" />
+                  <span>{isCommitting ? 'Committing...' : 'Commit'}</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCcw className="w-4 h-4" />
+                  <span className="flex items-center space-x-1">
+                    <span>{(isPulling || isPushing) ? 'Syncing...' : 'Sync'}</span>
+                    {gitStatus && (
+                      <span className="text-xs flex items-center space-x-1">
+                        {gitStatus.behind > 0 && (
+                          <span className="text-red-300">↓{gitStatus.behind}</span>
+                        )}
+                        {gitStatus.ahead > 0 && (
+                          <span className="text-green-300">↑{gitStatus.ahead}</span>
+                        )}
+                      </span>
+                    )}
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* File lists */}
@@ -1176,7 +1319,10 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
               </div>
               {stagedExpanded && (
                 <div className="space-y-1">
-                  {stagedTree.map(node => renderTreeNode(node, 0, true))}
+                  {isTreeView 
+                    ? stagedTree.map(node => renderTreeNode(node, 0, true))
+                    : renderFileList(stagedFiles, true)
+                  }
                 </div>
               )}
             </div>
@@ -1203,7 +1349,10 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
               </div>
               {changesExpanded && (
                 <div className="space-y-1">
-                  {changedTree.map(node => renderTreeNode(node, 0, false))}
+                  {isTreeView 
+                    ? changedTree.map(node => renderTreeNode(node, 0, false))
+                    : renderFileList(changedFiles, false)
+                  }
                 </div>
               )}
             </div>
@@ -1257,7 +1406,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
                 {commitHistory.length > 10 && (
                   <div className="text-center pt-2 border-t border-gray-600">
                     <button 
-                      onClick={() => loadCommitHistory(commitHistory.length + 10)}
+                      onClick={() => gitMonitor.loadMoreCommitHistory(commitHistory.length + 10)}
                       className="text-xs text-blue-400 hover:text-blue-300 py-1"
                     >
                       Load more commits

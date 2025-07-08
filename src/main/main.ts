@@ -136,14 +136,7 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
     updateRecentProjects(projectPath);
     
     // Initialize git service for this window
-    const gitService = new GitService();
-    gitService.initializeRepo(projectPath).then(success => {
-      console.log(`Git initialization for ${projectPath}: ${success}`);
-      if (success) {
-        console.log(`Git repo root: ${gitService.getCurrentRepo()}`);
-      }
-    });
-    gitServices.set(window.id, gitService);
+    initializeGitServiceForWindow(window.id, projectPath);
   }
 
   if (isDev) {
@@ -179,6 +172,38 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
   });
 
   return window;
+}
+
+// Initialize git service for a window
+async function initializeGitServiceForWindow(windowId: number, projectPath: string): Promise<void> {
+  console.log(`Initializing git service for window ${windowId} with path: ${projectPath}`);
+  const gitService = new GitService();
+  
+  // Store the service immediately so it's available for IPC calls
+  gitServices.set(windowId, gitService);
+  
+  try {
+    const success = await gitService.initializeRepo(projectPath);
+    console.log(`Git initialization for ${projectPath}: ${success}`);
+    if (success) {
+      console.log(`Git repo root: ${gitService.getCurrentRepo()}`);
+      
+      // Test if git is actually working
+      const status = await gitService.getStatus();
+      console.log(`Git test - status result:`, status ? 'Got status' : 'No status');
+      if (status) {
+        console.log(`Git test - files count: ${status.files.length}, branch: ${status.current}`);
+      }
+    } else {
+      console.log(`Git initialization failed for ${projectPath} - not a git repository or git not found`);
+      // Remove the service if initialization failed
+      gitServices.delete(windowId);
+    }
+  } catch (error) {
+    console.error(`Git initialization error for ${projectPath}:`, error);
+    // Remove the service if initialization failed
+    gitServices.delete(windowId);
+  }
 }
 
 function updateRecentProjects(projectPath: string): void {
@@ -252,6 +277,10 @@ function createMenu(window?: BrowserWindow): void {
               const projectPath = result.filePaths[0];
               targetWindow.webContents.send('folder-opened', projectPath);
               windowProjects.set(targetWindow.id, projectPath);
+              
+              // Initialize or update git service for this window
+              initializeGitServiceForWindow(targetWindow.id, projectPath);
+              
               updateRecentProjects(projectPath);
               saveOpenWindows();
             }
@@ -377,6 +406,10 @@ function updateRecentProjectsMenu(): void {
           if (focusedWindow) {
             focusedWindow.webContents.send('folder-opened', project.path);
             windowProjects.set(focusedWindow.id, project.path);
+            
+            // Initialize or update git service for this window
+            initializeGitServiceForWindow(focusedWindow.id, project.path);
+            
             updateRecentProjects(project.path);
             saveOpenWindows();
           } else {
@@ -414,6 +447,9 @@ ipcMain.handle('open-folder', async (event) => {
     if (requestingWindow) {
       requestingWindow.webContents.send('folder-opened', projectPath);
       windowProjects.set(requestingWindow.id, projectPath);
+      
+      // Initialize or update git service for this window
+      initializeGitServiceForWindow(requestingWindow.id, projectPath);
     }
 
     updateRecentProjects(projectPath);
@@ -687,43 +723,103 @@ ipcMain.handle('prompt-list-custom', async () => {
   }
 });
 
+// Simple git service cache based on folder path
+const gitServicesByPath = new Map<string, GitService>();
+
+async function getOrCreateGitService(folderPath: string): Promise<GitService | null> {
+  // Check if we already have a service for this path
+  let gitService = gitServicesByPath.get(folderPath);
+  
+  if (!gitService) {
+    console.log(`Creating new git service for path: ${folderPath}`);
+    gitService = new GitService();
+    gitServicesByPath.set(folderPath, gitService);
+    
+    const success = await gitService.initializeRepo(folderPath);
+    if (!success) {
+      console.log(`Git initialization failed for ${folderPath}`);
+      gitServicesByPath.delete(folderPath);
+      return null;
+    }
+  }
+  
+  return gitService;
+}
+
+// Helper to get folder path and git service for IPC handlers
+async function getGitServiceForRequest(event: Electron.IpcMainInvokeEvent, folderPath?: string): Promise<{ gitService: GitService | null; folderPath: string | null }> {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
+  
+  if (!folderPath) {
+    return { gitService: null, folderPath: null };
+  }
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  return { gitService, folderPath };
+}
+
 // Git IPC handlers
-ipcMain.handle('git-get-status', async (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return null;
+ipcMain.handle('git-get-status', async (event, folderPath?: string) => {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return null;
+  if (!folderPath) {
+    console.log('Git get-status: No folder path provided or found');
+    return null;
+  }
   
-  return await gitService.getStatus();
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) {
+    return null;
+  }
+  
+  console.log(`Git get-status: Getting status for ${folderPath}`);
+  const result = await gitService.getStatus();
+  console.log('Git get-status: Result:', result === null ? 'null' : 'data received');
+  return result;
 });
 
-ipcMain.handle('git-get-diff', async (event, filePath: string, staged: boolean = false) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return null;
+ipcMain.handle('git-get-diff', async (event, filePath: string, staged: boolean = false, folderPath?: string) => {
+  const { gitService, folderPath: resolvedPath } = await getGitServiceForRequest(event, folderPath);
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return null;
+  if (!gitService || !resolvedPath) {
+    console.log('Git get-diff: No folder path or git service available');
+    return null;
+  }
   
+  console.log(`Git get-diff: Getting diff for ${filePath} in ${resolvedPath}`);
   return await gitService.getDiff(filePath, staged);
 });
 
-ipcMain.handle('git-stage-file', async (event, filePath: string) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return false;
+ipcMain.handle('git-stage-file', async (event, filePath: string, folderPath?: string) => {
+  const { gitService } = await getGitServiceForRequest(event, folderPath);
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return false;
+  if (!gitService) {
+    console.log('Git stage-file: No git service available');
+    return false;
+  }
   
   return await gitService.stageFile(filePath);
 });
 
-ipcMain.handle('git-unstage-file', async (event, filePath: string) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return false;
+ipcMain.handle('git-unstage-file', async (event, filePath: string, folderPath?: string) => {
+  const { gitService } = await getGitServiceForRequest(event, folderPath);
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return false;
+  if (!gitService) {
+    console.log('Git unstage-file: No git service available');
+    return false;
+  }
   
   return await gitService.unstageFile(filePath);
 });
@@ -738,12 +834,18 @@ ipcMain.handle('git-discard-changes', async (event, filePath: string) => {
   return await gitService.discardChanges(filePath);
 });
 
-ipcMain.handle('git-commit', async (event, message: string) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return false;
+ipcMain.handle('git-commit', async (event, message: string, folderPath?: string) => {
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return false;
+  if (!folderPath) return false;
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) return false;
   
   return await gitService.commit(message);
 });
@@ -792,12 +894,24 @@ ipcMain.handle('git-stash-pop', async (event) => {
   return await gitService.stashPop();
 });
 
-ipcMain.handle('git-stash-list', async (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return [];
+ipcMain.handle('git-stash-list', async (event, folderPath?: string) => {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return [];
+  if (!folderPath) {
+    console.log('Git stash-list: No folder path provided or found');
+    return [];
+  }
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) {
+    return [];
+  }
   
   return await gitService.stashList();
 });
@@ -862,14 +976,29 @@ ipcMain.handle('git-discard-all', async (event) => {
   return await gitService.discardAllChanges();
 });
 
-ipcMain.handle('git-get-branches', async (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return { current: '', all: [] };
+ipcMain.handle('git-get-branches', async (event, folderPath?: string) => {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return { current: '', all: [] };
+  if (!folderPath) {
+    console.log('Git get-branches: No folder path provided or found');
+    return { current: '', all: [] };
+  }
   
-  return await gitService.getBranches();
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) {
+    return { current: '', all: [] };
+  }
+  
+  console.log(`Git get-branches: Getting branches for ${folderPath}`);
+  const result = await gitService.getBranches();
+  console.log('Git get-branches: Result:', result);
+  return result;
 });
 
 ipcMain.handle('git-create-branch', async (event, branchName: string) => {
@@ -902,14 +1031,29 @@ ipcMain.handle('git-delete-branch', async (event, branchName: string) => {
   return await gitService.deleteBranch(branchName);
 });
 
-ipcMain.handle('git-get-commit-history', async (event, count?: number) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return [];
+ipcMain.handle('git-get-commit-history', async (event, count?: number, folderPath?: string) => {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return [];
+  if (!folderPath) {
+    console.log('Git get-commit-history: No folder path provided or found');
+    return [];
+  }
   
-  return await gitService.getCommitHistory(count);
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) {
+    return [];
+  }
+  
+  console.log(`Git get-commit-history: Getting history for ${folderPath}`);
+  const result = await gitService.getCommitHistory(count);
+  console.log('Git get-commit-history: Result count:', result.length);
+  return result;
 });
 
 ipcMain.handle('git-clean-untracked', async (event) => {
@@ -922,22 +1066,34 @@ ipcMain.handle('git-clean-untracked', async (event) => {
   return await gitService.cleanUntrackedFiles();
 });
 
-ipcMain.handle('git-pull', async (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return { success: false, message: 'Window not found' };
+ipcMain.handle('git-pull', async (event, folderPath?: string) => {
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return { success: false, message: 'Git not initialized' };
+  if (!folderPath) return { success: false, message: 'No folder path provided' };
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) return { success: false, message: 'Git not initialized' };
   
   return await gitService.pull();
 });
 
-ipcMain.handle('git-push', async (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return { success: false, message: 'Window not found' };
+ipcMain.handle('git-push', async (event, folderPath?: string) => {
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return { success: false, message: 'Git not initialized' };
+  if (!folderPath) return { success: false, message: 'No folder path provided' };
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) return { success: false, message: 'Git not initialized' };
   
   return await gitService.push();
 });

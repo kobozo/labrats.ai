@@ -160,6 +160,7 @@ export const Settings: React.FC = () => {
     loadAIServices();
     checkMasterKeySetup();
     loadAIProviders();
+    loadLabRatsBackendSettings();
   }, []);
 
   const checkMasterKeySetup = async () => {
@@ -343,6 +344,42 @@ export const Settings: React.FC = () => {
     }
   };
 
+  const loadLabRatsBackendSettings = async () => {
+    try {
+      const backendConfig = await window.electronAPI?.config?.get('backend');
+      if (backendConfig) {
+        setSettings(prev => ({
+          ...prev,
+          general: {
+            ...prev.general,
+            labRatsBackend: {
+              enabled: backendConfig.enabled || true,
+              url: backendConfig.labrats_llm?.endpoint || 'http://localhost:11434',
+              model: backendConfig.labrats_llm?.model || 'mistral',
+              timeout: backendConfig.labrats_llm?.timeout || 30000
+            }
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading LabRats backend settings:', error);
+    }
+  };
+
+  const saveLabRatsBackendSettings = async (newSettings: typeof settings.general.labRatsBackend) => {
+    try {
+      await window.electronAPI?.config?.set('backend', 'enabled', newSettings.enabled);
+      await window.electronAPI?.config?.set('backend', 'labrats_llm', {
+        endpoint: newSettings.url,
+        model: newSettings.model,
+        timeout: newSettings.timeout
+      });
+      console.log('LabRats backend settings saved successfully');
+    } catch (error) {
+      console.error('Error saving LabRats backend settings:', error);
+    }
+  };
+
   const testLabRatsBackend = async () => {
     setTestingConnection(true);
     try {
@@ -468,7 +505,11 @@ export const Settings: React.FC = () => {
               <input
                 type="checkbox"
                 checked={settings.general.labRatsBackend.enabled}
-                onChange={(e) => updateSetting('general', 'labRatsBackend', { ...settings.general.labRatsBackend, enabled: e.target.checked })}
+                onChange={async (e) => {
+                  const newSettings = { ...settings.general.labRatsBackend, enabled: e.target.checked };
+                  updateSetting('general', 'labRatsBackend', newSettings);
+                  await saveLabRatsBackendSettings(newSettings);
+                }}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-gray-700 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
@@ -482,7 +523,11 @@ export const Settings: React.FC = () => {
                 <input
                   type="url"
                   value={settings.general.labRatsBackend.url}
-                  onChange={(e) => updateSetting('general', 'labRatsBackend', { ...settings.general.labRatsBackend, url: e.target.value })}
+                  onChange={async (e) => {
+                    const newSettings = { ...settings.general.labRatsBackend, url: e.target.value };
+                    updateSetting('general', 'labRatsBackend', newSettings);
+                    await saveLabRatsBackendSettings(newSettings);
+                  }}
                   placeholder="http://localhost:11434"
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -494,7 +539,11 @@ export const Settings: React.FC = () => {
                 <input
                   type="text"
                   value={settings.general.labRatsBackend.model}
-                  onChange={(e) => updateSetting('general', 'labRatsBackend', { ...settings.general.labRatsBackend, model: e.target.value })}
+                  onChange={async (e) => {
+                    const newSettings = { ...settings.general.labRatsBackend, model: e.target.value };
+                    updateSetting('general', 'labRatsBackend', newSettings);
+                    await saveLabRatsBackendSettings(newSettings);
+                  }}
                   placeholder="mistral"
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -506,7 +555,11 @@ export const Settings: React.FC = () => {
                 <input
                   type="number"
                   value={settings.general.labRatsBackend.timeout}
-                  onChange={(e) => updateSetting('general', 'labRatsBackend', { ...settings.general.labRatsBackend, timeout: parseInt(e.target.value) || 30000 })}
+                  onChange={async (e) => {
+                    const newSettings = { ...settings.general.labRatsBackend, timeout: parseInt(e.target.value) || 30000 };
+                    updateSetting('general', 'labRatsBackend', newSettings);
+                    await saveLabRatsBackendSettings(newSettings);
+                  }}
                   min="1000"
                   max="120000"
                   step="1000"

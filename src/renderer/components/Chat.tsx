@@ -737,12 +737,26 @@ To debug the message bus, open console and type: debugBus()
           </div>
           <button
             type="submit"
-            disabled={!inputValue.trim() || isTyping}
+            disabled={!inputValue.trim()}
             className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
           >
             <Send className="w-4 h-4" />
             <span>Send</span>
           </button>
+          {isBusActive && (
+            <button
+              type="button"
+              onClick={() => {
+                messageBus.reset();
+                setMessages([]);
+                setActiveAgents(agents.filter(a => a.id === 'cortex'));
+              }}
+              className="px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+            >
+              <XCircle className="w-4 h-4" />
+              <span>Stop</span>
+            </button>
+          )}
         </form>
         
         <div className="mt-2 flex items-center justify-between">

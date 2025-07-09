@@ -96,14 +96,16 @@ export const MultiAgentChat: React.FC<MultiAgentChatProps> = ({
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || !isActive) return;
     
-    setIsLoading(true);
+    const messageToSend = inputMessage;
+    setInputMessage(''); // Clear input immediately so user can type next message
+    
     try {
-      await chatService.sendMessage(inputMessage);
-      setInputMessage('');
+      await chatService.sendMessage(messageToSend);
     } catch (error) {
       console.error('Error sending message:', error);
+      // Optionally restore the message on error
+      setInputMessage(messageToSend);
     }
-    setIsLoading(false);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -270,11 +272,11 @@ export const MultiAgentChat: React.FC<MultiAgentChatProps> = ({
             onKeyPress={handleKeyPress}
             placeholder={isActive ? "Type your message..." : "Enter your goal or task to start..."}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={isLoading}
+            disabled={false}
           />
           <button
             onClick={isActive ? handleSendMessage : handleStartConversation}
-            disabled={isLoading || !inputMessage.trim()}
+            disabled={!inputMessage.trim()}
             className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isActive ? 'Send' : 'Start'}

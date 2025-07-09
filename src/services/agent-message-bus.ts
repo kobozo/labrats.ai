@@ -6,6 +6,21 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { getAIProviderManager } from './ai-provider-manager';
+import { getLabRatsBackend } from './labrats-backend-service';
+import { z } from 'zod';
+
+// Zod schema for agent response structure
+const agentResponseSchema = z.object({
+  message: z.string().describe("Your actual response text here - include code blocks, explanations, everything you want to say"),
+  action: z.enum(['done', 'open', 'waiting', 'needs_review', 'implementing', 'planning', 'reviewing', 'user_input']).describe("Current action state"),
+  involve: z.array(z.string()).describe("Agent IDs to involve NOW (not for future steps) - use 'labrats' for user mention"),
+  metadata: z.object({
+    type: z.enum(['implementation', 'review', 'planning', 'documentation', 'deployment', 'testing']).optional().describe("Type of work being done"),
+    waitingFor: z.array(z.string()).optional().describe("Agent IDs you are waiting for")
+  }).describe("Additional metadata")
+});
+
+export type AgentResponse = z.infer<typeof agentResponseSchema>;
 
 export interface BusMessage {
   id: string;
@@ -20,7 +35,7 @@ export interface BusMessage {
   metadata?: AgentMetadata; // Additional context
 }
 
-export type AgentAction = 'done' | 'open' | 'waiting' | 'needs_review' | 'implementing' | 'planning' | 'reviewing';
+export type AgentAction = 'done' | 'open' | 'waiting' | 'needs_review' | 'implementing' | 'planning' | 'reviewing' | 'user_input';
 
 export interface AgentMetadata {
   confidence?: number;
@@ -51,6 +66,9 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private readonly maxContextMessages: number;
   private readonly maxAgentHistory: number;
   private busActive = false;
+  private lastActivityTime: Date = new Date();
+  private stallDetectionTimer: NodeJS.Timeout | null = null;
+  private readonly stallTimeoutMs = 10000; // 10 seconds
 
   constructor(options: MessageBusOptions = {}) {
     super();
@@ -92,6 +110,10 @@ export class AgentMessageBus extends BrowserEventEmitter {
 
     console.log(`[AGENT-BUS] Publishing message from ${message.author}: "${message.content.substring(0, 50)}..."`);
     
+    // Update activity time and reset stall detection
+    this.lastActivityTime = new Date();
+    this.resetStallDetection();
+    
     // Add to global history
     this.globalMessageHistory.push(message);
     
@@ -110,6 +132,9 @@ export class AgentMessageBus extends BrowserEventEmitter {
     if (message.messageType === 'user' || message.mentions.length > 0) {
       await this.processAgentReactions(message);
     }
+    
+    // Start stall detection after processing
+    this.startStallDetection();
   }
 
   private distributeMessageToAgents(message: BusMessage): void {
@@ -231,7 +256,10 @@ export class AgentMessageBus extends BrowserEventEmitter {
           const shouldRespond = await this.shouldAgentRespond(agentId, triggerMessage);
           if (shouldRespond) {
             console.log(`[AGENT-BUS] Agent ${agentId} will respond naturally`);
+            // Only show typing indicator when agent will actually respond
+            this.emit('agent-typing', { agentId, isTyping: true });
             await this.invokeAgent(agentId, triggerMessage, 'natural');
+            this.emit('agent-typing', { agentId, isTyping: false });
             agentsResponded++;
             
             // Add small delay between natural responses to make it feel more natural
@@ -420,6 +448,37 @@ export class AgentMessageBus extends BrowserEventEmitter {
     const myRecentContent = myRecentMessages
       .map(msg => msg.content.substring(0, 100))
       .join(' | ');
+
+    // First, try the local LabRats backend for fast decision making
+    const labRatsBackend = getLabRatsBackend();
+    
+    if (labRatsBackend.available) {
+      console.log(`[AGENT-BUS] Using local LabRats backend for ${agentId} decision`);
+      
+      try {
+        const decisionResponse = await labRatsBackend.shouldAgentRespond({
+          agentId,
+          agentName: agent.name,
+          agentTitle: agent.title,
+          message: triggerMessage.content,
+          messageAuthor: triggerMessage.author,
+          conversationContext: contextStr,
+          agentRecentMessages: myRecentContent
+        });
+
+        if (decisionResponse.success) {
+          console.log(`[AGENT-BUS] Agent ${agentId} local decision: ${decisionResponse.shouldRespond} (${decisionResponse.reasoning})`);
+          return decisionResponse.shouldRespond;
+        } else {
+          console.log(`[AGENT-BUS] Local backend failed for ${agentId}, falling back to external AI`);
+        }
+      } catch (error) {
+        console.error(`[AGENT-BUS] Error with local backend for ${agentId}, falling back to external AI:`, error);
+      }
+    }
+
+    // Fallback to external AI for decision making
+    console.log(`[AGENT-BUS] Using external AI for ${agentId} decision (local backend not available)`);
     
     // Check if agent is waiting for something
     const isWaitingForSomeone = myRecentMessages.some(msg => 
@@ -494,7 +553,7 @@ Respond with only "YES" or "NO".
       const shouldRespond = response.success && 
                            response.content?.trim().toUpperCase().startsWith('YES') === true;
       
-      console.log(`[AGENT-BUS] Agent ${agentId} AI decision: ${shouldRespond} (${response.content?.trim()})`);
+      console.log(`[AGENT-BUS] Agent ${agentId} external AI decision: ${shouldRespond} (${response.content?.trim()})`);
       console.log(`[AGENT-BUS] Agent ${agentId} context messages: ${context.personalMessageHistory.length}`);
       console.log(`[AGENT-BUS] Agent ${agentId} current state: ${context.currentAction}`);
       
@@ -1161,42 +1220,24 @@ START YOUR REVIEW NOW!`;
         throw new Error(`Unsupported provider: ${defaultConfig.providerId}`);
       }
       
-      const enhancedSystemPrompt = `${systemPrompt}\n\nYour session ID: ${agentContext.sessionId}\nYou are an individual agent with your own context and memory on the message bus.\n\n🔄 CRITICAL: You MUST respond with a JSON structure:\n{\n  "message": "Your actual response text here",\n  "action": "done|open|waiting|needs_review|implementing|planning|reviewing",\n  "involve": ["agent_ids_to_involve"],\n  "metadata": {\n    "type": "implementation|review|planning|documentation|deployment|testing",\n    "waitingFor": ["agent_ids_you_are_waiting_for"]\n  }\n}\n\nAction states:\n- "done": You've completed your task and won't iterate further\n- "open": You're open for discussion and feedback\n- "waiting": You're waiting for input from specific agents\n- "needs_review": Your work needs review before proceeding\n- "implementing": You're actively working on implementation\n- "planning": You're in planning phase\n- "reviewing": You're reviewing someone's work\n\nOnly include agents in "involve" if you need them NOW, not for future steps.\n\n🎯 SPECIAL INSTRUCTION FOR CORTEX (Product Owner):\nWhenever ANY agent reports "done", immediately ask yourself: "Have we fully achieved the user's original goal/question?" If NOT, you must:\n1. Identify what's still missing to complete the user's request\n2. Tell the relevant agent(s) exactly what they need to do next\n3. Set your action to "open" and coordinate the next steps\n4. Don't let the team stop until the user's goal is completely satisfied\n\n🚨 IMPORTANT: If the user is asking for help, expressing frustration, or saying the conversation stopped (messages like "can we get some help", "someone?", "everybody stopped answering"), you should respond even if you're in "done" or "waiting" state. Help the user by coordinating with the team or providing assistance. Change your action to "open" and help move the conversation forward.`;
+      const enhancedSystemPrompt = `${systemPrompt}\n\nYour session ID: ${agentContext.sessionId}\nYou are an individual agent with your own context and memory on the message bus.\n\nAction states:\n- "done": You've completed your task and won't iterate further\n- "open": You're open for discussion and feedback\n- "waiting": You're waiting for input from specific agents\n- "needs_review": Your work needs review before proceeding\n- "implementing": You're actively working on implementation\n- "planning": You're in planning phase\n- "reviewing": You're reviewing someone's work\n\nOnly include agents in "involve" if you need them NOW, not for future steps.\n\n🎯 SPECIAL INSTRUCTIONS FOR CORTEX (Product Owner) - WORKFLOW MANAGEMENT:\nYou have CRITICAL responsibilities for team coordination and completion:\n\n**When ANY agent reports "done":**\n1. IMMEDIATELY ask: "Have we fully achieved the user's original goal/question?"\n2. If NOT complete: Identify exactly what's still missing\n3. Tell the relevant agent(s) exactly what they need to do next\n4. Set your action to "open" and coordinate the next steps\n5. NEVER accept "done" until the user can actually use the solution\n\n**When agents go silent or stall:**\n1. Proactively check in: "What's your current progress on [task]?"\n2. Identify blockers: "Are you waiting for anything specific?"\n3. Provide direction: "Your next step should be [specific action]"\n4. Re-engage: "@[agent] - we need your input on [specific item]"\n\n**Throughout the conversation:**\n1. Monitor that agents are progressing their states (not staying static)\n2. Bridge connections between agent work\n3. Push for concrete deliverables, not just discussions\n4. Don't let the team stop until the user's goal is COMPLETELY satisfied\n5. **NEVER go silent** - Always drive the conversation forward\n6. **After tech stack definition** - IMMEDIATELY assign implementation tasks\n7. **Keep momentum** - Don't let the conversation stall at any point\n\n🚨 IMPORTANT: If the user is asking for help, expressing frustration, or saying the conversation stopped (messages like "can we get some help", "someone?", "everybody stopped answering"), you should respond even if you're in "done" or "waiting" state. Help the user by coordinating with the team or providing assistance. Change your action to "open" and help move the conversation forward.`;
+      
+      // Create structured output model
+      const structuredModel = chatModel.withStructuredOutput(agentResponseSchema, {
+        name: "agent_response",
+        method: defaultConfig.providerId === 'openai' ? 'json_mode' : 'function_calling'
+      });
+      
       const messages = [
         new SystemMessage(enhancedSystemPrompt),
         new HumanMessage(context)
       ];
       
-      const response = await chatModel.invoke(messages);
+      const response = await structuredModel.invoke(messages);
       
-      // Parse the structured JSON response
-      let structuredResponse;
-      let messageContent = response.content.toString();
-      
-      try {
-        // Try to extract JSON from the response
-        const jsonMatch = messageContent.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          structuredResponse = JSON.parse(jsonMatch[0]);
-          messageContent = structuredResponse.message || messageContent;
-        } else {
-          // Fallback if agent doesn't provide JSON
-          structuredResponse = {
-            message: messageContent,
-            action: 'open',
-            involve: [],
-            metadata: {}
-          };
-        }
-      } catch (e) {
-        console.warn(`[AGENT-BUS] Failed to parse JSON from ${agentId}, using plain message`);
-        structuredResponse = {
-          message: messageContent,
-          action: 'open',
-          involve: [],
-          metadata: {}
-        };
-      }
+      // With withStructuredOutput, the response is already parsed
+      const structuredResponse = response as AgentResponse;
+      const messageContent = structuredResponse.message;
       
       const agentMessage: LangChainChatMessage = {
         id: this.generateId(),
@@ -1232,7 +1273,13 @@ START YOUR REVIEW NOW!`;
     
     while ((match = mentionRegex.exec(content)) !== null) {
       const agentId = match[1];
-      if (agents.find(a => a.id === agentId)) {
+      // Handle user mention as "labrats" (from Account.tsx email: labrats@kobozo.com)
+      if (agentId === 'labrats') {
+        // Only add if not already in the list (deduplicate)
+        if (!mentions.includes(agentId)) {
+          mentions.push(agentId);
+        }
+      } else if (agents.find(a => a.id === agentId)) {
         // Only add if not already in the list (deduplicate)
         if (!mentions.includes(agentId)) {
           mentions.push(agentId);
@@ -1245,6 +1292,47 @@ START YOUR REVIEW NOW!`;
 
   private generateId(): string {
     return `bus_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private resetStallDetection(): void {
+    if (this.stallDetectionTimer) {
+      clearTimeout(this.stallDetectionTimer);
+      this.stallDetectionTimer = null;
+    }
+  }
+
+  private startStallDetection(): void {
+    if (!this.busActive) return;
+    
+    this.resetStallDetection();
+    
+    this.stallDetectionTimer = setTimeout(async () => {
+      console.log('[AGENT-BUS] Conversation stall detected - nudging Cortex');
+      await this.handleConversationStall();
+    }, this.stallTimeoutMs);
+  }
+
+  private async handleConversationStall(): Promise<void> {
+    if (!this.busActive) return;
+    
+    const cortexContext = this.agentContexts.get('cortex');
+    if (!cortexContext || !cortexContext.isActive) {
+      console.log('[AGENT-BUS] Cortex not available to handle stall');
+      return;
+    }
+
+    // Create a system message to nudge Cortex
+    const stallMessage: BusMessage = {
+      id: this.generateId(),
+      content: 'SYSTEM: Conversation has stalled. Please analyze the last messages and nudge the appropriate agent or user to continue progress. What should happen next?',
+      author: 'system',
+      timestamp: new Date(),
+      mentions: ['cortex'],
+      messageType: 'system'
+    };
+
+    console.log('[AGENT-BUS] Sending stall detection message to Cortex');
+    await this.invokeAgent('cortex', stallMessage, 'mentioned');
   }
 
   // Public interface
@@ -1284,6 +1372,7 @@ START YOUR REVIEW NOW!`;
     this.busActive = false;
     this.globalMessageHistory = [];
     this.agentContexts.clear();
+    this.resetStallDetection();
     this.emit('bus-reset');
   }
 

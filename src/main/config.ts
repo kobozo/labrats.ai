@@ -50,6 +50,16 @@ export interface LabRatsConfig {
     };
   };
 
+  // LabRats Backend settings
+  backend: {
+    enabled: boolean;
+    labrats_llm: {
+      endpoint: string;
+      model: string;
+      timeout: number;
+    };
+  };
+
   // Notifications settings
   notifications: {
     agentActions: boolean;
@@ -138,6 +148,15 @@ const DEFAULT_CONFIG: LabRatsConfig = {
     streamResponses: true,
     autoSuggest: true,
     services: {},
+  },
+
+  backend: {
+    enabled: true,
+    labrats_llm: {
+      endpoint: 'http://localhost:11434',
+      model: 'mistral:latest',
+      timeout: 30000,
+    },
   },
 
   notifications: {

@@ -35,6 +35,7 @@ import { agents as configAgents, Agent as ConfigAgent } from '../../config/agent
 import { stateManager } from '../../services/state-manager';
 import { getChatService, ChatServiceMessage } from '../../services/chat-service';
 import { getAgentMessageBus, BusMessage } from '../../services/agent-message-bus';
+import { chatHistoryManager } from '../../services/chat-history-manager-renderer';
 import { MentionAutocomplete } from './MentionAutocomplete';
 
 interface Agent {
@@ -195,11 +196,11 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     const loadPersistedMessages = async () => {
       if (currentFolder) {
         // Set current project in chat services
-        chatService.setCurrentProject(currentFolder);
+        await chatService.setCurrentProject(currentFolder);
         messageBus.setCurrentProject(currentFolder);
         
-        // Load messages from state manager
-        const persistedMessages = stateManager.getChatMessages();
+        // Load messages from chat history manager
+        const persistedMessages = await chatHistoryManager.loadChatHistory(currentFolder);
         if (persistedMessages.length > 0) {
           // Convert ChatServiceMessage to Message format
           const convertedMessages: Message[] = persistedMessages.map(msg => ({
@@ -212,21 +213,18 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
             modelId: msg.modelId
           }));
           setMessages(convertedMessages);
-        }
-        
-        // Load conversation history into chat service
-        const conversationHistory = stateManager.getChatConversationHistory();
-        if (conversationHistory.length > 0) {
-          baseChatService.clearConversation();
-          conversationHistory.forEach(msg => {
+          
+          // Also load conversation history into chat service
+          await baseChatService.clearConversation();
+          persistedMessages.forEach(msg => {
             (baseChatService as any).conversationHistory.push(msg);
           });
         }
       } else {
         // Clear messages when no folder is open
         setMessages([]);
-        baseChatService.clearConversation();
-        chatService.setCurrentProject(null);
+        await baseChatService.clearConversation();
+        await chatService.setCurrentProject(null);
         messageBus.setCurrentProject(null);
       }
     };
@@ -248,11 +246,8 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
         modelId: msg.modelId
       }));
       
-      stateManager.setChatMessages(chatServiceMessages);
-      
-      // Also persist conversation history from chat service
-      const conversationHistory = baseChatService.getConversationHistory();
-      stateManager.setChatConversationHistory(conversationHistory);
+      // Save chat history to .labrats/chats/history
+      chatHistoryManager.saveChatHistory(currentFolder, chatServiceMessages);
     }
   }, [messages, currentFolder]);
 

@@ -1,10 +1,5 @@
-import { ChatServiceMessage } from './chat-service';
 
 export interface AppState {
-  chat: {
-    messages: ChatServiceMessage[];
-    conversationHistory: ChatServiceMessage[];
-  };
   navigation: {
     activeView: string;
     previousView: string;
@@ -43,10 +38,6 @@ export class StateManager {
 
   private getDefaultState(): AppState {
     return {
-      chat: {
-        messages: [],
-        conversationHistory: []
-      },
       navigation: {
         activeView: 'chat',
         previousView: 'chat'
@@ -154,24 +145,6 @@ export class StateManager {
     }
   }
 
-  // Chat state methods
-  setChatMessages(messages: ChatServiceMessage[]) {
-    this.currentState.chat.messages = messages;
-    this.debounceStateUpdate();
-  }
-
-  getChatMessages(): ChatServiceMessage[] {
-    return this.currentState.chat.messages;
-  }
-
-  setChatConversationHistory(history: ChatServiceMessage[]) {
-    this.currentState.chat.conversationHistory = history;
-    this.debounceStateUpdate();
-  }
-
-  getChatConversationHistory(): ChatServiceMessage[] {
-    return this.currentState.chat.conversationHistory;
-  }
 
   // Navigation state methods
   setActiveView(view: string) {

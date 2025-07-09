@@ -172,6 +172,19 @@ export interface AIAPI {
   getModels: (providerId: string) => Promise<any[]>;
 }
 
+export interface ChatHistoryResult {
+  success: boolean;
+  error?: string;
+  messages?: any[];
+}
+
+export interface ChatHistoryAPI {
+  save: (projectPath: string, messages: any[]) => Promise<ChatHistoryResult>;
+  load: (projectPath: string) => Promise<ChatHistoryResult>;
+  clear: (projectPath: string) => Promise<ChatHistoryResult>;
+  cleanup: (projectPath: string, maxAge?: number) => Promise<ChatHistoryResult>;
+}
+
 export interface ElectronAPI {
   openFolder: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   readDirectory: (dirPath: string) => Promise<FileNode[]>;
@@ -189,6 +202,7 @@ export interface ElectronAPI {
   terminal?: TerminalAPI;
   ai?: AIAPI;
   prompt?: PromptAPI;
+  chatHistory?: ChatHistoryAPI;
 }
 
 declare global {

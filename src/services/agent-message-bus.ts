@@ -6,7 +6,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { getAIProviderManager } from './ai-provider-manager';
-import { getLabRatsBackend } from './labrats-backend-service';
+import { getLabRatsBackend, getLabRatsBackendAsync } from './labrats-backend-service';
 import { z } from 'zod';
 
 // Zod schema for agent response structure
@@ -66,6 +66,7 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private readonly maxContextMessages: number;
   private readonly maxAgentHistory: number;
   private busActive = false;
+  private agentsActive = true; // New: Controls whether agents can respond
   private lastActivityTime: Date = new Date();
   private stallDetectionTimer: NodeJS.Timeout | null = null;
   private readonly stallTimeoutMs = 10000; // 10 seconds
@@ -82,6 +83,14 @@ export class AgentMessageBus extends BrowserEventEmitter {
     }
 
     console.log(`[AGENT-BUS] Starting message bus with: "${initialMessage}"`);
+    
+    // Initialize LabRats backend with proper configuration
+    try {
+      const backend = await getLabRatsBackendAsync();
+      console.log(`[AGENT-BUS] LabRats backend initialized: ${backend.available}`);
+    } catch (error) {
+      console.warn('[AGENT-BUS] Failed to initialize LabRats backend:', error);
+    }
     
     this.busActive = true;
     this.globalMessageHistory = [];
@@ -453,6 +462,8 @@ export class AgentMessageBus extends BrowserEventEmitter {
 
     // First, try the local LabRats backend for fast decision making
     const labRatsBackend = getLabRatsBackend();
+    
+    console.log(`[AGENT-BUS] LabRats backend availability: ${labRatsBackend.available}`);
     
     if (labRatsBackend.available) {
       console.log(`[AGENT-BUS] Using local LabRats backend for ${agentId} decision`);

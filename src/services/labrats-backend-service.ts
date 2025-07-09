@@ -40,10 +40,16 @@ export class LabRatsBackendService {
       
       if (response.ok) {
         const data = await response.json();
-        // Check if mistral model is available
-        const hasModel = data.models?.some((model: any) => 
-          model.name.toLowerCase().includes(this.model.toLowerCase())
-        );
+        // Check if the specified model is available
+        const hasModel = data.models?.some((model: any) => {
+          const modelName = model.name || model.model || '';
+          const normalizedModelName = modelName.toLowerCase();
+          const normalizedSearchModel = this.model.toLowerCase();
+          
+          // Check exact match or base model name match
+          return normalizedModelName === normalizedSearchModel || 
+                 normalizedModelName.includes(normalizedSearchModel.split(':')[0]);
+        });
         
         if (hasModel) {
           this.isAvailable = true;
@@ -162,21 +168,42 @@ Respond with only "YES" or "NO".`;
 // Singleton instance
 let labRatsBackendInstance: LabRatsBackendService | null = null;
 
-export function getLabRatsBackend(): LabRatsBackendService {
+export async function getLabRatsBackendAsync(): Promise<LabRatsBackendService> {
   if (!labRatsBackendInstance) {
     // Try to get config from electron main process
     let config = null;
     try {
       if (typeof window !== 'undefined' && window.electronAPI?.config) {
-        // This is async, but we'll use defaults for now and update later
-        config = null; // We'll handle this in the backend service initialization
+        const configResult = await window.electronAPI.config.get();
+        if (configResult.success) {
+          config = configResult.config;
+          console.log('[LABRATS-BACKEND] Loaded config:', config.backend?.labrats_llm);
+        }
       }
     } catch (error) {
-      console.warn('[LABRATS-BACKEND] Could not access config, using defaults');
+      console.warn('[LABRATS-BACKEND] Could not access config, using defaults:', error);
     }
 
-    // For now, use defaults - the service will be enhanced to reload config when needed
+    // Create service with config values or defaults
+    const endpoint = config?.backend?.labrats_llm?.endpoint || 'http://localhost:11434';
+    const model = config?.backend?.labrats_llm?.model || 'mistral:latest';
+    const timeout = config?.backend?.labrats_llm?.timeout || 30000;
+    
+    console.log('[LABRATS-BACKEND] Initializing with:', { endpoint, model, timeout });
+    labRatsBackendInstance = new LabRatsBackendService(endpoint, model, timeout);
+  }
+  return labRatsBackendInstance;
+}
+
+export function getLabRatsBackend(): LabRatsBackendService {
+  if (!labRatsBackendInstance) {
+    // Create with defaults for synchronous access
     labRatsBackendInstance = new LabRatsBackendService();
+    
+    // Try to update with actual config asynchronously
+    getLabRatsBackendAsync().catch(error => {
+      console.warn('[LABRATS-BACKEND] Failed to update with config:', error);
+    });
   }
   return labRatsBackendInstance;
 }

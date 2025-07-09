@@ -109,6 +109,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listCustom: () => ipcRenderer.invoke('prompt-list-custom'),
   },
 
+  // Chat History API
+  chatHistory: {
+    save: (projectPath: string, messages: any[]) => ipcRenderer.invoke('chat-history-save', projectPath, messages),
+    load: (projectPath: string) => ipcRenderer.invoke('chat-history-load', projectPath),
+    clear: (projectPath: string) => ipcRenderer.invoke('chat-history-clear', projectPath),
+    cleanup: (projectPath: string, maxAge?: number) => ipcRenderer.invoke('chat-history-cleanup', projectPath, maxAge),
+  },
+
   // System API
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   checkCommand: (command: string) => ipcRenderer.invoke('check-command', command),

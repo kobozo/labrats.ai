@@ -9,6 +9,7 @@ import { TerminalService } from './terminalService';
 import { LABRATS_CONFIG_DIR } from './constants';
 import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
 import { getAIProviderManager } from '../services/ai-provider-manager';
+import { chatHistoryManager } from './chat-history-manager';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -1394,4 +1395,45 @@ ipcMain.handle('ai-get-available-providers', async (): Promise<AIProviderConfig[
   const providerManager = getAIProviderManager();
   const availableProviders = await providerManager.getAvailableProviders();
   return availableProviders.map((p) => p.config);
+});
+
+// Chat History IPC handlers
+ipcMain.handle('chat-history-save', async (event, projectPath: string, messages: any[]) => {
+  try {
+    await chatHistoryManager.saveChatHistory(projectPath, messages);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to save chat history:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('chat-history-load', async (event, projectPath: string) => {
+  try {
+    const messages = await chatHistoryManager.loadChatHistory(projectPath);
+    return { success: true, messages };
+  } catch (error) {
+    console.error('Failed to load chat history:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error', messages: [] };
+  }
+});
+
+ipcMain.handle('chat-history-clear', async (event, projectPath: string) => {
+  try {
+    await chatHistoryManager.clearChatHistory(projectPath);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to clear chat history:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('chat-history-cleanup', async (event, projectPath: string, maxAge?: number) => {
+  try {
+    await chatHistoryManager.cleanupOldHistories(projectPath, maxAge);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to cleanup chat history:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
 });

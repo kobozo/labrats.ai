@@ -99,8 +99,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [activeAgents, setActiveAgents] = useState(agents.filter(a => a.isActive));
-  const [isTyping, setIsTyping] = useState(false);
-  const [typingAgent, setTypingAgent] = useState<Agent | null>(null);
+  const [typingAgents, setTypingAgents] = useState<Set<string>>(new Set());
   const [currentProviderId, setCurrentProviderId] = useState<string | null>(null);
   const [currentModelId, setCurrentModelId] = useState<string | null>(null);
   const [availableProviders, setAvailableProviders] = useState<any[]>([]);
@@ -164,17 +163,30 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
 
     const handleBusReset = () => {
       setIsBusActive(false);
-      setIsTyping(false);
-      setTypingAgent(null);
+      setTypingAgents(new Set());
+    };
+
+    const handleAgentTyping = ({ agentId, isTyping }: { agentId: string; isTyping: boolean }) => {
+      setTypingAgents(prev => {
+        const newSet = new Set(prev);
+        if (isTyping) {
+          newSet.add(agentId);
+        } else {
+          newSet.delete(agentId);
+        }
+        return newSet;
+      });
     };
 
     messageBus.on('message', handleBusMessage);
     messageBus.on('bus-reset', handleBusReset);
+    messageBus.on('agent-typing', handleAgentTyping);
     
     return () => {
       clearInterval(interval);
       messageBus.off('message', handleBusMessage);
       messageBus.off('bus-reset', handleBusReset);
+      messageBus.off('agent-typing', handleAgentTyping);
     };
   }, []);
 
@@ -305,9 +317,8 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     // Check if AI is enabled and providers are available
     if (!isAiEnabled || !currentProviderId || !currentModelId) {
       // Fallback to mock response
-      setIsTyping(true);
       const currentAgent = agents.find(a => a.id === 'cortex') || agents[0]; // Use Cortex agent
-      setTypingAgent(currentAgent);
+      setTypingAgents(new Set(['cortex']));
       
       setTimeout(() => {
         const response: Message = {
@@ -319,16 +330,10 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
         };
         
         setMessages(prev => [...prev, response]);
-        setIsTyping(false);
-        setTypingAgent(null);
+        setTypingAgents(new Set());
       }, 2000);
       return;
     }
-
-    // Use multi-agent service for responses
-    setIsTyping(true);
-    const currentAgent = agents.find(a => a.id === 'cortex') || agents[0]; // Use Cortex agent
-    setTypingAgent(currentAgent);
 
     try {
       if (!isBusActive) {
@@ -343,19 +348,16 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
         // Send message to bus
         await messageBus.sendUserMessage(currentInput);
       }
-      
-      setIsTyping(false);
-      setTypingAgent(null);
     } catch (error) {
       console.error('Message bus response error:', error);
-      setIsTyping(false);
-      setTypingAgent(null);
+      setTypingAgents(new Set());
       
       // Add error message
+      const cortexAgent = agents.find(a => a.id === 'cortex') || agents[0];
       const errorMessage: Message = {
         id: (Date.now() + 2).toString(),
         content: `Sorry, I encountered an error while processing your request: ${error instanceof Error ? error.message : 'Unknown error'}. Please check your AI provider configuration.`,
-        sender: currentAgent,
+        sender: cortexAgent,
         timestamp: new Date(),
         type: 'text'
       };
@@ -683,35 +685,44 @@ To debug the message bus, open console and type: debugBus()
 
       {/* Input */}
       <div className="p-4 border-t border-gray-700 bg-gray-800 flex-shrink-0">
-        {/* Small Typing Indicator */}
-        {isTyping && typingAgent && (
-          <div className="mb-3 flex items-center space-x-2 text-xs text-gray-400">
-            {(() => {
-              const avatar = getAgentAvatar(typingAgent);
-              return avatar ? (
-                <img 
-                  src={avatar} 
-                  alt={typingAgent.name}
-                  className="w-4 h-4 rounded-full object-cover flex-shrink-0"
-                  style={{ border: `1px solid ${getAgentColorHex(typingAgent)}` }}
-                />
-              ) : (
-                <div 
-                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: getAgentColorHex(typingAgent) }}
-                >
-                  {React.createElement(typingAgent.icon, { className: "w-2.5 h-2.5 text-white" })}
+        {/* Multiple Typing Indicators */}
+        {typingAgents.size > 0 && (
+          <div className="mb-3 space-y-2">
+            {Array.from(typingAgents).map(agentId => {
+              const agent = agents.find(a => a.id === agentId);
+              if (!agent) return null;
+              
+              return (
+                <div key={agentId} className="flex items-center space-x-2 text-xs text-gray-400">
+                  {(() => {
+                    const avatar = getAgentAvatar(agent);
+                    return avatar ? (
+                      <img 
+                        src={avatar} 
+                        alt={agent.name}
+                        className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                        style={{ border: `1px solid ${getAgentColorHex(agent)}` }}
+                      />
+                    ) : (
+                      <div 
+                        className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: getAgentColorHex(agent) }}
+                      >
+                        {React.createElement(agent.icon, { className: "w-2.5 h-2.5 text-white" })}
+                      </div>
+                    );
+                  })()}
+                  <span style={{ color: getAgentColorHex(agent) }}>
+                    {agent.name} is typing
+                  </span>
+                  <div className="flex space-x-0.5">
+                    <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                    <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                  </div>
                 </div>
               );
-            })()}
-            <span style={{ color: getAgentColorHex(typingAgent) }}>
-              {typingAgent.name} is typing
-            </span>
-            <div className="flex space-x-0.5">
-              <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce"></div>
-              <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-              <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-            </div>
+            })}
           </div>
         )}
         

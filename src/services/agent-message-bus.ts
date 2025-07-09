@@ -198,7 +198,9 @@ export class AgentMessageBus extends BrowserEventEmitter {
       const context = this.agentContexts.get(mentionedId);
       if (context && context.isActive) {
         console.log(`[AGENT-BUS] Invoking mentioned agent ${mentionedId}`);
+        this.emit('agent-typing', { agentId: mentionedId, isTyping: true });
         await this.invokeAgent(mentionedId, triggerMessage, 'mentioned');
+        this.emit('agent-typing', { agentId: mentionedId, isTyping: false });
       }
     }
 
@@ -1332,7 +1334,9 @@ START YOUR REVIEW NOW!`;
     };
 
     console.log('[AGENT-BUS] Sending stall detection message to Cortex');
+    this.emit('agent-typing', { agentId: 'cortex', isTyping: true });
     await this.invokeAgent('cortex', stallMessage, 'mentioned');
+    this.emit('agent-typing', { agentId: 'cortex', isTyping: false });
   }
 
   // Public interface

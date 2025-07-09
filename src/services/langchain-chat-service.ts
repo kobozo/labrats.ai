@@ -15,16 +15,24 @@ export interface LangChainChatMessage {
   structuredResponse?: any; // For storing structured JSON responses from agents
 }
 
+export interface TokenUsage {
+  completionTokens: number;
+  promptTokens: number;
+  totalTokens: number;
+}
+
 export interface LangChainChatResponse {
   success: boolean;
   message?: LangChainChatMessage;
   error?: string;
+  tokenUsage?: TokenUsage;
 }
 
 export class LangChainChatService {
   private providerManager = getAIProviderManager();
   private conversationHistory: LangChainChatMessage[] = [];
   private currentProjectPath: string | null = null;
+  private sessionTokenUsage: TokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
 
   async sendMessage(
     content: string,
@@ -41,10 +49,33 @@ export class LangChainChatService {
       // Get provider and model
       const { providerId, modelId } = await this.getProviderAndModel(options);
       
-      // Create LangChain chat model based on provider
+      // Variable to capture token usage
+      let tokenUsage: TokenUsage | undefined;
+      
+      // Create LangChain chat model based on provider with token tracking callback
       const chatModel = await this.createChatModel(providerId, modelId, {
         temperature: options.temperature || 0.7,
-        maxTokens: options.maxTokens || 4096
+        maxTokens: options.maxTokens || 4096,
+        callbacks: [{
+          handleLLMEnd: (output) => {
+            // Extract token usage from LLM output
+            if (output.llmOutput?.tokenUsage) {
+              tokenUsage = {
+                completionTokens: output.llmOutput.tokenUsage.completionTokens || 0,
+                promptTokens: output.llmOutput.tokenUsage.promptTokens || 0,
+                totalTokens: output.llmOutput.tokenUsage.totalTokens || 0
+              };
+              
+              // Update session totals
+              this.sessionTokenUsage.completionTokens += tokenUsage.completionTokens;
+              this.sessionTokenUsage.promptTokens += tokenUsage.promptTokens;
+              this.sessionTokenUsage.totalTokens += tokenUsage.totalTokens;
+              
+              console.log(`[TOKEN-USAGE] Current request: ${tokenUsage.promptTokens} prompt + ${tokenUsage.completionTokens} completion = ${tokenUsage.totalTokens} total`);
+              console.log(`[TOKEN-USAGE] Session total: ${this.sessionTokenUsage.totalTokens} tokens`);
+            }
+          }
+        }]
       });
 
       // Build message history
@@ -101,7 +132,8 @@ export class LangChainChatService {
 
       return {
         success: true,
-        message: assistantMessage
+        message: assistantMessage,
+        tokenUsage
       };
 
     } catch (error) {
@@ -219,7 +251,7 @@ export class LangChainChatService {
   private async createChatModel(
     providerId: string, 
     modelId: string, 
-    config: { temperature: number; maxTokens: number; streaming?: boolean }
+    config: { temperature: number; maxTokens: number; streaming?: boolean; callbacks?: any[] }
   ) {
     const apiKey = await this.getApiKey(providerId);
     
@@ -230,7 +262,8 @@ export class LangChainChatService {
           temperature: config.temperature,
           maxTokens: config.maxTokens,
           streaming: config.streaming || false,
-          openAIApiKey: apiKey
+          openAIApiKey: apiKey,
+          callbacks: config.callbacks
         });
       
       case 'anthropic':
@@ -239,7 +272,8 @@ export class LangChainChatService {
           temperature: config.temperature,
           maxTokens: config.maxTokens,
           streaming: config.streaming || false,
-          anthropicApiKey: apiKey
+          anthropicApiKey: apiKey,
+          callbacks: config.callbacks
         });
       
       default:
@@ -327,9 +361,20 @@ export class LangChainChatService {
   // Clear conversation history
   async clearConversation(): Promise<void> {
     this.conversationHistory = [];
+    this.sessionTokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
     if (this.currentProjectPath) {
       await chatHistoryManager.clearChatHistory(this.currentProjectPath);
     }
+  }
+
+  // Get session token usage
+  getSessionTokenUsage(): TokenUsage {
+    return { ...this.sessionTokenUsage };
+  }
+
+  // Clear session token usage
+  clearSessionTokenUsage(): void {
+    this.sessionTokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
   }
 
   // Private method to persist conversation history

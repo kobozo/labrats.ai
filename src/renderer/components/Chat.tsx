@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { getLangChainChatService } from '../../services/langchain-chat-service';
+import { getLangChainChatService, TokenUsage } from '../../services/langchain-chat-service';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
 import { getPromptManager } from '../../services/prompt-manager';
 import { agents as configAgents, Agent as ConfigAgent } from '../../config/agents';
@@ -120,6 +120,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [copiedChat, setCopiedChat] = useState(false);
   const [showChatMenu, setShowChatMenu] = useState(false);
+  const [sessionTokenUsage, setSessionTokenUsage] = useState<TokenUsage>({ completionTokens: 0, promptTokens: 0, totalTokens: 0 });
   const chatMenuRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -208,6 +209,10 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     const syncInterval = setInterval(() => {
       const actualBusState = messageBus.isActive;
       setIsBusActive(actualBusState);
+      
+      // Update token usage from chat service
+      const tokenUsage = chatService.getSessionTokenUsage();
+      setSessionTokenUsage(tokenUsage);
     }, 1000);
     
     return () => {
@@ -256,6 +261,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
         await baseChatService.clearConversation();
         await chatService.setCurrentProject(null);
         messageBus.setCurrentProject(null);
+        setSessionTokenUsage({ completionTokens: 0, promptTokens: 0, totalTokens: 0 });
       }
     };
     
@@ -532,10 +538,12 @@ To debug the message bus, open console and type: debugBus()
       setMessages([]);
       messageBus.reset();
       baseChatService.clearConversation();
+      chatService.clearSessionTokenUsage();
       setActiveAgents(agents.filter(a => a.id === 'cortex'));
       setIsBusActive(false);
       setAgentsPaused(false);
       setShowChatMenu(false);
+      setSessionTokenUsage({ completionTokens: 0, promptTokens: 0, totalTokens: 0 });
       
       console.log(`[CHAT] Archived chat to ${archiveProjectPath}`);
     } catch (error) {
@@ -557,10 +565,12 @@ To debug the message bus, open console and type: debugBus()
       setMessages([]);
       messageBus.reset();
       baseChatService.clearConversation();
+      chatService.clearSessionTokenUsage();
       setActiveAgents(agents.filter(a => a.id === 'cortex'));
       setIsBusActive(false);
       setAgentsPaused(false);
       setShowChatMenu(false);
+      setSessionTokenUsage({ completionTokens: 0, promptTokens: 0, totalTokens: 0 });
       
       console.log(`[CHAT] Deleted chat for ${currentFolder}`);
     } catch (error) {
@@ -940,12 +950,19 @@ To debug the message bus, open console and type: debugBus()
           <div className="text-xs text-gray-400">
             {isBusActive 
               ? agentsPaused 
-                ? `Agents paused • ${messageBus.activeAgents.length} agents • You can still send messages`
-                : `Message bus active • ${messageBus.activeAgents.length} agents • Mention @agent to invite them`
+                ? `Agents paused • You can still send messages`
+                : `Message bus active • Mention @agent to invite them`
               : 'Cortex will guide the conversation and coordinate the team'
             }
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-4">
+            {sessionTokenUsage.totalTokens > 0 && (
+              <div className="text-xs text-blue-400 flex items-center space-x-1">
+                <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                <span>{sessionTokenUsage.totalTokens.toLocaleString()} tokens</span>
+                <span className="text-gray-500">({sessionTokenUsage.promptTokens.toLocaleString()} in + {sessionTokenUsage.completionTokens.toLocaleString()} out)</span>
+              </div>
+            )}
             {isAiEnabled && currentProviderId && (
               <div className="text-xs text-green-400 flex items-center space-x-1">
                 <div className="w-2 h-2 bg-green-400 rounded-full"></div>

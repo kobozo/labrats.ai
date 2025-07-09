@@ -99,6 +99,11 @@ export class AgentMessageBus extends BrowserEventEmitter {
     // Initialize Cortex as the primary coordinator
     this.createAgentContext('cortex');
     
+    // Always activate Chaos Monkey and Contrarian as observers
+    // They will use LabRats backend to decide when to jump in
+    this.createAgentContext('ziggy');  // Chaos Monkey
+    this.createAgentContext('scratchy'); // Contrarian
+    
     // Add initial user message to bus
     const userMessage: BusMessage = {
       id: this.generateId(),
@@ -475,10 +480,14 @@ export class AgentMessageBus extends BrowserEventEmitter {
       console.log(`[AGENT-BUS] Using local LabRats backend for ${agentId} decision`);
       
       try {
+        // Special handling for observer agents (Ziggy and Scratchy)
+        const isObserverAgent = agentId === 'ziggy' || agentId === 'scratchy';
+        const observerHint = isObserverAgent ? ' (ACTIVE OBSERVER - lower threshold for jumping in)' : '';
+        
         const decisionResponse = await labRatsBackend.shouldAgentRespond({
           agentId,
           agentName: agent.name,
-          agentTitle: agent.title,
+          agentTitle: agent.title + observerHint,
           message: triggerMessage.content,
           messageAuthor: triggerMessage.author,
           conversationContext: contextStr,
@@ -507,8 +516,17 @@ export class AgentMessageBus extends BrowserEventEmitter {
       msg.content.toLowerCase().includes('feedback')
     );
 
+    // Special handling for observer agents
+    const isObserverAgent = agentId === 'ziggy' || agentId === 'scratchy';
+    const observerGuidance = isObserverAgent ? `
+
+🔍 ACTIVE OBSERVER ROLE: You are always listening and should have a LOWER threshold for jumping in when:
+${agentId === 'ziggy' ? '- Missing error handling, stress testing, or resilience issues are detected' : ''}
+${agentId === 'scratchy' ? '- Overly optimistic assumptions, security issues, or rushed decisions are noticed' : ''}
+` : '';
+
     const decisionPrompt = `
-You are ${agent.name} (${agent.title}) in a team conversation. 
+You are ${agent.name} (${agent.title}) in a team conversation. ${observerGuidance}
 
 Recent conversation you've been following:
 ${contextStr}

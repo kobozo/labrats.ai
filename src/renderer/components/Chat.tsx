@@ -368,7 +368,8 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     }
 
     try {
-      if (!isBusActive) {
+      // Check actual bus state instead of local state to avoid race conditions
+      if (!messageBus.isActive) {
         // Start message bus
         await messageBus.startBus(currentInput);
         setIsBusActive(true);

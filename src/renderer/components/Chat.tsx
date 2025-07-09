@@ -204,8 +204,15 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     messageBus.on('bus-resumed', handleBusResumed);
     messageBus.on('agent-typing', handleAgentTyping);
     
+    // Periodic sync to ensure UI state matches bus state
+    const syncInterval = setInterval(() => {
+      const actualBusState = messageBus.isActive;
+      setIsBusActive(actualBusState);
+    }, 1000);
+    
     return () => {
       clearInterval(interval);
+      clearInterval(syncInterval);
       messageBus.off('message', handleBusMessage);
       messageBus.off('bus-reset', handleBusReset);
       messageBus.off('bus-paused', handleBusPaused);
@@ -380,6 +387,11 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
       } else {
         // Send message to bus
         await messageBus.sendUserMessage(currentInput);
+      }
+      
+      // Ensure local state is synchronized with bus state
+      if (messageBus.isActive && !isBusActive) {
+        setIsBusActive(true);
       }
     } catch (error) {
       console.error('Message bus response error:', error);

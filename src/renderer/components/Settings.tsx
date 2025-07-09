@@ -38,7 +38,13 @@ export const Settings: React.FC = () => {
       language: 'en',
       autoUpdates: true,
       telemetry: false,
-      startOnBoot: false
+      startOnBoot: false,
+      labRatsBackend: {
+        url: 'http://localhost:11434',
+        model: 'mistral',
+        timeout: 30000,
+        enabled: true
+      }
     },
     notifications: {
       agentActions: true,
@@ -134,6 +140,10 @@ export const Settings: React.FC = () => {
   const [defaultModel, setDefaultModel] = useState<string>('');
   const [providerModels, setProviderModels] = useState<{[key: string]: AIModel[]}>({});
   const [selectedModels, setSelectedModels] = useState<{[key: string]: string}>({});
+  
+  // LabRats Backend state
+  const [labRatsBackendStatus, setLabRatsBackendStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
+  const [testingConnection, setTestingConnection] = useState(false);
 
   const updateSetting = (category: string, key: string, value: any) => {
     setSettings(prev => ({
@@ -333,6 +343,42 @@ export const Settings: React.FC = () => {
     }
   };
 
+  const testLabRatsBackend = async () => {
+    setTestingConnection(true);
+    try {
+      const response = await fetch(`${settings.general.labRatsBackend.url}/api/tags`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(settings.general.labRatsBackend.timeout || 30000)
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        // Check if the specified model is available
+        const hasModel = data.models?.some((model: any) => {
+          const modelName = model.name || model.model || '';
+          return modelName.toLowerCase().includes(settings.general.labRatsBackend.model.toLowerCase());
+        });
+        
+        if (hasModel) {
+          setLabRatsBackendStatus('connected');
+        } else {
+          setLabRatsBackendStatus('disconnected');
+          alert(`Model "${settings.general.labRatsBackend.model}" not found in backend`);
+        }
+      } else {
+        setLabRatsBackendStatus('disconnected');
+      }
+    } catch (error) {
+      console.error('LabRats backend test failed:', error);
+      setLabRatsBackendStatus('disconnected');
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   const renderCategoryContent = () => {
     switch (activeCategory) {
       case 'general':
@@ -406,6 +452,96 @@ export const Settings: React.FC = () => {
               <div className="w-11 h-6 bg-gray-700 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
             </label>
           </div>
+        </div>
+      </div>
+
+      {/* LabRats Backend Configuration */}
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-4">LabRats Backend</h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-white font-medium">Enable LabRats Backend</label>
+              <p className="text-gray-400 text-sm">Use local LabRats backend for agent decision making</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.general.labRatsBackend.enabled}
+                onChange={(e) => updateSetting('general', 'labRatsBackend', { ...settings.general.labRatsBackend, enabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-700 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {settings.general.labRatsBackend.enabled && (
+            <>
+              <div>
+                <label className="text-white font-medium block mb-2">Backend URL</label>
+                <input
+                  type="url"
+                  value={settings.general.labRatsBackend.url}
+                  onChange={(e) => updateSetting('general', 'labRatsBackend', { ...settings.general.labRatsBackend, url: e.target.value })}
+                  placeholder="http://localhost:11434"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-gray-400 text-sm mt-1">URL of your local LabRats backend server</p>
+              </div>
+
+              <div>
+                <label className="text-white font-medium block mb-2">Model Name</label>
+                <input
+                  type="text"
+                  value={settings.general.labRatsBackend.model}
+                  onChange={(e) => updateSetting('general', 'labRatsBackend', { ...settings.general.labRatsBackend, model: e.target.value })}
+                  placeholder="mistral"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-gray-400 text-sm mt-1">Name of the model to use for agent decisions</p>
+              </div>
+
+              <div>
+                <label className="text-white font-medium block mb-2">Timeout (ms)</label>
+                <input
+                  type="number"
+                  value={settings.general.labRatsBackend.timeout}
+                  onChange={(e) => updateSetting('general', 'labRatsBackend', { ...settings.general.labRatsBackend, timeout: parseInt(e.target.value) || 30000 })}
+                  min="1000"
+                  max="120000"
+                  step="1000"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-gray-400 text-sm mt-1">Request timeout in milliseconds (1000-120000)</p>
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={testLabRatsBackend}
+                  disabled={testingConnection}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+                >
+                  {testingConnection ? 'Testing...' : 'Test Connection'}
+                </button>
+                
+                {labRatsBackendStatus !== 'unknown' && (
+                  <div className="flex items-center space-x-2">
+                    {labRatsBackendStatus === 'connected' ? (
+                      <>
+                        <CheckCircle className="w-5 h-5 text-green-400" />
+                        <span className="text-green-400 font-medium">Connected</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-5 h-5 text-red-400" />
+                        <span className="text-red-400 font-medium">Disconnected</span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

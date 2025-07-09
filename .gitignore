@@ -173,4 +173,5 @@ bundle-analyzer-report.html
 *.d.ts.map
 
 # LabRats chat history and local data
-.labrats/chats/ 
+.labrats/chats/
+.labrats/chats/archives/ 

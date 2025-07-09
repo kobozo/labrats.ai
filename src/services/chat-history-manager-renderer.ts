@@ -95,6 +95,12 @@ export class ChatHistoryManagerRenderer {
     // Return the expected path for informational purposes
     return `${projectPath}/.labrats/chats`;
   }
+
+  getArchivesDirectory(projectPath: string): string {
+    // For renderer process, we can't access the actual directory
+    // Return the expected path for informational purposes
+    return `${projectPath}/.labrats/chats/archives`;
+  }
 }
 
 // Export singleton instance

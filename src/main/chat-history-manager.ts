@@ -34,13 +34,29 @@ export class ChatHistoryManager {
 
   private ensureProjectHistoryDirectory(projectPath: string): void {
     const historyDir = path.join(projectPath, '.labrats', 'chats');
+    const archivesDir = path.join(projectPath, '.labrats', 'chats', 'archives');
+    
     if (!fs.existsSync(historyDir)) {
       fs.mkdirSync(historyDir, { recursive: true });
       console.log(`[CHAT-HISTORY] Created chat history directory: ${historyDir}`);
     }
+    
+    if (!fs.existsSync(archivesDir)) {
+      fs.mkdirSync(archivesDir, { recursive: true });
+      console.log(`[CHAT-HISTORY] Created archives directory: ${archivesDir}`);
+    }
   }
 
   private getProjectHistoryPath(projectPath: string): string {
+    // Check if this is an archive path
+    if (projectPath.includes('_archive_')) {
+      const parts = projectPath.split('_archive_');
+      const basePath = parts[0];
+      const archiveId = parts[1];
+      this.ensureProjectHistoryDirectory(basePath);
+      return path.join(basePath, '.labrats', 'chats', 'archives', `archive_${archiveId}.json`);
+    }
+    
     // Store chat history directly in the project's .labrats/chats directory
     this.ensureProjectHistoryDirectory(projectPath);
     return path.join(projectPath, '.labrats', 'chats', 'history.json');

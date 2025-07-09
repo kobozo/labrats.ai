@@ -26,7 +26,11 @@ import {
   Copy,
   Check,
   Pause,
-  Play
+  Play,
+  MoreVertical,
+  Archive,
+  Trash2,
+  Download
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -115,6 +119,8 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
   const [cursorPosition, setCursorPosition] = useState(0);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [copiedChat, setCopiedChat] = useState(false);
+  const [showChatMenu, setShowChatMenu] = useState(false);
+  const chatMenuRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -267,6 +273,20 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
       chatHistoryManager.saveChatHistory(currentFolder, chatServiceMessages);
     }
   }, [messages, currentFolder]);
+
+  // Handle clicking outside of chat menu
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (chatMenuRef.current && !chatMenuRef.current.contains(event.target as Node)) {
+        setShowChatMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const loadAgentColorOverrides = async () => {
     try {
@@ -467,8 +487,71 @@ To debug the message bus, open console and type: debugBus()
       await navigator.clipboard.writeText(debugInfo);
       setCopiedChat(true);
       setTimeout(() => setCopiedChat(false), 2000);
+      setShowChatMenu(false);
     } catch (error) {
       console.error('Failed to copy chat:', error);
+    }
+  };
+
+  const archiveChat = async () => {
+    if (!currentFolder) return;
+    
+    try {
+      // Save current chat to archive with timestamp
+      const archiveTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const archiveProjectPath = `${currentFolder}_archive_${archiveTimestamp}`;
+      
+      // Convert Message format to ChatServiceMessage
+      const chatServiceMessages: ChatServiceMessage[] = messages.map(msg => ({
+        id: msg.id,
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        agentId: msg.sender !== 'user' ? (msg.sender as Agent).id : undefined,
+        providerId: msg.providerId,
+        modelId: msg.modelId
+      }));
+      
+      // Save to archive
+      await chatHistoryManager.saveChatHistory(archiveProjectPath, chatServiceMessages);
+      
+      // Clear current chat
+      setMessages([]);
+      messageBus.reset();
+      baseChatService.clearConversation();
+      setActiveAgents(agents.filter(a => a.id === 'cortex'));
+      setIsBusActive(false);
+      setAgentsPaused(false);
+      setShowChatMenu(false);
+      
+      console.log(`[CHAT] Archived chat to ${archiveProjectPath}`);
+    } catch (error) {
+      console.error('Failed to archive chat:', error);
+    }
+  };
+
+  const deleteChat = async () => {
+    if (!currentFolder) return;
+    
+    const confirmed = window.confirm('Are you sure you want to delete the current chat? This cannot be undone.');
+    if (!confirmed) return;
+    
+    try {
+      // Clear chat history
+      await chatHistoryManager.clearChatHistory(currentFolder);
+      
+      // Clear current chat
+      setMessages([]);
+      messageBus.reset();
+      baseChatService.clearConversation();
+      setActiveAgents(agents.filter(a => a.id === 'cortex'));
+      setIsBusActive(false);
+      setAgentsPaused(false);
+      setShowChatMenu(false);
+      
+      console.log(`[CHAT] Deleted chat for ${currentFolder}`);
+    } catch (error) {
+      console.error('Failed to delete chat:', error);
     }
   };
 
@@ -558,13 +641,57 @@ To debug the message bus, open console and type: debugBus()
               <Users className="w-4 h-4 text-gray-400" />
               <span className="text-sm text-gray-400">{activeAgents.length} agents active</span>
             </div>
+          </div>
+          
+          <div className="relative" ref={chatMenuRef}>
             <button
-              onClick={copyEntireChat}
-              className="p-1 text-gray-400 hover:text-white transition-colors"
-              title="Copy entire chat"
+              onClick={() => setShowChatMenu(!showChatMenu)}
+              className="p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-700"
+              title="Chat options"
             >
-              {copiedChat ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+              <MoreVertical className="w-4 h-4" />
             </button>
+            
+            {showChatMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-1 z-50">
+                <button
+                  onClick={copyEntireChat}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors flex items-center space-x-2"
+                >
+                  {copiedChat ? (
+                    <>
+                      <Check className="w-4 h-4 text-green-400" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy Chat</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={archiveChat}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors flex items-center space-x-2"
+                  disabled={!currentFolder || messages.length === 0}
+                >
+                  <Archive className="w-4 h-4" />
+                  <span>Archive Chat</span>
+                </button>
+                
+                <div className="border-t border-gray-700 my-1"></div>
+                
+                <button
+                  onClick={deleteChat}
+                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-700 hover:text-red-300 transition-colors flex items-center space-x-2"
+                  disabled={!currentFolder || messages.length === 0}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Chat</span>
+                </button>
+              </div>
+            )}
           </div>
           
           {/* Active Agents */}

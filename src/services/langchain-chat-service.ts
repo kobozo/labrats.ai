@@ -12,6 +12,7 @@ export interface LangChainChatMessage {
   agentId?: string;
   providerId?: string;
   modelId?: string;
+  structuredResponse?: any; // For storing structured JSON responses from agents
 }
 
 export interface LangChainChatResponse {

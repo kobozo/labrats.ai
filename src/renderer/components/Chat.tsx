@@ -22,7 +22,9 @@ import {
   Server,
   Edit,
   Building,
-  FileText
+  FileText,
+  Copy,
+  Check
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -32,6 +34,8 @@ import { getPromptManager } from '../../services/prompt-manager';
 import { agents as configAgents, Agent as ConfigAgent } from '../../config/agents';
 import { stateManager } from '../../services/state-manager';
 import { getChatService, ChatServiceMessage } from '../../services/chat-service';
+import { getAgentMessageBus, BusMessage } from '../../services/agent-message-bus';
+import { MentionAutocomplete } from './MentionAutocomplete';
 
 interface Agent {
   id: string;
@@ -103,11 +107,21 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [isAiEnabled, setIsAiEnabled] = useState(false);
   const [agentColorOverrides, setAgentColorOverrides] = useState<{ [key: string]: string }>({});
+  const [isBusActive, setIsBusActive] = useState(false);
+  const [showMentionAutocomplete, setShowMentionAutocomplete] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [copiedChat, setCopiedChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const chatService = getLangChainChatService();
   const providerManager = getAIProviderManager();
   const baseChatService = getChatService();
+  const messageBus = getAgentMessageBus({
+    maxContextMessages: 10,
+    maxAgentHistory: 20
+  });
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -131,7 +145,37 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     // Set up periodic check for config changes (simple solution)
     const interval = setInterval(loadAgentColorOverrides, 1000);
     
-    return () => clearInterval(interval);
+    // Set up message bus event listeners
+    const handleBusMessage = (message: BusMessage) => {
+      const convertedMessage: Message = {
+        id: message.id,
+        content: message.content,
+        sender: message.author === 'user' ? 'user' : agents.find(a => a.id === message.author) || agents[0],
+        timestamp: message.timestamp,
+        type: message.messageType === 'system' ? 'text' : 'text'
+      };
+      
+      setMessages(prev => [...prev, convertedMessage]);
+      
+      // Update active agents list
+      const activeAgentIds = messageBus.activeAgents;
+      setActiveAgents(agents.filter(a => activeAgentIds.includes(a.id)));
+    };
+
+    const handleBusReset = () => {
+      setIsBusActive(false);
+      setIsTyping(false);
+      setTypingAgent(null);
+    };
+
+    messageBus.on('message', handleBusMessage);
+    messageBus.on('bus-reset', handleBusReset);
+    
+    return () => {
+      clearInterval(interval);
+      messageBus.off('message', handleBusMessage);
+      messageBus.off('bus-reset', handleBusReset);
+    };
   }, []);
 
   // Load persisted messages when component mounts or folder changes
@@ -140,6 +184,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
       if (currentFolder) {
         // Set current project in chat services
         chatService.setCurrentProject(currentFolder);
+        messageBus.setCurrentProject(currentFolder);
         
         // Load messages from state manager
         const persistedMessages = stateManager.getChatMessages();
@@ -170,6 +215,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
         setMessages([]);
         baseChatService.clearConversation();
         chatService.setCurrentProject(null);
+        messageBus.setCurrentProject(null);
       }
     };
     
@@ -253,15 +299,6 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: inputValue,
-      sender: 'user',
-      timestamp: new Date(),
-      type: 'text'
-    };
-
-    setMessages(prev => [...prev, userMessage]);
     const currentInput = inputValue;
     setInputValue('');
     
@@ -288,70 +325,29 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
       return;
     }
 
-    // Use AI provider for real responses
+    // Use multi-agent service for responses
     setIsTyping(true);
     const currentAgent = agents.find(a => a.id === 'cortex') || agents[0]; // Use Cortex agent
     setTypingAgent(currentAgent);
 
     try {
-      // Get the prompt for the current agent
-      const promptManager = getPromptManager();
-      const agentPrompt = await promptManager.getPrompt(currentAgent.id);
-
-      // Create streaming response
-      const streamingMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: '',
-        sender: currentAgent,
-        timestamp: new Date(),
-        type: 'text',
-        providerId: currentProviderId,
-        modelId: currentModelId,
-        isStreaming: true
-      };
-
-      setMessages(prev => [...prev, streamingMessage]);
-
-      // Stream the response
-      const generator = chatService.sendMessageStream(currentInput, {
-        providerId: currentProviderId,
-        modelId: currentModelId,
-        agentId: currentAgent.id,
-        systemPrompt: agentPrompt
-      });
-
-      let fullContent = '';
-      for await (const chunk of generator) {
-        if (chunk.delta) {
-          fullContent += chunk.delta;
-          setMessages(prev => prev.map(msg => 
-            msg.id === streamingMessage.id 
-              ? { ...msg, content: fullContent }
-              : msg
-          ));
-        }
-
-        if (chunk.isComplete) {
-          setMessages(prev => prev.map(msg => 
-            msg.id === streamingMessage.id 
-              ? { ...msg, isStreaming: false }
-              : msg
-          ));
-          setIsTyping(false);
-          setTypingAgent(null);
-          
-          if (chunk.error) {
-            setMessages(prev => prev.map(msg => 
-              msg.id === streamingMessage.id 
-                ? { ...msg, content: `Error: ${chunk.error}. Please check your AI provider configuration.` }
-                : msg
-            ));
-          }
-          break;
-        }
+      if (!isBusActive) {
+        // Start message bus
+        await messageBus.startBus(currentInput);
+        setIsBusActive(true);
+        
+        // Update active agents list
+        const activeAgentIds = messageBus.activeAgents;
+        setActiveAgents(agents.filter(a => activeAgentIds.includes(a.id)));
+      } else {
+        // Send message to bus
+        await messageBus.sendUserMessage(currentInput);
       }
+      
+      setIsTyping(false);
+      setTypingAgent(null);
     } catch (error) {
-      console.error('AI response error:', error);
+      console.error('Message bus response error:', error);
       setIsTyping(false);
       setTypingAgent(null);
       
@@ -377,6 +373,88 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
           deletions: 22
         });
       }, 5000);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart || 0;
+    
+    setInputValue(value);
+    setCursorPosition(cursorPos);
+    
+    // Check if we should show mention autocomplete
+    const textBeforeCursor = value.substring(0, cursorPos);
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+    
+    if (lastAtIndex !== -1) {
+      const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1);
+      if (!textAfterAt.includes(' ')) {
+        setShowMentionAutocomplete(true);
+      } else {
+        setShowMentionAutocomplete(false);
+      }
+    } else {
+      setShowMentionAutocomplete(false);
+    }
+  };
+
+  const handleMentionSelect = (newValue: string) => {
+    setInputValue(newValue);
+    setShowMentionAutocomplete(false);
+    // Focus back on input
+    inputRef.current?.focus();
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showMentionAutocomplete && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) {
+      // Let the MentionAutocomplete component handle these keys
+      return;
+    }
+  };
+
+  const copyMessage = async (message: Message) => {
+    try {
+      const sender = message.sender === 'user' ? 'User' : (message.sender as Agent).name;
+      const timestamp = message.timestamp.toLocaleString();
+      const content = `[${timestamp}] ${sender}: ${message.content}`;
+      
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(message.id);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy message:', error);
+    }
+  };
+
+  const copyEntireChat = async () => {
+    try {
+      const chatContent = messages.map(message => {
+        const sender = message.sender === 'user' ? 'User' : (message.sender as Agent).name;
+        const timestamp = message.timestamp.toLocaleString();
+        return `[${timestamp}] ${sender}: ${message.content}`;
+      }).join('\n\n');
+      
+      const debugInfo = `=== CHAT EXPORT ===
+Messages: ${messages.length}
+Active Agents: ${activeAgents.map(a => a.name).join(', ')}
+Bus Active: ${isBusActive}
+AI Provider: ${currentProviderId}
+Model: ${currentModelId}
+Timestamp: ${new Date().toLocaleString()}
+
+=== CONVERSATION ===
+${chatContent}
+
+=== DEBUG INFO ===
+To debug the message bus, open console and type: debugBus()
+`;
+      
+      await navigator.clipboard.writeText(debugInfo);
+      setCopiedChat(true);
+      setTimeout(() => setCopiedChat(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy chat:', error);
     }
   };
 
@@ -466,6 +544,13 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
               <Users className="w-4 h-4 text-gray-400" />
               <span className="text-sm text-gray-400">{activeAgents.length} agents active</span>
             </div>
+            <button
+              onClick={copyEntireChat}
+              className="p-1 text-gray-400 hover:text-white transition-colors"
+              title="Copy entire chat"
+            >
+              {copiedChat ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+            </button>
           </div>
           
           {/* Active Agents */}
@@ -498,20 +583,27 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
       {/* Messages */}
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 scroll-smooth">
         {messages.map((message) => (
-          <div key={message.id} className={`${message.sender === 'user' ? 'flex space-x-3 justify-end' : 'w-full'}`}>
+          <div key={message.id} className="w-full">
             {message.sender === 'user' ? (
               // User messages - keep existing style with max width
-              <>
-                <div className="max-w-2xl bg-blue-600 rounded-lg p-4">
+              <div className="flex space-x-3 justify-end group">
+                <div className="max-w-2xl bg-blue-600 rounded-lg p-4 relative">
                   <p className="text-white text-sm leading-relaxed">{message.content}</p>
+                  <button
+                    onClick={() => copyMessage(message)}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 text-blue-200 hover:text-white transition-all"
+                    title="Copy message"
+                  >
+                    {copiedMessageId === message.id ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
                 </div>
                 <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
                   <User className="w-4 h-4 text-white" />
                 </div>
-              </>
+              </div>
             ) : (
               // Agent messages - use full width
-              <div className="w-full bg-gray-700 rounded-lg p-4">
+              <div className="w-full bg-gray-700 rounded-lg p-4 group">
                 <div className="flex items-center space-x-3 mb-3">
                   {(() => {
                     const avatar = getAgentAvatar(message.sender as Agent);
@@ -531,7 +623,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
                       </div>
                     );
                   })()}
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2 flex-1">
                     <span 
                       className="font-medium"
                       style={{ color: getAgentColorHex(message.sender as Agent) }}
@@ -542,6 +634,13 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
                       {message.timestamp.toLocaleTimeString()}
                     </span>
                   </div>
+                  <button
+                    onClick={() => copyMessage(message)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-white transition-all"
+                    title="Copy message"
+                  >
+                    {copiedMessageId === message.id ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
                 </div>
                 
                 <div className="pl-11">
@@ -616,14 +715,26 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
           </div>
         )}
         
-        <form onSubmit={handleSend} className="flex space-x-3">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Describe what you want to build..."
-            className="flex-1 px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+        <form onSubmit={handleSend} className="flex space-x-3 relative">
+          <div className="flex-1 relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleInputKeyDown}
+              placeholder="Describe what you want to build... (Use @agent to mention team members)"
+              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            {showMentionAutocomplete && (
+              <MentionAutocomplete
+                inputValue={inputValue}
+                cursorPosition={cursorPosition}
+                onSelect={handleMentionSelect}
+                onClose={() => setShowMentionAutocomplete(false)}
+              />
+            )}
+          </div>
           <button
             type="submit"
             disabled={!inputValue.trim() || isTyping}
@@ -636,7 +747,10 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
         
         <div className="mt-2 flex items-center justify-between">
           <div className="text-xs text-gray-400">
-            Cortex will guide the conversation and provide strategic insights.
+            {isBusActive 
+              ? `Message bus active • ${messageBus.activeAgents.length} agents • Mention @agent to invite them` 
+              : 'Cortex will guide the conversation and coordinate the team'
+            }
           </div>
           <div className="flex items-center space-x-2">
             {isAiEnabled && currentProviderId && (

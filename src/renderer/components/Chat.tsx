@@ -24,7 +24,9 @@ import {
   Building,
   FileText,
   Copy,
-  Check
+  Check,
+  Pause,
+  Play
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -108,6 +110,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
   const [isAiEnabled, setIsAiEnabled] = useState(false);
   const [agentColorOverrides, setAgentColorOverrides] = useState<{ [key: string]: string }>({});
   const [isBusActive, setIsBusActive] = useState(false);
+  const [agentsPaused, setAgentsPaused] = useState(false);
   const [showMentionAutocomplete, setShowMentionAutocomplete] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -164,7 +167,17 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
 
     const handleBusReset = () => {
       setIsBusActive(false);
+      setAgentsPaused(false);
       setTypingAgents(new Set());
+    };
+
+    const handleBusPaused = () => {
+      setAgentsPaused(true);
+      setTypingAgents(new Set());
+    };
+
+    const handleBusResumed = () => {
+      setAgentsPaused(false);
     };
 
     const handleAgentTyping = ({ agentId, isTyping }: { agentId: string; isTyping: boolean }) => {
@@ -181,12 +194,16 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
 
     messageBus.on('message', handleBusMessage);
     messageBus.on('bus-reset', handleBusReset);
+    messageBus.on('bus-paused', handleBusPaused);
+    messageBus.on('bus-resumed', handleBusResumed);
     messageBus.on('agent-typing', handleAgentTyping);
     
     return () => {
       clearInterval(interval);
       messageBus.off('message', handleBusMessage);
       messageBus.off('bus-reset', handleBusReset);
+      messageBus.off('bus-paused', handleBusPaused);
+      messageBus.off('bus-resumed', handleBusResumed);
       messageBus.off('agent-typing', handleAgentTyping);
     };
   }, []);
@@ -753,14 +770,25 @@ To debug the message bus, open console and type: debugBus()
             <button
               type="button"
               onClick={() => {
-                messageBus.reset();
-                setMessages([]);
-                setActiveAgents(agents.filter(a => a.id === 'cortex'));
+                if (agentsPaused) {
+                  messageBus.resume();
+                } else {
+                  messageBus.pause();
+                }
               }}
-              className="px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+              className={`px-4 py-3 ${agentsPaused ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'} text-white rounded-lg font-medium transition-colors flex items-center space-x-2`}
             >
-              <XCircle className="w-4 h-4" />
-              <span>Stop</span>
+              {agentsPaused ? (
+                <>
+                  <Play className="w-4 h-4" />
+                  <span>Resume</span>
+                </>
+              ) : (
+                <>
+                  <Pause className="w-4 h-4" />
+                  <span>Pause</span>
+                </>
+              )}
             </button>
           )}
         </form>
@@ -768,7 +796,9 @@ To debug the message bus, open console and type: debugBus()
         <div className="mt-2 flex items-center justify-between">
           <div className="text-xs text-gray-400">
             {isBusActive 
-              ? `Message bus active • ${messageBus.activeAgents.length} agents • Mention @agent to invite them` 
+              ? agentsPaused 
+                ? `Agents paused • ${messageBus.activeAgents.length} agents • You can still send messages`
+                : `Message bus active • ${messageBus.activeAgents.length} agents • Mention @agent to invite them`
               : 'Cortex will guide the conversation and coordinate the team'
             }
           </div>

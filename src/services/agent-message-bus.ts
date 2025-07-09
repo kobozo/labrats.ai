@@ -187,6 +187,12 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private async processAgentReactions(triggerMessage: BusMessage): Promise<void> {
     console.log(`[AGENT-BUS] Processing agent reactions to message from ${triggerMessage.author} (ID: ${triggerMessage.id})`);
     
+    // Skip processing if agents are paused, but ALWAYS process user messages
+    if (!this.agentsActive && triggerMessage.messageType !== 'user') {
+      console.log(`[AGENT-BUS] Agents are paused, skipping reactions (except user messages)`);
+      return;
+    }
+    
     // Skip processing if message is from an agent and no mentions (prevents infinite loops)
     if (triggerMessage.messageType === 'agent' && triggerMessage.mentions.length === 0) {
       console.log(`[AGENT-BUS] Skipping agent message with no mentions to prevent loops`);
@@ -1383,8 +1389,27 @@ START YOUR REVIEW NOW!`;
     await this.publishMessage(userMessage);
   }
 
+  pause(): void {
+    // Pause agents without clearing state
+    this.agentsActive = false;
+    console.log('[AGENT-BUS] Agents paused - message bus state preserved');
+    
+    // Emit bus pause event
+    this.emit('bus-paused');
+  }
+
+  resume(): void {
+    // Resume agents
+    this.agentsActive = true;
+    console.log('[AGENT-BUS] Agents resumed');
+    
+    // Emit bus resume event
+    this.emit('bus-resumed');
+  }
+
   reset(): void {
     this.busActive = false;
+    this.agentsActive = true; // Reset to active when resetting completely
     this.globalMessageHistory = [];
     this.agentContexts.clear();
     this.resetStallDetection();

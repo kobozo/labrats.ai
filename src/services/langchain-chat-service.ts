@@ -1,6 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from '@langchain/core/messages';
+import { LLMResult } from '@langchain/core/outputs';
 import { getAIProviderManager } from './ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager-renderer';
 
@@ -57,7 +58,7 @@ export class LangChainChatService {
         temperature: options.temperature || 0.7,
         maxTokens: options.maxTokens || 4096,
         callbacks: [{
-          handleLLMEnd: (output) => {
+          handleLLMEnd: (output: LLMResult) => {
             // Extract token usage from LLM output
             if (output.llmOutput?.tokenUsage) {
               tokenUsage = {

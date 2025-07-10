@@ -54,6 +54,7 @@ export interface AgentContext {
   lastResponseTime: Date | null;
   currentAction: AgentAction; // Track agent's current state
   metadata?: AgentMetadata; // Additional context and waiting dependencies
+  promptInitialized?: boolean; // Track if agent has received full prompt
 }
 
 export interface MessageBusOptions {
@@ -896,7 +897,33 @@ Do NOT continue the conversation. Do NOT ask what's next. This is the final summ
     console.log(`[AGENT-BUS] 🎯 Invoking agent ${agentId} (${responseType} response) for trigger: "${triggerMessage.content.substring(0, 50)}..."`);
 
     try {
-      const systemPrompt = await this.promptManager.getPrompt(agentId);
+      const context = this.agentContexts.get(agentId);
+      if (!context) {
+        console.error(`[AGENT-BUS] No context found for agent ${agentId}`);
+        return;
+      }
+      
+      let systemPrompt: string;
+      
+      // Only send full prompt on first invocation
+      if (!context.promptInitialized) {
+        systemPrompt = await this.promptManager.getPrompt(agentId);
+        context.promptInitialized = true;
+        console.log(`[AGENT-BUS] First invocation for ${agentId} - sending full prompt`);
+      } else {
+        // For subsequent invocations, just send minimal context
+        const agent = agents.find(a => a.id === agentId);
+        systemPrompt = `You are ${agent?.name || agentId}. Continue the conversation based on the context provided.
+
+Your current session: ${context.sessionId}
+
+Actions: planning, open, waiting, implementing, needs_review, reviewing, done, user_input, wait_for_user
+Use "involve" field to mention other agents when needed.
+
+Respond with structured output containing: message, action, involve (array), metadata.`;
+        console.log(`[AGENT-BUS] Subsequent invocation for ${agentId} - sending minimal prompt`);
+      }
+      
       const agentContext = this.buildAgentSpecificContext(agentId, responseType, triggerMessage);
       
       const response = await this.callAgentWithIsolatedSession(agentId, agentContext, systemPrompt);
@@ -1018,7 +1045,26 @@ Do NOT continue the conversation. Do NOT ask what's next. This is the final summ
     console.log(`[AGENT-BUS] 🎯 Invoking agent ${agentId} (${responseType} response) with context snapshot from decision time`);
 
     try {
-      const systemPrompt = await this.promptManager.getPrompt(agentId);
+      let systemPrompt: string;
+      
+      // Only send full prompt on first invocation
+      if (!context.promptInitialized) {
+        systemPrompt = await this.promptManager.getPrompt(agentId);
+        context.promptInitialized = true;
+        console.log(`[AGENT-BUS] First invocation for ${agentId} - sending full prompt`);
+      } else {
+        // For subsequent invocations, just send minimal context
+        systemPrompt = `You are ${agent.name}. Continue the conversation based on the context provided.
+
+Your current session: ${context.sessionId}
+
+Actions: planning, open, waiting, implementing, needs_review, reviewing, done, user_input, wait_for_user
+Use "involve" field to mention other agents when needed.
+
+Respond with structured output containing: message, action, involve (array), metadata.`;
+        console.log(`[AGENT-BUS] Subsequent invocation for ${agentId} - sending minimal prompt`);
+      }
+      
       const agentContext = this.buildAgentSpecificContextFromSnapshot(agentId, responseType, triggerMessage, contextSnapshot);
       
       const response = await this.callAgentWithIsolatedSession(agentId, agentContext, systemPrompt);

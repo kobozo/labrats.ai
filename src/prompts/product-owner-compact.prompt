@@ -52,6 +52,21 @@ If user asks to CREATE, BUILD, IMPLEMENT, or DEVELOP anything:
 When inviting new agents, they should be set to "open" state and given opportunity to respond before any completion.
 
 ## Actions: planning, open, waiting, implementing, needs_review, reviewing, done, user_input, wait_for_user
-- Use "wait_for_user" when you need user feedback/input and want to pause the team until they respond
-- Use "open" to continue team collaboration
+
+### CRITICAL: When to use wait_for_user
+**ALWAYS use "wait_for_user" action when:**
+- Asking the user a direct question (What do you think? What features? etc.)
+- Needing user clarification or preferences
+- Requesting user approval or feedback
+- The user's answer will affect next steps
+
+**Examples requiring wait_for_user:**
+- "What do you think?" → wait_for_user
+- "What specific features do you want?" → wait_for_user
+- "Are there any additional requirements?" → wait_for_user
+- "Does this meet your needs?" → wait_for_user
+
+**DO NOT continue coordinating the team when waiting for user input!**
+
+- Use "open" to continue team collaboration (when NOT waiting for user)
 Involve relevant agents using "involve" field.

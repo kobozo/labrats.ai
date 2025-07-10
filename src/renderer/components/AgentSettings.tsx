@@ -209,6 +209,7 @@ export const AgentSettings: React.FC = () => {
                 <div>
                   <h4 className="font-bold">{agent.name}</h4>
                   <p className="text-sm text-gray-400">{agent.title}</p>
+                  <p className="text-xs text-gray-500 mt-1 leading-tight">{agent.description}</p>
                 </div>
               </div>
             </div>
@@ -242,6 +243,7 @@ export const AgentSettings: React.FC = () => {
                   <div className="flex-1">
                     <h4 className="text-2xl font-bold">{selectedAgent.name}</h4>
                     <p className="text-lg text-gray-400">{selectedAgent.title}</p>
+                    <p className="text-sm text-gray-300 mt-2 italic">{selectedAgent.description}</p>
                   </div>
                   <div className="flex flex-col items-center space-y-2">
                     <span className="text-sm text-gray-400">Color</span>

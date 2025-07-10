@@ -14,7 +14,8 @@
   },
   "build": {
     "appId": "com.labrats.ai-ide",
-    "productName": "LabRats AI IDE",
+    "productName": "LabRats.AI",
+    "copyright": "Copyright © 2025",
     "directories": {
       "output": "release"
     },

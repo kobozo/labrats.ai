@@ -45,6 +45,7 @@ function App() {
   const [gitStatus, setGitStatus] = useState<{ current: string; ahead: number; behind: number } | null>(null);
   const [branches, setBranches] = useState<{ current: string; all: string[] }>({ current: '', all: [] });
   const [showBranchMenu, setShowBranchMenu] = useState(false);
+  const [tokenUsage, setTokenUsage] = useState<{ promptTokens: number; completionTokens: number; totalTokens: number }>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
   // Set initial view based on whether a folder is loaded
   useEffect(() => {
@@ -102,6 +103,10 @@ function App() {
   const showNotification = (type: 'success' | 'info' | 'warning', message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 5000);
+  };
+
+  const handleTokenUsageChange = (usage: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
+    setTokenUsage(usage);
   };
 
   // Handle navigation changes and track previous view
@@ -465,6 +470,7 @@ function App() {
                 <Chat 
                   onCodeReview={() => showNotification('info', 'Code review initiated')} 
                   currentFolder={currentFolder}
+                  onTokenUsageChange={handleTokenUsageChange}
                 />
               </ErrorBoundary>
             </div>
@@ -511,10 +517,23 @@ function App() {
       {currentFolder && (
         <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between text-xs text-gray-400 flex-shrink-0">
           <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span>6 agents active</span>
-            </div>
+            {tokenUsage.totalTokens > 0 ? (
+              <>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  <span>{tokenUsage.promptTokens.toLocaleString()} sent</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  <span>{tokenUsage.completionTokens.toLocaleString()} received</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                <span>No tokens used</span>
+              </div>
+            )}
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
               <span>Chat ready</span>

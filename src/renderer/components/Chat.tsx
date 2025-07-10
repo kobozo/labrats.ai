@@ -43,6 +43,7 @@ import { getChatService, ChatServiceMessage } from '../../services/chat-service'
 import { getAgentMessageBus, BusMessage } from '../../services/agent-message-bus';
 import { chatHistoryManager } from '../../services/chat-history-manager-renderer';
 import { MentionAutocomplete } from './MentionAutocomplete';
+import { getLabRatsBackend } from '../../services/labrats-backend-service';
 
 interface Agent {
   id: string;
@@ -73,6 +74,7 @@ interface Message {
 interface ChatProps {
   onCodeReview: (changes: any) => void;
   currentFolder?: string | null;
+  onTokenUsageChange?: (usage: TokenUsage) => void;
 }
 
 // Map config agents to Chat component format
@@ -113,7 +115,7 @@ const renderMarkdown = (content: string): string => {
   return DOMPurify.sanitize(rawMarkup as string);
 };
 
-export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
+export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onTokenUsageChange }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [activeAgents, setActiveAgents] = useState(agents.filter(a => a.isActive));
@@ -135,7 +137,11 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
   const [showBackendWarning, setShowBackendWarning] = useState(false);
   const [backendCheckInProgress, setBackendCheckInProgress] = useState(false);
   const [singleAgentMode, setSingleAgentMode] = useState(false);
+  const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
+  const [chatTitle, setChatTitle] = useState('Agent Chat');
+  const [titleGenerated, setTitleGenerated] = useState(false);
   const chatMenuRef = useRef<HTMLDivElement>(null);
+  const agentsDropdownRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -174,6 +180,14 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     
     // Set up message bus event listeners
     const handleBusMessage = (message: BusMessage) => {
+      // Skip user messages since they're already added directly in handleSend
+      if (message.author === 'user') {
+        // Still update active agents list for user messages
+        const activeAgentIds = messageBus.activeAgents;
+        setActiveAgents(agents.filter(a => activeAgentIds.includes(a.id)));
+        return;
+      }
+      
       const convertedMessage: Message = {
         id: message.id,
         content: message.content,
@@ -227,9 +241,18 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
       const actualBusState = messageBus.isActive;
       setIsBusActive(actualBusState);
       
-      // Update token usage from chat service
-      const tokenUsage = chatService.getSessionTokenUsage();
-      setSessionTokenUsage(tokenUsage);
+      // Aggregate token usage from both chat service (single-agent) and message bus (multi-agent)
+      const chatServiceTokens = chatService.getSessionTokenUsage();
+      const messageBusTokens = messageBus.getSessionTokenUsage();
+      
+      const aggregatedTokenUsage: TokenUsage = {
+        completionTokens: chatServiceTokens.completionTokens + messageBusTokens.completionTokens,
+        promptTokens: chatServiceTokens.promptTokens + messageBusTokens.promptTokens,
+        totalTokens: chatServiceTokens.totalTokens + messageBusTokens.totalTokens
+      };
+      
+      setSessionTokenUsage(aggregatedTokenUsage);
+      onTokenUsageChange?.(aggregatedTokenUsage);
     }, 1000);
     
     return () => {
@@ -278,7 +301,11 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
         await baseChatService.clearConversation();
         await chatService.setCurrentProject(null);
         messageBus.setCurrentProject(null);
-        setSessionTokenUsage({ completionTokens: 0, promptTokens: 0, totalTokens: 0 });
+        chatService.clearSessionTokenUsage();
+        messageBus.clearSessionTokenUsage();
+        const resetUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
+        setSessionTokenUsage(resetUsage);
+        onTokenUsageChange?.(resetUsage);
       }
     };
     
@@ -316,11 +343,14 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     }
   }, [messages, currentFolder]);
 
-  // Handle clicking outside of chat menu
+  // Handle clicking outside of chat menu and agents dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (chatMenuRef.current && !chatMenuRef.current.contains(event.target as Node)) {
         setShowChatMenu(false);
+      }
+      if (agentsDropdownRef.current && !agentsDropdownRef.current.contains(event.target as Node)) {
+        setShowAgentsDropdown(false);
       }
     };
 
@@ -354,15 +384,17 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
       // Import the backend service dynamically to avoid circular deps
       const { getLabRatsBackendAsync } = await import('../../services/labrats-backend-service');
       const backend = await getLabRatsBackendAsync();
-      const result = await backend.testConnection();
       
-      if (!result.success) {
-        console.warn('LabRats backend not available:', result.error);
+      // Backend availability is already checked in getLabRatsBackendAsync
+      if (!backend.available) {
+        console.warn('LabRats backend not available');
         // Show warning modal instead of chat message
         setShowBackendWarning(true);
       } else {
         console.log('LabRats backend is available and ready');
         setShowBackendWarning(false);
+        // Reset single agent mode when backend becomes available
+        setSingleAgentMode(false);
       }
     } catch (error) {
       console.error('Failed to check backend availability:', error);
@@ -469,6 +501,11 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
       type: 'text'
     };
     setMessages(prev => [...prev, userMessage]);
+    
+    // Generate title after first user message
+    if (!titleGenerated && messages.filter(m => m.sender === 'user').length === 0) {
+      generateChatTitle(currentInput);
+    }
     
     // Handle single-agent mode
     if (singleAgentMode) {
@@ -721,11 +758,17 @@ To debug the message bus, open console and type: debugBus()
       messageBus.reset();
       baseChatService.clearConversation();
       chatService.clearSessionTokenUsage();
+      messageBus.clearSessionTokenUsage();
       setActiveAgents(agents.filter(a => a.id === 'cortex'));
       setIsBusActive(false);
       setAgentsPaused(false);
       setShowChatMenu(false);
-      setSessionTokenUsage({ completionTokens: 0, promptTokens: 0, totalTokens: 0 });
+      // Reset chat title
+      setChatTitle('Agent Chat');
+      setTitleGenerated(false);
+      const resetUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
+      setSessionTokenUsage(resetUsage);
+      onTokenUsageChange?.(resetUsage);
       
       console.log(`[CHAT] Archived chat to ${archiveProjectPath}`);
     } catch (error) {
@@ -748,15 +791,50 @@ To debug the message bus, open console and type: debugBus()
       messageBus.reset();
       baseChatService.clearConversation();
       chatService.clearSessionTokenUsage();
+      messageBus.clearSessionTokenUsage();
       setActiveAgents(agents.filter(a => a.id === 'cortex'));
       setIsBusActive(false);
       setAgentsPaused(false);
       setShowChatMenu(false);
-      setSessionTokenUsage({ completionTokens: 0, promptTokens: 0, totalTokens: 0 });
+      // Reset chat title
+      setChatTitle('Agent Chat');
+      setTitleGenerated(false);
+      const resetUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
+      setSessionTokenUsage(resetUsage);
+      onTokenUsageChange?.(resetUsage);
       
       console.log(`[CHAT] Deleted chat for ${currentFolder}`);
     } catch (error) {
       console.error('Failed to delete chat:', error);
+    }
+  };
+
+  const generateChatTitle = async (userMessage: string) => {
+    if (titleGenerated) return; // Only generate once per chat
+    
+    try {
+      // Always use the chat service for title generation if AI is enabled
+      if (isAiEnabled && currentProviderId && currentModelId) {
+        const response = await chatService.sendMessage(
+          `Generate a very short (2-4 words) chat title for this request: "${userMessage}". Respond with ONLY the title.`,
+          {
+            providerId: currentProviderId,
+            modelId: currentModelId,
+            systemPrompt: 'You are a helpful assistant that generates concise chat titles.'
+          }
+        );
+        
+        if (response.success && response.message) {
+          const title = response.message.content.trim().replace(/['"]/g, '');
+          if (title && title.length < 50) { // Sanity check
+            setChatTitle(title);
+            setTitleGenerated(true);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to generate chat title:', error);
+      // Keep default title on error
     }
   };
 
@@ -841,37 +919,52 @@ To debug the message bus, open console and type: debugBus()
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <MessageSquare className="w-5 h-5 text-blue-400" />
-            <h2 className="text-lg font-semibold text-white">Agent Chat</h2>
-            <div className="flex items-center space-x-2">
-              <Users className="w-4 h-4 text-gray-400" />
-              <span className="text-sm text-gray-400">{activeAgents.length} agents active</span>
-            </div>
+            <h2 className="text-lg font-semibold text-white">{chatTitle}</h2>
           </div>
           
           <div className="flex items-center space-x-3">
-            {/* Active Agents */}
-            <div className="flex items-center space-x-2">
-              {activeAgents.map((agent) => {
-                const avatar = getAgentAvatar(agent);
-                return (
-                  <div key={agent.id} className="flex items-center space-x-2 px-3 py-1 bg-gray-700 rounded-full">
-                    <div 
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: getAgentColorHex(agent) }}
-                    ></div>
-                    {avatar ? (
-                      <img 
-                        src={avatar} 
-                        alt={agent.name}
-                        className="w-4 h-4 rounded-full object-cover"
-                      />
-                    ) : (
-                      <agent.icon className="w-4 h-4 text-gray-300" />
-                    )}
-                    <span className="text-xs text-gray-300">{agent.name}</span>
+            {/* Active Agents Dropdown */}
+            <div className="relative" ref={agentsDropdownRef}>
+              <button
+                onClick={() => setShowAgentsDropdown(!showAgentsDropdown)}
+                className="flex items-center space-x-2 px-3 py-1 bg-gray-700 rounded-full hover:bg-gray-600 transition-colors"
+                title="View active agents"
+              >
+                <Users className="w-4 h-4 text-gray-300" />
+                <span className="text-sm text-gray-300">{activeAgents.length}</span>
+              </button>
+              
+              {showAgentsDropdown && activeAgents.length > 0 && (
+                <div className="absolute right-0 mt-2 w-64 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-2 z-50">
+                  <div className="px-3 py-1 text-xs text-gray-400 border-b border-gray-700 mb-2">
+                    Active Agents ({activeAgents.length})
                   </div>
-                );
-              })}
+                  {activeAgents.map((agent) => {
+                    const avatar = getAgentAvatar(agent);
+                    return (
+                      <div key={agent.id} className="flex items-center space-x-3 px-3 py-2 hover:bg-gray-700 transition-colors">
+                        <div 
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: getAgentColorHex(agent) }}
+                        ></div>
+                        {avatar ? (
+                          <img 
+                            src={avatar} 
+                            alt={agent.name}
+                            className="w-6 h-6 rounded-full object-cover"
+                          />
+                        ) : (
+                          <agent.icon className="w-6 h-6 text-gray-300" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-white font-medium">{agent.name}</div>
+                          <div className="text-xs text-gray-400 truncate">{agent.role}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             
             {/* Menu Button */}
@@ -1153,13 +1246,21 @@ To debug the message bus, open console and type: debugBus()
             }
           </div>
           <div className="flex items-center space-x-4">
-            {sessionTokenUsage.totalTokens > 0 && (
-              <div className="text-xs text-blue-400 flex items-center space-x-1">
-                <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
-                <span>{sessionTokenUsage.totalTokens.toLocaleString()} tokens</span>
-                <span className="text-gray-500">({sessionTokenUsage.promptTokens.toLocaleString()} in + {sessionTokenUsage.completionTokens.toLocaleString()} out)</span>
-              </div>
-            )}
+            <div className="flex items-center space-x-4">
+              {messages.length > 0 && (
+                <div className="text-xs text-purple-400 flex items-center space-x-1">
+                  <MessageSquare className="w-3 h-3" />
+                  <span>{messages.length} messages</span>
+                </div>
+              )}
+              {sessionTokenUsage.totalTokens > 0 && (
+                <div className="text-xs text-blue-400 flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  <span>{sessionTokenUsage.totalTokens.toLocaleString()} tokens</span>
+                  <span className="text-gray-500">({sessionTokenUsage.promptTokens.toLocaleString()} in + {sessionTokenUsage.completionTokens.toLocaleString()} out)</span>
+                </div>
+              )}
+            </div>
             {isAiEnabled && currentProviderId && (
               <div className="text-xs text-green-400 flex items-center space-x-1">
                 <div className="w-2 h-2 bg-green-400 rounded-full"></div>

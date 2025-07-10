@@ -26,7 +26,7 @@ export class LabRatsBackendService {
     this.backendUrl = backendUrl || 'http://localhost:11434';
     this.model = model || 'mistral';
     this.timeout = timeout || 30000;
-    this.checkAvailability();
+    // Don't check availability in constructor - make it explicit
   }
 
   private async checkAvailability(): Promise<void> {
@@ -65,7 +65,10 @@ export class LabRatsBackendService {
   }
 
   async shouldAgentRespond(request: DecisionRequest): Promise<DecisionResponse> {
+    console.log(`[LABRATS-BACKEND-DECISION] 🤔 Making decision for agent ${request.agentName} on message: "${request.message.substring(0, 50)}..."`);
+    
     if (!this.isAvailable) {
+      console.log(`[LABRATS-BACKEND-DECISION] ❌ Backend not available for ${request.agentName} decision`);
       return {
         success: false,
         shouldRespond: false, // No fallback - backend must be available
@@ -75,6 +78,7 @@ export class LabRatsBackendService {
 
     try {
       const decisionPrompt = this.buildDecisionPrompt(request);
+      console.log(`[LABRATS-BACKEND-DECISION] 📤 Sending decision request to backend for ${request.agentName}`);
       
       const response = await fetch(`${this.backendUrl}/api/generate`, {
         method: 'POST',
@@ -103,6 +107,8 @@ export class LabRatsBackendService {
       // Parse the response - look for YES/NO
       const shouldRespond = responseText.includes('yes') || responseText.startsWith('y');
       
+      console.log(`[LABRATS-BACKEND-DECISION] 📥 Backend decision for ${request.agentName}: ${shouldRespond ? 'YES' : 'NO'} (raw: "${responseText}")`);
+      
       return {
         success: true,
         shouldRespond,
@@ -120,36 +126,40 @@ export class LabRatsBackendService {
   }
 
   private buildDecisionPrompt(request: DecisionRequest): string {
-    return `You are helping to decide if an AI agent should respond to a team message.
+    return `You are a decision system determining if an AI agent should respond to a team message.
 
-Agent Details:
-- Name: ${request.agentName}
-- Role: ${request.agentTitle}
-- ID: ${request.agentId}
+AGENT: ${request.agentName} (${request.agentTitle})
+MESSAGE: "${request.message}"
+AUTHOR: ${request.messageAuthor}
 
-Recent conversation context:
+DECISION RULES:
+1. RESPOND "YES" ONLY IF:
+   - Agent is directly mentioned (@${request.agentId})
+   - Message specifically requires their expertise
+   - User asks for introductions AND agent hasn't introduced themselves yet
+   - There's actual work that needs their specific skills
+
+2. RESPOND "NO" IF:
+   - Simple greetings or social messages
+   - Other agents already handled the request
+   - Agent has nothing meaningful to contribute
+   - Would just be participating to participate
+
+RECENT CONTEXT:
 ${request.conversationContext}
 
-Agent's recent messages:
+AGENT'S RECENT ACTIVITY:
 ${request.agentRecentMessages || 'None'}
 
-Latest message: "${request.message}"
-Message author: ${request.messageAuthor}
-
-Should ${request.agentName} (${request.agentTitle}) respond to this message?
-
-Consider:
-- Does this relate to their expertise?
-- Can they deliver working code to solve the problem?
-- Is this a direct question or mention?
-- Would their response provide concrete implementation?
-- Prioritize agents who can deliver code over those who just discuss
-
-Respond with only "YES" or "NO".`;
+Decision (respond ONLY with "YES" or "NO"):`;
   }
 
   get available(): boolean {
     return this.isAvailable;
+  }
+
+  async ensureAvailable(): Promise<void> {
+    await this.checkAvailability();
   }
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {
@@ -188,6 +198,9 @@ export async function getLabRatsBackendAsync(): Promise<LabRatsBackendService> {
     
     console.log('[LABRATS-BACKEND] Initializing with:', { endpoint, model, timeout });
     labRatsBackendInstance = new LabRatsBackendService(endpoint, model, timeout);
+    
+    // Ensure availability is checked before returning
+    await labRatsBackendInstance.ensureAvailable();
   }
   return labRatsBackendInstance;
 }
@@ -196,6 +209,11 @@ export function getLabRatsBackend(): LabRatsBackendService {
   if (!labRatsBackendInstance) {
     // Create with defaults for synchronous access
     labRatsBackendInstance = new LabRatsBackendService();
+    
+    // Trigger availability check asynchronously
+    labRatsBackendInstance.ensureAvailable().catch(error => {
+      console.warn('[LABRATS-BACKEND] Failed to check availability:', error);
+    });
     
     // Try to update with actual config asynchronously
     getLabRatsBackendAsync().catch(error => {

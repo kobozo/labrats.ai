@@ -128,4 +128,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   checkCommand: (command: string) => ipcRenderer.invoke('check-command', command),
   executeClaudeCommand: (request: any) => ipcRenderer.invoke('execute-claude-command', request),
+  
+  // Window management
+  focusWindow: () => ipcRenderer.send('focus-window'),
 });

@@ -177,16 +177,23 @@ export const AgentSettings: React.FC = () => {
   };
 
   return (
-    <div className="flex space-x-4 h-full">
-      {/* Agent List Column - Scrollable */}
-      <div className="w-1/3 flex flex-col">
+    <div className="flex space-x-4" style={{ height: '70vh' }}>
+      {/* Agent List Column - Independent Scrolling */}
+      <div className="w-1/3 flex flex-col" style={{ height: '70vh' }}>
         <h3 className="text-xl font-bold mb-4 flex-shrink-0">Available Agents</h3>
-        <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+        <div 
+          className="flex-1 overflow-y-auto space-y-2 pr-2 border border-gray-700 rounded-lg bg-gray-800 p-3"
+          style={{ 
+            height: 'calc(70vh - 4rem)',
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#4B5563 #1F2937'
+          }}
+        >
           {agents.map((agent) => (
             <div
               key={agent.id}
               onClick={() => handleAgentClick(agent)}
-              className={`p-3 rounded-lg cursor-pointer flex-shrink-0 ${
+              className={`p-3 rounded-lg cursor-pointer flex-shrink-0 transition-colors ${
                 selectedAgent?.id === agent.id ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
               }`}
             >
@@ -206,10 +213,10 @@ export const AgentSettings: React.FC = () => {
                     {agent.icon}
                   </div>
                 )}
-                <div>
-                  <h4 className="font-bold">{agent.name}</h4>
-                  <p className="text-sm text-gray-400">{agent.title}</p>
-                  <p className="text-xs text-gray-500 mt-1 leading-tight">{agent.description}</p>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-bold truncate">{agent.name}</h4>
+                  <p className="text-sm text-gray-400 truncate">{agent.title}</p>
+                  <p className="text-xs text-gray-500 mt-1 leading-tight line-clamp-2">{agent.description}</p>
                 </div>
               </div>
             </div>
@@ -217,13 +224,20 @@ export const AgentSettings: React.FC = () => {
         </div>
       </div>
       
-      {/* Settings Panel Column - Scrollable */}
-      <div className="w-2/3 flex flex-col">
+      {/* Settings Panel Column - Independent Scrolling */}
+      <div className="w-2/3 flex flex-col" style={{ height: '70vh' }}>
         {selectedAgent ? (
           <>
             <h3 className="text-xl font-bold mb-4 flex-shrink-0">Configure {selectedAgent.name}</h3>
-            <div className="flex-1 overflow-y-auto">
-              <div className="bg-gray-800 p-4 rounded-lg">
+            <div 
+              className="flex-1 overflow-y-auto border border-gray-700 rounded-lg bg-gray-800"
+              style={{ 
+                height: 'calc(70vh - 4rem)',
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#4B5563 #1F2937'
+              }}
+            >
+              <div className="p-4">
                 <div className="flex items-center space-x-4 mb-4">
                   {selectedAgent.avatar ? (
                     <img 
@@ -262,7 +276,7 @@ export const AgentSettings: React.FC = () => {
             </div>
           </>
         ) : (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center border border-gray-700 rounded-lg bg-gray-800" style={{ height: 'calc(70vh - 4rem)' }}>
             <p className="text-gray-500">Select an agent to configure</p>
           </div>
         )}

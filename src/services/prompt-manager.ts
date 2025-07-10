@@ -17,6 +17,13 @@ import globalLabratsPrompt from '../prompts/global-labrats.prompt';
 import globalPrompt from '../prompts/global.prompt';
 import uiUxDesignerPrompt from '../prompts/ui-ux-designer.prompt';
 
+// Import compact prompts for token optimization
+import productOwnerCompactPrompt from '../prompts/product-owner-compact.prompt';
+import globalLabratsCompactPrompt from '../prompts/global-labrats-compact.prompt';
+import backendDevCompactPrompt from '../prompts/backend-dev-compact.prompt';
+import codeReviewerCompactPrompt from '../prompts/code-reviewer-compact.prompt';
+import uiUxDesignerCompactPrompt from '../prompts/ui-ux-designer-compact.prompt';
+
 // Default prompts mapping - using agent IDs from config/agents.ts
 const DEFAULT_PROMPTS: { [key: string]: string } = {
   // Agent ID mapping
@@ -49,6 +56,21 @@ const DEFAULT_PROMPTS: { [key: string]: string } = {
   'document-writer': documentWriterPrompt,
   'git-commit-generator': gitCommitGeneratorPrompt,
   'ui-ux-designer': uiUxDesignerPrompt
+};
+
+// Compact prompts mapping for token optimization
+const COMPACT_PROMPTS: { [key: string]: string } = {
+  // Agent ID mapping
+  'cortex': productOwnerCompactPrompt,
+  'patchy': backendDevCompactPrompt,
+  'clawsy': codeReviewerCompactPrompt,
+  'sketchy': uiUxDesignerCompactPrompt,
+  
+  // Legacy role-based mapping for backwards compatibility
+  'product-owner': productOwnerCompactPrompt,
+  'backend-dev': backendDevCompactPrompt,
+  'code-reviewer': codeReviewerCompactPrompt,
+  'ui-ux-designer': uiUxDesignerCompactPrompt
 };
 
 // Mouse character pre-prompts (always included, even with user overrides) - using agent IDs
@@ -117,7 +139,7 @@ export class PromptManager {
    * Get the complete prompt for a specific agent
    * Includes: global professional standards + labrats context + agent persona + (user override OR default prompt)
    */
-  async getPrompt(agentId: string): Promise<string> {
+  async getPrompt(agentId: string, compact: boolean = false): Promise<string> {
     console.log(`[PROMPT-MANAGER] Getting prompt for agent: ${agentId}`);
     
     try {
@@ -139,11 +161,16 @@ export class PromptManager {
       // Build the complete prompt with all components for regular agents
       let completePrompt = '';
       
-      // 1. Add global professional standards
-      completePrompt += globalPrompt + '\n\n';
-      
-      // 2. Add global LabRats.ai context
-      completePrompt += globalLabratsPrompt + '\n\n';
+      if (compact) {
+        // Compact mode: Use minimal global context
+        completePrompt += globalLabratsCompactPrompt + '\n\n';
+      } else {
+        // 1. Add global professional standards
+        completePrompt += globalPrompt + '\n\n';
+        
+        // 2. Add global LabRats.ai context
+        completePrompt += globalLabratsPrompt + '\n\n';
+      }
       
       // 3. Add agent persona (mouse character)
       const persona = AGENT_PERSONAS[agentId];
@@ -166,16 +193,21 @@ export class PromptManager {
         }
       }
       
-      // If no user override, use default prompt
+      // If no user override, use default or compact prompt
       if (!rolePrompt) {
-        const defaultPrompt = DEFAULT_PROMPTS[agentId];
-        if (defaultPrompt) {
-          rolePrompt = defaultPrompt.trim();
-          console.log(`[PROMPT-MANAGER] Using default prompt for ${agentId}, length: ${rolePrompt.length}`);
+        if (compact && COMPACT_PROMPTS[agentId]) {
+          rolePrompt = COMPACT_PROMPTS[agentId].trim();
+          console.log(`[PROMPT-MANAGER] Using compact prompt for ${agentId}, length: ${rolePrompt.length}`);
         } else {
-          // Fallback for unknown agents
-          console.log(`[PROMPT-MANAGER] No default prompt found for ${agentId}, using generic`);
-          rolePrompt = this.getGenericPrompt(agentId);
+          const defaultPrompt = DEFAULT_PROMPTS[agentId];
+          if (defaultPrompt) {
+            rolePrompt = defaultPrompt.trim();
+            console.log(`[PROMPT-MANAGER] Using default prompt for ${agentId}, length: ${rolePrompt.length}`);
+          } else {
+            // Fallback for unknown agents
+            console.log(`[PROMPT-MANAGER] No default prompt found for ${agentId}, using generic`);
+            rolePrompt = this.getGenericPrompt(agentId);
+          }
         }
       }
       

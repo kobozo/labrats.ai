@@ -1,18 +1,20 @@
 import { BrowserEventEmitter } from './browser-event-emitter';
-import { getLangChainChatService, LangChainChatMessage } from './langchain-chat-service';
+import { getLangChainChatService, LangChainChatMessage, TokenUsage } from './langchain-chat-service';
 import { getPromptManager } from './prompt-manager';
 import { agents } from '../config/agents';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { LLMResult } from '@langchain/core/outputs';
 import { getAIProviderManager } from './ai-provider-manager';
 import { getLabRatsBackend, getLabRatsBackendAsync, resetLabRatsBackend } from './labrats-backend-service';
+import { notificationService } from './notification-service';
 import { z } from 'zod';
 
 // Zod schema for agent response structure
 const agentResponseSchema = z.object({
   message: z.string().describe("Your actual response text here - include code blocks, explanations, everything you want to say"),
-  action: z.enum(['done', 'open', 'waiting', 'needs_review', 'implementing', 'planning', 'reviewing', 'user_input']).describe("Current action state"),
+  action: z.enum(['done', 'open', 'waiting', 'needs_review', 'implementing', 'planning', 'reviewing', 'user_input', 'wait_for_user']).describe("Current action state"),
   involve: z.array(z.string()).describe("Agent IDs to involve NOW (not for future steps) - use 'labrats' for user mention"),
   metadata: z.object({
     type: z.enum(['implementation', 'review', 'planning', 'documentation', 'deployment', 'testing']).optional().describe("Type of work being done"),
@@ -35,7 +37,7 @@ export interface BusMessage {
   metadata?: AgentMetadata; // Additional context
 }
 
-export type AgentAction = 'done' | 'open' | 'waiting' | 'needs_review' | 'implementing' | 'planning' | 'reviewing' | 'user_input';
+export type AgentAction = 'done' | 'open' | 'waiting' | 'needs_review' | 'implementing' | 'planning' | 'reviewing' | 'user_input' | 'wait_for_user';
 
 export interface AgentMetadata {
   confidence?: number;
@@ -70,6 +72,11 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private lastActivityTime: Date = new Date();
   private stallDetectionTimer: NodeJS.Timeout | null = null;
   private readonly stallTimeoutMs = 10000; // 10 seconds
+  private sessionTokenUsage: TokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
+  private responseQueue: Array<{agentId: string, triggerMessage: BusMessage, contextSnapshot: BusMessage[]}> = []; // Queue with context snapshots
+  private queueProcessing = false; // Flag to prevent concurrent queue processing
+  private conversationGoals: string[] = []; // Track defined goals for this conversation
+  private goalsEstablished = false; // Whether Cortex has defined the goals yet
 
   constructor(options: MessageBusOptions = {}) {
     super();
@@ -102,14 +109,16 @@ export class AgentMessageBus extends BrowserEventEmitter {
     this.busActive = true;
     this.globalMessageHistory = [];
     this.agentContexts.clear();
+    this.responseQueue = []; // Clear any stale queue entries
+    this.queueProcessing = false;
+    this.conversationGoals = []; // Clear goals for new conversation
+    this.goalsEstablished = false; // Reset goals flag
     
     // Initialize Cortex as the primary coordinator
     this.createAgentContext('cortex');
     
-    // Always activate Chaos Monkey and Contrarian as observers
-    // They will use LabRats backend to decide when to jump in
-    this.createAgentContext('ziggy');  // Chaos Monkey
-    this.createAgentContext('scratchy'); // Contrarian
+    // NOTE: Ziggy and Scratchy will be created only when they decide to join
+    // through the AI decision process, not automatically
     
     // Add initial user message to bus
     const userMessage: BusMessage = {
@@ -211,6 +220,12 @@ export class AgentMessageBus extends BrowserEventEmitter {
     for (const [agentId, context] of this.agentContexts.entries()) {
       if (!context.isActive) continue;
       
+      // Skip agents that are in the response queue - they stop listening until their turn
+      if (this.isAgentInQueue(agentId)) {
+        console.log(`[AGENT-BUS] Agent ${agentId} is in response queue, skipping message distribution to reduce backend load`);
+        continue;
+      }
+      
       // Add message to agent's personal history if:
       // 1. It's from the user
       // 2. It mentions this agent
@@ -248,9 +263,9 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private async processAgentReactions(triggerMessage: BusMessage): Promise<void> {
     console.log(`[AGENT-BUS] Processing agent reactions to message from ${triggerMessage.author} (ID: ${triggerMessage.id})`);
     
-    // Skip processing if agents are paused, but ALWAYS process user messages
-    if (!this.agentsActive && triggerMessage.messageType !== 'user') {
-      console.log(`[AGENT-BUS] Agents are paused, skipping reactions (except user messages)`);
+    // Skip processing if agents are paused
+    if (!this.agentsActive) {
+      console.log(`[AGENT-BUS] Agents are paused, skipping all reactions`);
       return;
     }
     
@@ -268,15 +283,13 @@ export class AgentMessageBus extends BrowserEventEmitter {
       }
     }
 
-    // Let mentioned agents respond first (but not if they're the author)
+    // Add mentioned agents to queue first (but not if they're the author)
     const validMentions = triggerMessage.mentions.filter(mentionedId => mentionedId !== triggerMessage.author);
     for (const mentionedId of validMentions) {
       const context = this.agentContexts.get(mentionedId);
       if (context && context.isActive) {
-        console.log(`[AGENT-BUS] Invoking mentioned agent ${mentionedId}`);
-        this.emit('agent-typing', { agentId: mentionedId, isTyping: true });
-        await this.invokeAgent(mentionedId, triggerMessage, 'mentioned');
-        this.emit('agent-typing', { agentId: mentionedId, isTyping: false });
+        console.log(`[AGENT-BUS] Adding mentioned agent ${mentionedId} to queue - mentions always require response`);
+        this.addToResponseQueue(mentionedId, triggerMessage);
       }
     }
 
@@ -287,14 +300,29 @@ export class AgentMessageBus extends BrowserEventEmitter {
           this.shouldTriggerAgentToAgentConversation(triggerMessage)
         ))) {
       
-      // Get agents that could respond naturally
-      const activeAgents = Array.from(this.agentContexts.entries())
+      // Get agents that could respond naturally (include observer agents even if not active yet)
+      let potentialAgents = Array.from(this.agentContexts.entries())
         .filter(([_, context]) => context.isActive)
-        .map(([agentId, _]) => agentId)
-        .filter(agentId => 
-          !triggerMessage.mentions.includes(agentId) && 
-          agentId !== triggerMessage.author
-        );
+        .map(([agentId, _]) => agentId);
+      
+      // Check if this is the first user message
+      const userMessages = this.globalMessageHistory.filter(msg => msg.author === 'user');
+      const isFirstUserMessage = userMessages.length === 1 && triggerMessage.author === 'user';
+      
+      // Only include Ziggy and Scratchy if it's not the first user message
+      if (!isFirstUserMessage) {
+        if (!potentialAgents.includes('ziggy')) {
+          potentialAgents.push('ziggy');
+        }
+        if (!potentialAgents.includes('scratchy')) {
+          potentialAgents.push('scratchy');
+        }
+      }
+      
+      const activeAgents = potentialAgents.filter(agentId => 
+        !triggerMessage.mentions.includes(agentId) && 
+        agentId !== triggerMessage.author
+      );
 
       console.log(`[AGENT-BUS] Checking natural responses from: ${activeAgents.join(', ')}`);
 
@@ -322,41 +350,85 @@ export class AgentMessageBus extends BrowserEventEmitter {
         orderedAgents = [...orderedAgents].sort(() => Math.random() - 0.5);
       }
       
-      // Allow natural responses - check multiple agents for better conversation flow
+      // Stage 1: Check which agents want to respond and add them to queue
       if (orderedAgents.length > 0) {
-        let agentsResponded = 0;
+        let agentsWantingToRespond = 0;
         const maxNaturalResponses = triggerMessage.messageType === 'user' ? 3 : 2; // Allow 3 responses to user messages, 2 to agent messages for better collaboration
         
         for (const agentId of orderedAgents) {
-          if (agentsResponded >= maxNaturalResponses) break;
+          if (agentsWantingToRespond >= maxNaturalResponses) break;
           
           console.log(`[AGENT-BUS] Checking if agent ${agentId} should respond naturally...`);
           const shouldRespond = await this.shouldAgentRespond(agentId, triggerMessage);
           if (shouldRespond) {
-            console.log(`[AGENT-BUS] Agent ${agentId} will respond naturally`);
-            // Only show typing indicator when agent will actually respond
-            this.emit('agent-typing', { agentId, isTyping: true });
-            await this.invokeAgent(agentId, triggerMessage, 'natural');
-            this.emit('agent-typing', { agentId, isTyping: false });
-            agentsResponded++;
-            
-            // Add small delay between natural responses to make it feel more natural
-            if (agentsResponded < maxNaturalResponses && orderedAgents.length > agentsResponded) {
-              await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000)); // Reduced delay for more responsive conversations
-            }
+            console.log(`[AGENT-BUS] Agent ${agentId} wants to respond - adding to queue`);
+            this.addToResponseQueue(agentId, triggerMessage);
+            agentsWantingToRespond++;
           } else {
             console.log(`[AGENT-BUS] Agent ${agentId} decided not to respond naturally`);
           }
         }
         
-        console.log(`[AGENT-BUS] Natural response phase completed: ${agentsResponded} agents responded`);
+        console.log(`[AGENT-BUS] Decision phase completed: ${agentsWantingToRespond} agents want to respond`);
       }
+      
+      // Stage 2: Process the response queue sequentially with fresh context
+      await this.processResponseQueue();
     }
   }
 
   private async shouldAgentRespond(agentId: string, triggerMessage: BusMessage): Promise<boolean> {
-    const context = this.agentContexts.get(agentId);
-    if (!context) {
+    let context = this.agentContexts.get(agentId);
+    
+    // CRITICAL: Never respond to your own message
+    if (triggerMessage.author === agentId) {
+      console.log(`[AGENT-BUS] Agent ${agentId} cannot respond to their own message`);
+      return false;
+    }
+    
+    // CRITICAL: In one-on-one chat (only one active agent), always respond to user
+    const activeAgentCount = this.getActiveAgentCount();
+    if (activeAgentCount === 1 && triggerMessage.author === 'user') {
+      console.log(`[AGENT-BUS] One-on-one chat with ${agentId} - skipping decision check`);
+      return true;
+    }
+    
+    // CRITICAL: Only Cortex (or mentioned agents) can respond to the first user message
+    const userMessages = this.globalMessageHistory.filter(msg => msg.author === 'user');
+    if (userMessages.length === 1 && triggerMessage.author === 'user' && agentId !== 'cortex') {
+      console.log(`[AGENT-BUS] Agent ${agentId} cannot respond to first user message - only Cortex or mentioned agents`);
+      return false;
+    }
+    
+    // CRITICAL: Don't respond immediately after your own message (let others react first)
+    const lastMessage = this.globalMessageHistory[this.globalMessageHistory.length - 1];
+    const secondLastMessage = this.globalMessageHistory[this.globalMessageHistory.length - 2];
+    
+    if (lastMessage && lastMessage.author === agentId && triggerMessage.id === lastMessage.id) {
+      console.log(`[AGENT-BUS] Agent ${agentId} just responded, must wait for others to react`);
+      return false;
+    }
+    
+    if (secondLastMessage && secondLastMessage.author === agentId && lastMessage && lastMessage.author === agentId) {
+      console.log(`[AGENT-BUS] Agent ${agentId} has two consecutive messages, must wait for others`);
+      return false;
+    }
+    
+    // Special handling for observer agents (Ziggy, Scratchy) - create context if they decide to join
+    if (!context && (agentId === 'ziggy' || agentId === 'scratchy')) {
+      console.log(`[AGENT-BUS] Observer agent ${agentId} evaluating whether to join conversation`);
+      
+      // Use AI decision first, then create context if they want to join
+      const aiDecision = await this.aiDecisionToRespond(agentId, triggerMessage);
+      if (aiDecision) {
+        console.log(`[AGENT-BUS] Observer agent ${agentId} decided to join - creating context`);
+        this.createAgentContext(agentId);
+        context = this.agentContexts.get(agentId)!;
+      } else {
+        console.log(`[AGENT-BUS] Observer agent ${agentId} decided not to join`);
+        return false;
+      }
+    } else if (!context) {
       console.log(`[AGENT-BUS] Agent ${agentId} has no context`);
       return false;
     }
@@ -455,43 +527,43 @@ export class AgentMessageBus extends BrowserEventEmitter {
       return true;
     }
     
-    // Special case: Cortex should be very responsive and proactive as Product Owner
+    // Special case: Cortex should coordinate but not dominate - be more selective
     if (agentId === 'cortex') {
+      // CRITICAL: Cortex MUST respond to the first user message immediately
+      const userMessages = this.globalMessageHistory.filter(msg => msg.author === 'user');
+      if (userMessages.length === 1 && triggerMessage.author === 'user') {
+        console.log(`[AGENT-BUS] Cortex MUST respond to first user message - immediate response`);
+        return true;
+      }
+      
       const messageContent = triggerMessage.content.toLowerCase();
       const senderAgent = agents.find(a => a.id === triggerMessage.author);
       
-      const shouldCortexRespond = 
-        // Cortex should respond to greetings and early conversation facilitation
-        this.globalMessageHistory.length <= 5 ||
-        // When conversation stalls or needs direction 
-        messageContent.includes('nothing') ||
-        messageContent.includes('what is happening') ||
-        messageContent.includes('any thoughts') ||
-        messageContent.includes('what do you think') ||
-        // When agents complete work or provide solutions (provide feedback)
-        (senderAgent && triggerMessage.content.includes('```')) ||
-        // When someone asks questions that need coordination
-        messageContent.includes('?') ||
+      const shouldCortexRespond =
+        // When user explicitly asks for help or coordination
+        (triggerMessage.messageType === 'user' && (
+          messageContent.includes('help') ||
+          messageContent.includes('who should') ||
+          messageContent.includes('what should') ||
+          messageContent.includes('how do') ||
+          messageContent.includes('coordinate') ||
+          messageContent.includes('manage')
+        )) ||
+        // When conversation truly stalls (multiple agents report done but user hasn't acknowledged)
+        (messageContent.includes('nothing') && this.getActiveAgentCount() === 1) ||
         // Direct mentions of Cortex
         messageContent.includes('cortex') ||
-        // When agents deliver work and need next steps
-        messageContent.includes('done') || messageContent.includes('finished') || messageContent.includes('ready') ||
-        // After architect provides feedback (coordinate next steps)
-        (triggerMessage.author === 'nestor' && (messageContent.includes('recommend') || messageContent.includes('architecture'))) ||
-        // After code review (coordinate implementation of feedback)
-        (triggerMessage.author === 'clawsy' && (messageContent.includes('review') || messageContent.includes('feedback'))) ||
-        // When user asks for help or conversation stops
-        messageContent.includes('help') ||
-        messageContent.includes('someone') ||
-        messageContent.includes('stopped answering') ||
-        messageContent.includes('everybody stopped') ||
-        messageContent.includes('can we get') ||
-        messageContent.includes('anyone') ||
+        // When user provides feedback after deliverables (needs coordination)
+        (triggerMessage.author === 'user' && context.lastResponseTime && 
+         this.globalMessageHistory.some(msg => msg.author !== 'user' && msg.author !== 'cortex' && 
+                                        msg.timestamp > context.lastResponseTime!)) ||
         userNeedsHelp;
       
       if (shouldCortexRespond) {
-        console.log(`[AGENT-BUS] Cortex responding to coordination/feedback/help request`);
+        console.log(`[AGENT-BUS] Cortex responding to coordination/user request`);
         return true;
+      } else {
+        console.log(`[AGENT-BUS] Cortex staying back to let team respond first`);
       }
     }
 
@@ -509,11 +581,18 @@ export class AgentMessageBus extends BrowserEventEmitter {
     if (!agent) return false;
 
     const context = this.agentContexts.get(agentId);
-    if (!context) return false;
+    
+    // For observer agents without context, use global history for decision making
+    let contextMessages: BusMessage[];
+    if (!context) {
+      // Use recent global messages for agents that haven't joined yet
+      contextMessages = this.globalMessageHistory.slice(-5);
+    } else {
+      contextMessages = context.personalMessageHistory.slice(-5);
+    }
 
-    // Build context from agent's personal message history
-    const recentMessages = context.personalMessageHistory.slice(-5);
-    const contextStr = recentMessages.map(msg => {
+    // Build context from appropriate message history
+    const contextStr = contextMessages.map(msg => {
       const authorName = msg.author === 'user' ? 'User' : 
                         agents.find(a => a.id === msg.author)?.name || msg.author;
       return `${authorName}: ${msg.content}`;
@@ -536,14 +615,34 @@ export class AgentMessageBus extends BrowserEventEmitter {
       console.log(`[AGENT-BUS] Using local LabRats backend for ${agentId} decision`);
       
       try {
-        // Special handling for observer agents (Ziggy and Scratchy)
+        // Special handling for observer agents (Ziggy and Scratchy) - STRICT JOINING CRITERIA
         const isObserverAgent = agentId === 'ziggy' || agentId === 'scratchy';
-        const observerHint = isObserverAgent ? ' (ACTIVE OBSERVER - lower threshold for jumping in)' : '';
+        let observerGuidance = '';
+        
+        if (isObserverAgent) {
+          // Check if they were explicitly mentioned or invited
+          const wasInvited = this.globalMessageHistory.some(msg => 
+            msg.mentions.includes(agentId) || 
+            (msg.involve && msg.involve.includes(agentId))
+          );
+          
+          if (!wasInvited) {
+            console.log(`[AGENT-BUS] Observer agent ${agentId} not invited - will not join`);
+            return false; // Don't even ask the backend if not invited
+          }
+          
+          observerGuidance = `\n\nIMPORTANT: You were INVITED to join this conversation. Only join if:
+1. You can add significant value with your expertise
+2. The conversation needs your specific perspective
+3. You have something meaningful to contribute
+
+You were invited, so you should join if you can help. But still be selective about when to actually respond.`;
+        }
         
         const decisionResponse = await labRatsBackend.shouldAgentRespond({
           agentId,
           agentName: agent.name,
-          agentTitle: agent.title + observerHint,
+          agentTitle: agent.title + observerGuidance,
           message: triggerMessage.content,
           messageAuthor: triggerMessage.author,
           conversationContext: contextStr,
@@ -568,7 +667,166 @@ export class AgentMessageBus extends BrowserEventEmitter {
     return false;
   }
 
+  // Queue management methods
+  private addToResponseQueue(agentId: string, triggerMessage: BusMessage): void {
+    // Prevent duplicates - if agent is already in queue, don't add again
+    const isAlreadyQueued = this.responseQueue.some(item => item.agentId === agentId);
+    if (!isAlreadyQueued) {
+      // Capture context snapshot at decision time
+      const contextSnapshot = [...this.globalMessageHistory]; // Deep copy of current context
+      this.responseQueue.push({
+        agentId,
+        triggerMessage,
+        contextSnapshot
+      });
+      console.log(`[AGENT-BUS-QUEUE] Added ${agentId} to response queue with context snapshot (${contextSnapshot.length} messages). Queue: [${this.responseQueue.map(item => item.agentId).join(', ')}]`);
+    } else {
+      console.log(`[AGENT-BUS-QUEUE] Agent ${agentId} already in queue, skipping`);
+    }
+  }
+
+  private removeFromResponseQueue(agentId: string): void {
+    // Remove ALL instances of this agent from the queue
+    const originalLength = this.responseQueue.length;
+    this.responseQueue = this.responseQueue.filter(item => item.agentId !== agentId);
+    const removedCount = originalLength - this.responseQueue.length;
+    if (removedCount > 0) {
+      console.log(`[AGENT-BUS-QUEUE] Removed ${removedCount} instances of ${agentId} from queue. Queue: [${this.responseQueue.map(item => item.agentId).join(', ')}]`);
+    }
+  }
+
+  private isAgentInQueue(agentId: string): boolean {
+    return this.responseQueue.some(item => item.agentId === agentId);
+  }
+
+  private getActiveAgentCount(): number {
+    return Array.from(this.agentContexts.entries()).filter(([_, ctx]) => ctx.isActive).length;
+  }
+
+  private extractGoalsFromCortexResponse(content: string): string[] {
+    const goals: string[] = [];
+    
+    // Look specifically for USER-FOCUSED goals that Cortex should define
+    const userGoalPatterns = [
+      /(?:user wants|user needs|user asked for|user goal|user requirement).*?:\s*(.+)/gi,
+      /(?:main goal|primary objective|core requirement).*?:\s*(.+)/gi,
+      /(?:deliver|create|build|provide).*?:\s*(.+?)(?:\s+for\s+(?:the\s+)?user|$)/gi,
+    ];
+
+    for (const pattern of userGoalPatterns) {
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        const goalText = match[1].trim();
+        // Filter out technical implementation details
+        if (goalText.length > 10 && goalText.length < 150 && 
+            !this.isTechnicalImplementation(goalText)) {
+          goals.push(goalText);
+        }
+      }
+    }
+
+    // Look for explicit goal statements in numbered lists (but filter technical ones)
+    const numberedGoals = content.match(/^\d+\.\s+(.+)$/gm);
+    if (numberedGoals) {
+      numberedGoals.forEach(goal => {
+        const cleanGoal = goal.replace(/^\d+\.\s+/, '').trim();
+        if (cleanGoal.length > 10 && cleanGoal.length < 150 && 
+            !this.isTechnicalImplementation(cleanGoal)) {
+          goals.push(cleanGoal);
+        }
+      });
+    }
+
+    return [...new Set(goals)]; // Remove duplicates
+  }
+
+  private isTechnicalImplementation(text: string): boolean {
+    const technicalKeywords = [
+      'tech stack', 'technology', 'framework', 'library', 'pygame', 'python',
+      'architecture', 'database', 'api', 'backend', 'frontend', 'deployment',
+      'testing', 'security', 'performance', 'scalability', 'infrastructure',
+      'code', 'implementation', 'development', 'programming'
+    ];
+    
+    const lowerText = text.toLowerCase();
+    return technicalKeywords.some(keyword => lowerText.includes(keyword));
+  }
+
+  private addGoalsToConversation(goals: string[]): void {
+    goals.forEach(goal => {
+      if (!this.conversationGoals.includes(goal)) {
+        this.conversationGoals.push(goal);
+        console.log(`[AGENT-BUS-GOALS] Added goal: ${goal}`);
+      }
+    });
+    
+    if (goals.length > 0 && !this.goalsEstablished) {
+      this.goalsEstablished = true;
+      console.log(`[AGENT-BUS-GOALS] Goals established for conversation: ${this.conversationGoals.length} goals`);
+    }
+  }
+
+  private async processResponseQueue(): Promise<void> {
+    if (this.queueProcessing || this.responseQueue.length === 0) {
+      return;
+    }
+
+    this.queueProcessing = true;
+    console.log(`[AGENT-BUS-QUEUE] Processing response queue with ${this.responseQueue.length} agents`);
+
+    while (this.responseQueue.length > 0 && this.busActive && this.agentsActive) {
+      const queueItem = this.responseQueue.shift()!;
+      const { agentId, triggerMessage, contextSnapshot } = queueItem;
+      console.log(`[AGENT-BUS-QUEUE] Processing response for ${agentId} using context snapshot from decision time`);
+
+      // Remove any other instances of this agent from the queue
+      this.removeFromResponseQueue(agentId);
+
+      // Show typing indicator
+      this.emit('agent-typing', { agentId, isTyping: true });
+
+      try {
+        // Use context snapshot from decision time
+        await this.invokeAgentFromQueue(agentId, triggerMessage, contextSnapshot);
+      } catch (error) {
+        console.error(`[AGENT-BUS-QUEUE] Error processing ${agentId}:`, error);
+      }
+
+      // Hide typing indicator
+      this.emit('agent-typing', { agentId, isTyping: false });
+
+      // Small delay between queue responses to make it feel natural
+      if (this.responseQueue.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
+      }
+    }
+
+    this.queueProcessing = false;
+    console.log(`[AGENT-BUS-QUEUE] Queue processing completed`);
+  }
+
+  private async invokeAgentFromQueue(agentId: string, triggerMessage: BusMessage, contextSnapshot: BusMessage[]): Promise<void> {
+    const agent = agents.find(a => a.id === agentId);
+    const context = this.agentContexts.get(agentId);
+    
+    if (!agent || !context) {
+      console.error(`[AGENT-BUS-QUEUE] Agent ${agentId} not found or no context`);
+      return;
+    }
+
+    console.log(`[AGENT-BUS-QUEUE] Invoking ${agentId} with context snapshot from decision time (${contextSnapshot.length} messages vs ${this.globalMessageHistory.length} current messages)`);
+    
+    // Use the existing invoke logic but with context snapshot from decision time
+    await this.invokeAgentWithContextSnapshot(agentId, triggerMessage, contextSnapshot, 'natural');
+  }
+
   private async invokeAgent(agentId: string, triggerMessage: BusMessage, responseType: 'mentioned' | 'natural'): Promise<void> {
+    // Don't invoke agents if they're paused
+    if (!this.agentsActive) {
+      console.log(`[AGENT-BUS] Skipping agent ${agentId} invocation - agents are paused`);
+      return;
+    }
+    
     const agent = agents.find(a => a.id === agentId);
     const context = this.agentContexts.get(agentId);
     
@@ -681,22 +939,165 @@ Do NOT continue the conversation. Do NOT ask what's next. This is the final summ
           }
         }
         
-        // Activate agents specified in the "involve" field
+        // Check if agent wants to involve labrats (user) - automatically convert to wait_for_user
+        if (structured.involve && structured.involve.includes('labrats')) {
+          console.log(`[AGENT-BUS] Agent ${agentId} mentioned @labrats - converting to wait_for_user action`);
+          structured.action = 'wait_for_user';
+          agentMessage.action = 'wait_for_user';
+          context.currentAction = 'wait_for_user';
+        }
+
+        // Activate agents specified in the "involve" field (excluding labrats since it's the user)
         if (structured.involve && structured.involve.length > 0) {
-          console.log(`[AGENT-BUS] Agent ${agentId} wants to involve: ${structured.involve.join(', ')}`);
-          for (const involveId of structured.involve) {
-            if (agents.find(a => a.id === involveId)) {
-              this.createAgentContext(involveId);
-              // Add them to mentions so they get notified
-              if (!agentMessage.mentions.includes(involveId)) {
-                agentMessage.mentions.push(involveId);
+          const agentInvolve = structured.involve.filter((id: string) => id !== 'labrats');
+          if (agentInvolve.length > 0) {
+            console.log(`[AGENT-BUS] Agent ${agentId} wants to involve: ${agentInvolve.join(', ')}`);
+            for (const involveId of agentInvolve) {
+              if (agents.find(a => a.id === involveId)) {
+                this.createAgentContext(involveId);
+                // Add them to mentions so they get notified
+                if (!agentMessage.mentions.includes(involveId)) {
+                  agentMessage.mentions.push(involveId);
+                }
               }
             }
           }
         }
 
+        // Extract goals if this is Cortex speaking
+        if (agentId === 'cortex') {
+          const extractedGoals = this.extractGoalsFromCortexResponse(response.message.content);
+          if (extractedGoals.length > 0) {
+            this.addGoalsToConversation(extractedGoals);
+          }
+        }
+
         // Publish the message to the bus
         await this.publishMessage(agentMessage);
+        
+        // Check if agent wants to wait for user input
+        if (structured.action === 'wait_for_user') {
+          console.log(`[AGENT-BUS] Agent ${agentId} requested to wait for user input - pausing bus`);
+          
+          // Show OS notification to alert user
+          const agentInfo = agents.find(a => a.id === agentId);
+          const agentName = agentInfo?.name || agentId;
+          await notificationService.showAgentWaitingNotification(agentName, response.message.content);
+          
+          this.pause();
+          return;
+        }
+        
+        // Check if all agents are done (trigger QA)
+        await this.checkAllAgentsDone();
+        
+        console.log(`[AGENT-BUS] ✅ Agent ${agentId} published response with action: ${structured.action}`);
+      } else {
+        console.log(`[AGENT-BUS] ❌ Agent ${agentId} failed to generate response`);
+      }
+    } catch (error) {
+      console.error(`[AGENT-BUS] Error invoking agent ${agentId}:`, error);
+    }
+  }
+
+  private async invokeAgentWithContextSnapshot(agentId: string, triggerMessage: BusMessage, contextSnapshot: BusMessage[], responseType: 'mentioned' | 'natural'): Promise<void> {
+    // Don't invoke agents if they're paused
+    if (!this.agentsActive) {
+      console.log(`[AGENT-BUS] Skipping agent ${agentId} invocation - agents are paused`);
+      return;
+    }
+    
+    const agent = agents.find(a => a.id === agentId);
+    const context = this.agentContexts.get(agentId);
+    
+    if (!agent || !context) {
+      console.error(`[AGENT-BUS] Agent ${agentId} not found or no context`);
+      return;
+    }
+
+    console.log(`[AGENT-BUS] 🎯 Invoking agent ${agentId} (${responseType} response) with context snapshot from decision time`);
+
+    try {
+      const systemPrompt = await this.promptManager.getPrompt(agentId);
+      const agentContext = this.buildAgentSpecificContextFromSnapshot(agentId, responseType, triggerMessage, contextSnapshot);
+      
+      const response = await this.callAgentWithIsolatedSession(agentId, agentContext, systemPrompt);
+      
+      if (response.success && response.message) {
+        // Get structured response if available
+        const structured = (response.message as any).structuredResponse || {
+          message: response.message.content,
+          action: 'open',
+          involve: [],
+          metadata: {}
+        };
+        
+        const agentMessage: BusMessage = {
+          id: this.generateId(),
+          content: response.message.content,
+          author: agentId,
+          timestamp: new Date(),
+          mentions: this.extractMentions(response.message.content),
+          messageType: 'agent',
+          sessionId: context.sessionId,
+          action: structured.action,
+          involve: structured.involve,
+          metadata: structured.metadata
+        };
+
+        // Update context
+        context.lastResponseTime = new Date();
+        context.currentAction = structured.action;
+        context.metadata = structured.metadata;
+        
+        // Check if agent wants to involve labrats (user) - automatically convert to wait_for_user
+        if (structured.involve && structured.involve.includes('labrats')) {
+          console.log(`[AGENT-BUS] Agent ${agentId} mentioned @labrats - converting to wait_for_user action`);
+          structured.action = 'wait_for_user';
+          agentMessage.action = 'wait_for_user';
+          context.currentAction = 'wait_for_user';
+        }
+
+        // Activate agents specified in the "involve" field (excluding labrats since it's the user)
+        if (structured.involve && structured.involve.length > 0) {
+          const agentInvolve = structured.involve.filter((id: string) => id !== 'labrats');
+          if (agentInvolve.length > 0) {
+            console.log(`[AGENT-BUS] Agent ${agentId} wants to involve: ${agentInvolve.join(', ')}`);
+            for (const involveId of agentInvolve) {
+              if (agents.find(a => a.id === involveId)) {
+                this.createAgentContext(involveId);
+                // Add them to mentions so they get notified
+                if (!agentMessage.mentions.includes(involveId)) {
+                  agentMessage.mentions.push(involveId);
+                }
+              }
+            }
+          }
+        }
+
+        // Extract goals if this is Cortex speaking
+        if (agentId === 'cortex') {
+          const extractedGoals = this.extractGoalsFromCortexResponse(response.message.content);
+          if (extractedGoals.length > 0) {
+            this.addGoalsToConversation(extractedGoals);
+          }
+        }
+
+        // Publish the message to the bus
+        await this.publishMessage(agentMessage);
+        
+        // Check if agent wants to wait for user input
+        if (structured.action === 'wait_for_user') {
+          console.log(`[AGENT-BUS] Agent ${agentId} requested to wait for user input - pausing bus`);
+          
+          // Show OS notification to alert user
+          const agentInfo = agents.find(a => a.id === agentId);
+          const agentName = agentInfo?.name || agentId;
+          await notificationService.showAgentWaitingNotification(agentName, response.message.content);
+          
+          this.pause();
+          return;
+        }
         
         // Check if all agents are done (trigger QA)
         await this.checkAllAgentsDone();
@@ -722,7 +1123,33 @@ Do NOT continue the conversation. Do NOT ask what's next. This is the final summ
       .join(', ');
 
     let contextStr = `Active team members on the bus: ${activeAgentList}\n`;
-    contextStr += `Your session ID: ${context.sessionId}\n\n`;
+    contextStr += `Your session ID: ${context.sessionId}\n`;
+    
+    // Add goal tracking for Cortex
+    if (agentId === 'cortex') {
+      if (this.conversationGoals.length > 0) {
+        contextStr += `\n🎯 CONVERSATION GOALS (defined earlier):\n`;
+        this.conversationGoals.forEach((goal, index) => {
+          contextStr += `${index + 1}. ${goal}\n`;
+        });
+        contextStr += `\n⚠️  CRITICAL: Before marking "done", verify ALL goals above are ACTUALLY completed!\n`;
+      } else {
+        contextStr += `\n🎯 GOALS NOT YET DEFINED: Please define clear, specific goals based on the user's request before proceeding.\n`;
+      }
+    }
+    contextStr += `\n`;
+    
+    // Add messages that happened since this agent's last response
+    const messagesSinceLastResponse = this.getMessagesSinceLastResponse(agentId);
+    if (messagesSinceLastResponse.length > 0) {
+      contextStr += `📬 NEW MESSAGES since your last response:\n`;
+      for (const msg of messagesSinceLastResponse) {
+        const authorName = msg.author === 'user' ? 'User' : 
+                          agents.find(a => a.id === msg.author)?.name || msg.author;
+        contextStr += `${authorName}: ${msg.content}\n`;
+      }
+      contextStr += `\n`;
+    }
     
     // Add pre-prompt for agent-to-agent messages with actionable feedback
     const prePrompt = this.generatePrePrompt(agentId, triggerMessage);
@@ -797,6 +1224,79 @@ Do NOT continue the conversation. Do NOT ask what's next. This is the final summ
 Remember: You're ${agents.find(a => a.id === agentId)?.name} with your own expertise. Add value based on your role as ${agents.find(a => a.id === agentId)?.title}.`;
     
     return contextStr;
+  }
+
+  private buildAgentSpecificContextFromSnapshot(agentId: string, responseType: 'mentioned' | 'natural', triggerMessage: BusMessage, contextSnapshot: BusMessage[]): string {
+    const context = this.agentContexts.get(agentId);
+    if (!context) return '';
+
+    const activeAgentList = Array.from(this.agentContexts.entries())
+      .filter(([_, ctx]) => ctx.isActive)
+      .map(([id, _]) => agents.find(a => a.id === id))
+      .filter(Boolean)
+      .map(agent => `${agent!.name} (${agent!.title})`)
+      .join(', ');
+
+    let contextStr = `Active team members on the bus: ${activeAgentList}\n`;
+    contextStr += `Your session ID: ${context.sessionId}\n`;
+    
+    // Add goal tracking for Cortex
+    if (agentId === 'cortex') {
+      if (this.conversationGoals.length > 0) {
+        contextStr += `\n🎯 CONVERSATION GOALS (defined earlier):\n`;
+        this.conversationGoals.forEach((goal, index) => {
+          contextStr += `${index + 1}. ${goal}\n`;
+        });
+        contextStr += `\n⚠️  CRITICAL: Before marking "done", verify ALL goals above are ACTUALLY completed!\n`;
+      } else {
+        contextStr += `\n🎯 GOALS NOT YET DEFINED: Please define clear, specific goals based on the user's request before proceeding.\n`;
+      }
+    }
+    contextStr += `\n`;
+    
+    // Use context snapshot from decision time instead of current state
+    contextStr += `📸 CONTEXT SNAPSHOT from when you decided to respond:\n`;
+    for (const msg of contextSnapshot) {
+      const authorName = msg.author === 'user' ? 'User' : 
+                        agents.find(a => a.id === msg.author)?.name || msg.author;
+      contextStr += `${authorName}: ${msg.content}\n`;
+    }
+    
+    // Special handling for Clawsy - ensure they see ALL code blocks from snapshot
+    if (agentId === 'clawsy') {
+      const allCodeMessages = contextSnapshot.filter(msg => msg.content.includes('```'));
+      if (allCodeMessages.length > 0) {
+        contextStr += `\n🔍 ALL CODE BLOCKS SHARED IN THIS SESSION (from snapshot):\n`;
+        for (const codeMsg of allCodeMessages) {
+          const authorName = agents.find(a => a.id === codeMsg.author)?.name || codeMsg.author;
+          contextStr += `\n--- ${authorName} shared: ---\n${codeMsg.content}\n`;
+        }
+      }
+    }
+    
+    contextStr += `\nGuidelines:
+- Keep responses concise and focused (1-2 sentences when possible)
+- Only mention @other agents if you specifically need their expertise
+- Avoid repeating what others have already said
+- Focus on your unique contribution to the conversation
+
+Remember: You're ${agents.find(a => a.id === agentId)?.name} with your own expertise. Add value based on your role as ${agents.find(a => a.id === agentId)?.title}.`;
+    
+    return contextStr;
+  }
+
+  private getMessagesSinceLastResponse(agentId: string): BusMessage[] {
+    const context = this.agentContexts.get(agentId);
+    if (!context || !context.lastResponseTime) {
+      // If agent has never responded, return all messages
+      return this.globalMessageHistory.slice();
+    }
+    
+    // Get messages that happened after this agent's last response
+    return this.globalMessageHistory.filter(msg => 
+      msg.timestamp > context.lastResponseTime! &&
+      msg.author !== agentId // Exclude their own messages
+    );
   }
 
   private generatePrePrompt(agentId: string, triggerMessage: BusMessage): string | null {
@@ -1142,13 +1642,7 @@ START YOUR REVIEW NOW!`;
   }
 
   private createAgentContext(agentId: string): void {
-    if (this.agentContexts.has(agentId)) {
-      // Agent already exists, just make sure it's active
-      const context = this.agentContexts.get(agentId)!;
-      context.isActive = true;
-      return;
-    }
-
+    // Always create a fresh context with new session ID for each chat session
     const context: AgentContext = {
       agentId,
       sessionId: `agent_${agentId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1250,6 +1744,9 @@ START YOUR REVIEW NOW!`;
         throw new Error(`No API key available for ${defaultConfig.providerId}`);
       }
       
+      // Variable to capture token usage
+      let tokenUsage: TokenUsage | undefined;
+      
       let chatModel;
       if (defaultConfig.providerId === 'openai') {
         chatModel = new ChatOpenAI({
@@ -1261,7 +1758,27 @@ START YOUR REVIEW NOW!`;
             agentId: agentId,
             sessionId: agentContext.sessionId,
             agentName: agents.find(a => a.id === agentId)?.name || agentId
-          }
+          },
+          callbacks: [{
+            handleLLMEnd: (output: LLMResult) => {
+              // Extract token usage from LLM output
+              if (output.llmOutput?.tokenUsage) {
+                tokenUsage = {
+                  completionTokens: output.llmOutput.tokenUsage.completionTokens || 0,
+                  promptTokens: output.llmOutput.tokenUsage.promptTokens || 0,
+                  totalTokens: output.llmOutput.tokenUsage.totalTokens || 0
+                };
+                
+                // Update session totals
+                this.sessionTokenUsage.completionTokens += tokenUsage.completionTokens;
+                this.sessionTokenUsage.promptTokens += tokenUsage.promptTokens;
+                this.sessionTokenUsage.totalTokens += tokenUsage.totalTokens;
+                
+                console.log(`[AGENT-BUS-TOKEN] Agent ${agentId}: ${tokenUsage.promptTokens} prompt + ${tokenUsage.completionTokens} completion = ${tokenUsage.totalTokens} total`);
+                console.log(`[AGENT-BUS-TOKEN] Bus session total: ${this.sessionTokenUsage.totalTokens} tokens`);
+              }
+            }
+          }]
         });
       } else if (defaultConfig.providerId === 'anthropic') {
         chatModel = new ChatAnthropic({
@@ -1273,30 +1790,48 @@ START YOUR REVIEW NOW!`;
             agentId: agentId,
             sessionId: agentContext.sessionId,
             agentName: agents.find(a => a.id === agentId)?.name || agentId
-          }
+          },
+          callbacks: [{
+            handleLLMEnd: (output: LLMResult) => {
+              // Extract token usage from LLM output
+              if (output.llmOutput?.tokenUsage) {
+                tokenUsage = {
+                  completionTokens: output.llmOutput.tokenUsage.completionTokens || 0,
+                  promptTokens: output.llmOutput.tokenUsage.promptTokens || 0,
+                  totalTokens: output.llmOutput.tokenUsage.totalTokens || 0
+                };
+                
+                // Update session totals
+                this.sessionTokenUsage.completionTokens += tokenUsage.completionTokens;
+                this.sessionTokenUsage.promptTokens += tokenUsage.promptTokens;
+                this.sessionTokenUsage.totalTokens += tokenUsage.totalTokens;
+                
+                console.log(`[AGENT-BUS-TOKEN] Agent ${agentId}: ${tokenUsage.promptTokens} prompt + ${tokenUsage.completionTokens} completion = ${tokenUsage.totalTokens} total`);
+                console.log(`[AGENT-BUS-TOKEN] Bus session total: ${this.sessionTokenUsage.totalTokens} tokens`);
+              }
+            }
+          }]
         });
       } else {
         throw new Error(`Unsupported provider: ${defaultConfig.providerId}`);
       }
       
-      const enhancedSystemPrompt = `${systemPrompt}\n\nYour session ID: ${agentContext.sessionId}\nYou are an individual agent with your own context and memory on the message bus.\n\n🧠 **CRITICAL: BEFORE EVERY RESPONSE - ASK YOURSELF:**\n1. **Is my expertise actually needed for this task?** (Don't just participate because you were mentioned)\n2. **Is there actual work for me to do?** (Don't create fake work or pretend to test non-existent code)\n3. **Does this task require my specific skills?** (Introductions don't need testing, simple questions don't need code review)\n4. **Would declining to participate be more helpful?** (Sometimes saying "not needed" is the right response)\n\n**If the answer to any of these is NO, politely decline and explain why your role isn't needed for this specific task.**\n\nAction states:\n- "done": You've completed your task and won't iterate further\n- "open": You're open for discussion and feedback\n- "waiting": You're waiting for input from specific agents\n- "needs_review": Your work needs review before proceeding\n- "implementing": You're actively working on implementation\n- "planning": You're in planning phase\n- "reviewing": You're reviewing someone's work\n\nOnly include agents in "involve" if you need them NOW, not for future steps.\n\n🎯 SPECIAL INSTRUCTIONS FOR CORTEX (Product Owner) - WORKFLOW MANAGEMENT:\nYou have CRITICAL responsibilities for team coordination and completion:\n\n**🛑 MANDATORY CONVERSATION ENDING ENFORCEMENT:**\n**EVERY SINGLE RESPONSE: Ask "Is the user's original request now complete?"**\n1. If YES: Set action to "done" and END the conversation IMMEDIATELY\n2. If NO: Identify exactly what's missing and coordinate next steps\n3. **NEVER suggest additional features** after user's goal is met\n4. **NEVER ask "What's next?"** when the original request is complete\n5. **RESPECT USER SIGNALS**: If user says "goal met" or "that's enough" - END IMMEDIATELY\n\n**When ANY agent reports "done":**\n1. IMMEDIATELY ask: "Have we fully achieved the user's original goal/question?"\n2. If NOT complete: Identify exactly what's still missing\n3. Tell the relevant agent(s) exactly what they need to do next\n4. Set your action to "open" and coordinate the next steps\n5. NEVER accept "done" until the user can actually use the solution\n6. **If user goal IS complete**: Set action to "done" and END conversation\n\n**🚨 ANTI-OVERENGINEERING ENFORCEMENT:**\n1. **SCOPE GUARD**: Constantly ask "Did the user request this feature?"\n2. **SIMPLICITY FIRST**: Choose the simplest solution that works\n3. **FEATURE BLOCKER**: Block agents from adding unrequested features\n4. **ONE USER STORY**: Implement ONE story at a time, complete it fully\n5. **NO PARALLEL STORIES**: Don't assign multiple stories simultaneously\n\n**🛑 IMMEDIATE GOAL COMPLETION PATTERNS - RECOGNIZE AND END:**\n- **INTRODUCTIONS**: User asks for introductions → ANY agent introduces themselves → SET ACTION TO "done" IMMEDIATELY\n- **TEAM QUESTIONS**: User asks "who is the team?" → Someone lists team members → SET ACTION TO "done" IMMEDIATELY\n- **SIMPLE QUESTIONS**: User asks a question → Someone provides answer → SET ACTION TO "done" IMMEDIATELY\n- **INFORMATION REQUESTS**: User asks for explanation → Someone explains → SET ACTION TO "done" IMMEDIATELY\n- **REPETITIVE BEHAVIOR**: If you find yourself asking "what's next?" repeatedly → SET ACTION TO "done" IMMEDIATELY\n\n**🎯 CRITICAL: AGENT INVOLVEMENT DECISION MATRIX**\n**BEFORE inviting any agent, ask: "Is this agent's expertise actually needed for this specific task?"**\n\n**❌ DO NOT INVITE THESE AGENTS FOR SIMPLE TASKS:**\n- **@sniffy (QA)**: Only for actual code testing, not for introductions/questions/explanations\n- **@clawsy (Code Review)**: Only when there's actual code to review\n- **@wheelie (DevOps)**: Only for deployment/infrastructure tasks\n- **@trappy (Security)**: Only for security-related implementation\n- **@quill (Documentation)**: Only after something is built and needs documenting\n\n**✅ THESE AGENTS ARE APPROPRIATE FOR SIMPLE TASKS:**\n- **@ziggy, @scratchy**: Can respond to questions, provide perspectives\n- **@nestor**: Can answer architecture/design questions\n- **@patchy, @shiny**: Can answer technical questions about their domains\n\n**🚨 QUALITY GATE RULES:**\n- **ONLY activate QA agents (@sniffy, @clawsy) if there's actual code/implementation to review**\n- **NEVER say "All development agents have completed their tasks" for non-development tasks**\n- **NEVER invoke quality assurance for introductions, explanations, or simple questions**\n\n**When agents go silent or stall:**\n1. Proactively check in: "What's your current progress on [task]?"\n2. Identify blockers: "Are you waiting for anything specific?"\n3. Provide direction: "Your next step should be [specific action]"\n4. Re-engage: "@[agent] - we need your input on [specific item]"\n\n**Throughout the conversation:**\n1. Monitor that agents are progressing their states (not staying static)\n2. Bridge connections between agent work\n3. Push for concrete deliverables, not just discussions\n4. Don't let the team stop until the user's goal is COMPLETELY satisfied\n5. **NEVER go silent** - Always drive the conversation forward\n6. **After tech stack definition** - IMMEDIATELY assign implementation tasks\n7. **Keep momentum** - Don't let the conversation stall at any point\n8. **END WHEN COMPLETE** - Don't continue past goal achievement\n\n🚨 IMPORTANT: If the user is asking for help, expressing frustration, or saying the conversation stopped (messages like "can we get some help", "someone?", "everybody stopped answering"), you should respond even if you're in "done" or "waiting" state. Help the user by coordinating with the team or providing assistance. Change your action to "open" and help move the conversation forward.
-
-🎯 **AGENT-SPECIFIC RELEVANCE GUIDELINES:**
-**@sniffy (Quality Engineer)**: Only participate if there's actual code, implementation, or software to test. For introductions, questions, or explanations, respond: "No testing needed for this task - this is outside my QA scope."
-
-**@clawsy (Code Reviewer)**: Only participate if there's actual code to review. For non-code tasks, respond: "No code to review here - this task doesn't require code review."
-
-**@wheelie (DevOps)**: Only participate for deployment, infrastructure, or CI/CD tasks. For simple tasks, respond: "No infrastructure work needed - this is outside my DevOps scope."
-
-**@trappy (Security)**: Only participate for security implementation or security-related code. For introductions/questions, respond: "No security implementation needed - this task doesn't require security expertise."
-
-**@quill (Documentation)**: Only participate after something has been built and needs documentation. For introductions or simple Q&A, respond: "Nothing to document yet - this task doesn't require documentation."
-
-**@nestor (Architect)**: Can participate in design discussions, architecture questions, or technical planning. Decline if the task is purely social (introductions only).
-
-**@patchy (Backend) & @shiny (Frontend)**: Can answer technical questions about your domains, but decline if there's no actual implementation or technical work needed.
-
-**@ziggy (Chaos) & @scratchy (Contrarian)**: Can participate in most discussions as your roles involve analysis and perspective-giving.`;
+      // Minimal enhanced prompt for agent context - the compact prompts already contain the logic
+      const enhancedSystemPrompt = `${systemPrompt}\n\nSession ID: ${agentContext.sessionId}\n\nCurrent Action States: planning, open, waiting, implementing, needs_review, reviewing, done, user_input\nUse "involve" field to mention other agents when needed.`;
+      
+      // Log token usage visibility
+      console.log(`[AGENT-BUS-PROMPT] Sending to agent ${agentId}:`);
+      console.log(`[AGENT-BUS-PROMPT] System prompt length: ${enhancedSystemPrompt.length} chars`);
+      console.log(`[AGENT-BUS-PROMPT] Context length: ${context.length} chars`);
+      console.log(`[AGENT-BUS-PROMPT] Total estimated: ~${Math.ceil((enhancedSystemPrompt.length + context.length) / 4)} tokens`);
+      
+      // Optional: Log first 200 chars of each for debugging
+      if (enhancedSystemPrompt.length > 1000) {
+        console.log(`[AGENT-BUS-PROMPT] System prompt preview: ${enhancedSystemPrompt.substring(0, 200)}...`);
+      }
+      if (context.length > 500) {
+        console.log(`[AGENT-BUS-PROMPT] Context preview: ${context.substring(0, 200)}...`);
+      }
       
       // Create structured output model
       const structuredModel = chatModel.withStructuredOutput(agentResponseSchema, {
@@ -1398,6 +1933,26 @@ START YOUR REVIEW NOW!`;
     const originalGoal = originalUserMessage.content.toLowerCase();
     const recentMessages = this.globalMessageHistory.slice(-10); // Last 10 messages
     
+    // CRITICAL: If this is an implementation task, check if code was actually delivered
+    const isImplementation = await this.isImplementationTask();
+    if (isImplementation) {
+      // Look for code deliverables from development agents
+      const developmentAgents = ['patchy', 'shiny'];
+      const hasCodeDelivered = this.globalMessageHistory.some(msg => 
+        developmentAgents.includes(msg.author) && 
+        (msg.content.includes('```') || // Code blocks
+         msg.content.includes('created') || // Created files
+         msg.content.includes('implemented') || // Implementation messages
+         msg.content.includes('file:') || // File references
+         msg.action === 'done') // Developer marked task as done
+      );
+      
+      if (!hasCodeDelivered) {
+        console.log('[AGENT-BUS] Implementation task but no code delivered yet - goal NOT complete');
+        return false;
+      }
+    }
+    
     // Check for simple goal completion patterns
     
     // Pattern 1: Introduction requests - AGGRESSIVE DETECTION
@@ -1416,7 +1971,49 @@ START YOUR REVIEW NOW!`;
          msg.content.toLowerCase().includes('hello') && msg.content.toLowerCase().includes('i'))
       );
       
-      // If 3+ agents have introduced themselves, goal is definitely complete
+      // For team invitations, require MORE agents to respond and proper completion
+      if (originalGoal.includes('invite')) {
+        // Check how many agents were actually invited by looking at @mentions
+        const invitationMessages = this.globalMessageHistory.filter(msg => 
+          msg.content.includes('@') && 
+          (msg.content.toLowerCase().includes('invite') || msg.author === 'cortex')
+        );
+        
+        // Count unique @mentions in invitation messages
+        const mentionedAgents = new Set<string>();
+        invitationMessages.forEach(msg => {
+          const mentions = msg.content.match(/@(\w+)/g) || [];
+          mentions.forEach(mention => {
+            const agentId = mention.slice(1);
+            if (agentId !== 'labrats') { // Exclude user mentions
+              mentionedAgents.add(agentId);
+            }
+          });
+        });
+        
+        const invitedAgentCount = mentionedAgents.size;
+        console.log(`[AGENT-BUS] ${invitedAgentCount} agents were invited, ${introductionMessages.length} have introduced themselves`);
+        
+        // Require at least 80% of invited agents to respond before considering completion
+        if (invitedAgentCount > 0) {
+          const responseRate = introductionMessages.length / invitedAgentCount;
+          if (responseRate < 0.8) {
+            console.log(`[AGENT-BUS] Only ${Math.round(responseRate * 100)}% of invited agents responded - goal NOT complete`);
+            return false;
+          }
+        }
+        
+        // Also require a minimum number of responses for team invitations (at least 5 agents)
+        if (introductionMessages.length < 5) {
+          console.log(`[AGENT-BUS] Only ${introductionMessages.length} agents introduced themselves - waiting for more responses`);
+          return false;
+        }
+        
+        console.log(`[AGENT-BUS] Goal completion detected: ${introductionMessages.length} agents introduced themselves after team invitation`);
+        return true;
+      }
+      
+      // For other introduction requests, still require at least 3 agents
       if (introductionMessages.length >= 3) {
         console.log(`[AGENT-BUS] Goal completion detected: ${introductionMessages.length} agents introduced themselves`);
         return true;
@@ -1640,6 +2237,12 @@ START YOUR REVIEW NOW!`;
   }
 
   async sendUserMessage(content: string): Promise<void> {
+    // Automatically resume if agents are paused
+    if (!this.agentsActive) {
+      console.log('[AGENT-BUS] User sent message while paused - automatically resuming');
+      this.resume();
+    }
+    
     const userMessage: BusMessage = {
       id: this.generateId(),
       content,
@@ -1676,7 +2279,16 @@ START YOUR REVIEW NOW!`;
     this.globalMessageHistory = [];
     this.agentContexts.clear();
     this.resetStallDetection();
+    this.sessionTokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
     this.emit('bus-reset');
+  }
+
+  getSessionTokenUsage(): TokenUsage {
+    return { ...this.sessionTokenUsage };
+  }
+
+  clearSessionTokenUsage(): void {
+    this.sessionTokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
   }
 
   setCurrentProject(projectPath: string | null): void {
@@ -1685,54 +2297,17 @@ START YOUR REVIEW NOW!`;
   }
 
   private async checkAllAgentsDone(): Promise<void> {
-    // Get all active agents (excluding QA agents like sniffy)
+    // DISABLED: Auto-QA invocation - QA agents should only be invoked when explicitly requested
+    // This was causing unwanted Sniffy invocations for simple tasks like introductions
+    
+    // Get all active agents for debugging
     const activeAgents = Array.from(this.agentContexts.entries())
-      .filter(([agentId, context]) => context.isActive && agentId !== 'sniffy')
+      .filter(([_, context]) => context.isActive)
       .map(([agentId, context]) => ({ agentId, context }));
 
-    // Check if all agents have reported 'done' status
-    const allAgentsDone = activeAgents.length > 0 && 
-                         activeAgents.every(({ context }) => context.currentAction === 'done');
-
-    if (allAgentsDone) {
-      console.log('[AGENT-BUS] All agents report "done" - checking if QA is needed');
-      
-      // Check if this is actually a development task that needs QA
-      const isImplementationTask = await this.isImplementationTask();
-      
-      if (!isImplementationTask) {
-        console.log('[AGENT-BUS] No implementation detected - skipping QA validation');
-        return;
-      }
-      
-      // Check if we've already triggered QA recently (prevent duplicate QA calls)
-      const recentQAMessages = this.globalMessageHistory.slice(-5)
-        .filter(msg => msg.author === 'sniffy');
-      
-      if (recentQAMessages.length === 0) {
-        // Create QA agent context if it doesn't exist
-        this.createAgentContext('sniffy');
-        
-        // Send a system message to trigger QA
-        const qaMessage: BusMessage = {
-          id: this.generateId(),
-          content: 'All development agents have completed their tasks and reported "done". Please perform final quality assurance and validation of the implementation.',
-          author: 'system',
-          timestamp: new Date(),
-          mentions: ['sniffy'],
-          messageType: 'system'
-        };
-        
-        await this.publishMessage(qaMessage);
-        console.log('[AGENT-BUS] QA validation triggered successfully');
-      } else {
-        console.log('[AGENT-BUS] QA already triggered recently, skipping duplicate call');
-      }
-    } else {
-      // Log current agent states for debugging
-      const agentStates = activeAgents.map(({ agentId, context }) => `${agentId}:${context.currentAction}`);
-      console.log(`[AGENT-BUS] Not all agents done yet: ${agentStates.join(', ')}`);
-    }
+    // Log current agent states for debugging
+    const agentStates = activeAgents.map(({ agentId, context }) => `${agentId}:${context.currentAction}`);
+    console.log(`[AGENT-BUS] Current agent states: ${agentStates.join(', ')}`);
   }
 
   // Debug methods

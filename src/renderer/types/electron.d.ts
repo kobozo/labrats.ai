@@ -204,6 +204,7 @@ export interface ElectronAPI {
   openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
   checkCommand: (command: string) => Promise<{ available: boolean }>;
   executeClaudeCommand: (request: any) => Promise<{ success: boolean; content?: string; error?: string; usage?: any }>;
+  focusWindow: () => void;
   config: ConfigAPI;
   git: GitAPI;
   terminal?: TerminalAPI;

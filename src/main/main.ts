@@ -11,6 +11,8 @@ import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
 import { getAIProviderManager } from '../services/ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager';
 
+app.name = 'LabRats.AI';
+
 const isDev = process.env.NODE_ENV === 'development';
 
 interface RecentProject {
@@ -1418,6 +1420,19 @@ ipcMain.handle('ai-get-available-providers', async (): Promise<AIProviderConfig[
   const providerManager = getAIProviderManager();
   const availableProviders = await providerManager.getAvailableProviders();
   return availableProviders.map((p) => p.config);
+});
+
+// Window management IPC handlers
+ipcMain.on('focus-window', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window) {
+    // Focus the window and bring it to front
+    if (window.isMinimized()) {
+      window.restore();
+    }
+    window.focus();
+    window.show();
+  }
 });
 
 // Chat History IPC handlers

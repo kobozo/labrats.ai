@@ -1,0 +1,1 @@
+This message contains testing feedback from ${senderAgent}. Test failures indicate issues that need to be fixed. You should implement code changes to make the tests pass or fix the issues identified during testing.

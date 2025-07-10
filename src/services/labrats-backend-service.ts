@@ -20,6 +20,8 @@ export class LabRatsBackendService {
   private model: string;
   private timeout: number;
   private isAvailable: boolean = false;
+  private statusListeners: Set<(isOnline: boolean) => void> = new Set();
+  private statusCheckInterval: NodeJS.Timeout | null = null;
 
   constructor(backendUrl?: string, model?: string, timeout?: number) {
     // Default values or from config
@@ -173,6 +175,55 @@ Decision (respond ONLY with "YES" or "NO"):`;
       };
     }
   }
+
+  // Subscribe to status changes
+  onStatusChange(listener: (isOnline: boolean) => void): () => void {
+    this.statusListeners.add(listener);
+    // Return unsubscribe function
+    return () => {
+      this.statusListeners.delete(listener);
+    };
+  }
+
+  // Start periodic health checks
+  startHealthChecks(intervalMs: number = 10000): void {
+    // Stop any existing checks
+    this.stopHealthChecks();
+    
+    // Initial check
+    this.checkAvailability().then(() => {
+      this.notifyStatusListeners();
+    });
+    
+    // Set up periodic checks
+    this.statusCheckInterval = setInterval(async () => {
+      const wasAvailable = this.isAvailable;
+      await this.checkAvailability();
+      
+      // Only notify if status changed
+      if (wasAvailable !== this.isAvailable) {
+        this.notifyStatusListeners();
+      }
+    }, intervalMs);
+  }
+
+  // Stop health checks
+  stopHealthChecks(): void {
+    if (this.statusCheckInterval) {
+      clearInterval(this.statusCheckInterval);
+      this.statusCheckInterval = null;
+    }
+  }
+
+  private notifyStatusListeners(): void {
+    this.statusListeners.forEach(listener => {
+      try {
+        listener(this.isAvailable);
+      } catch (error) {
+        console.error('[LABRATS-BACKEND] Error in status listener:', error);
+      }
+    });
+  }
 }
 
 // Singleton instance
@@ -201,6 +252,9 @@ export async function getLabRatsBackendAsync(): Promise<LabRatsBackendService> {
     
     // Ensure availability is checked before returning
     await labRatsBackendInstance.ensureAvailable();
+    
+    // Start health checks
+    labRatsBackendInstance.startHealthChecks();
   }
   return labRatsBackendInstance;
 }

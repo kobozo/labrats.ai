@@ -1,0 +1,6 @@
+Analyze this user message carefully. If they are requesting implementation, creation, building, or development of actual code/features, respond with: "NEEDS_IMPLEMENTATION"
+If they are just asking questions, discussing, or planning without needing actual code, respond with: "DISCUSSION_ONLY"
+
+User message: ${message}
+
+Respond with only: NEEDS_IMPLEMENTATION or DISCUSSION_ONLY

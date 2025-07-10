@@ -12,6 +12,7 @@ import { Account } from './components/Account';
 import { StartScreen } from './components/StartScreen';
 import { stateManager } from '../services/state-manager';
 import { gitMonitor } from '../services/git-monitor';
+import { getLabRatsBackendAsync } from '../services/labrats-backend-service';
 import { 
   MessageSquare, 
   BarChart3, 
@@ -46,6 +47,7 @@ function App() {
   const [branches, setBranches] = useState<{ current: string; all: string[] }>({ current: '', all: [] });
   const [showBranchMenu, setShowBranchMenu] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<{ promptTokens: number; completionTokens: number; totalTokens: number }>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+  const [labRatsBackendOnline, setLabRatsBackendOnline] = useState<boolean>(false);
 
   // Set initial view based on whether a folder is loaded
   useEffect(() => {
@@ -203,6 +205,26 @@ function App() {
     });
     
     return unsubscribe;
+  }, []);
+
+  // Subscribe to LabRats backend status
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    
+    getLabRatsBackendAsync().then(backend => {
+      // Subscribe to status changes
+      unsubscribe = backend.onStatusChange(setLabRatsBackendOnline);
+      // Get initial status
+      setLabRatsBackendOnline(backend.available);
+    }).catch(error => {
+      console.error('Failed to initialize LabRats backend monitoring:', error);
+    });
+    
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
   // No longer needed - git monitor handles this
@@ -535,12 +557,8 @@ function App() {
               </div>
             )}
             <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
-              <span>Chat ready</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
-              <span>Review available</span>
+              <div className={`w-2 h-2 rounded-full ${labRatsBackendOnline ? 'bg-green-400' : 'bg-red-400'}`}></div>
+              <span>LabRats backend {labRatsBackendOnline ? 'online' : 'offline'}</span>
             </div>
             {gitStatus && (
               <div className="flex items-center space-x-2 relative">

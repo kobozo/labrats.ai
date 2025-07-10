@@ -1009,6 +1009,7 @@ START YOUR REVIEW NOW!`;
       if (agentId === 'trappy' && (content.includes('security') || content.includes('auth'))) score += 4;
       if (agentId === 'patchy' && (content.includes('backend') || content.includes('api'))) score += 4;
       if (agentId === 'shiny' && (content.includes('frontend') || content.includes('ui'))) score += 4;
+      if (agentId === 'sketchy' && (content.includes('design') || content.includes('ux') || content.includes('ui') || content.includes('user'))) score += 4;
       
       // For Clawsy, also prioritize implementation messages
       if (agentId === 'clawsy' && (content.includes('implement') || content.includes('function') || content.includes('class'))) score += 3;

@@ -10,6 +10,7 @@ import clawsyAvatar from '../renderer/assets/avatars/clawsy.webp';
 import nestorAvatar from '../renderer/assets/avatars/nestor.webp';
 import quillAvatar from '../renderer/assets/avatars/quill.webp';
 import switchyAvatar from '../renderer/assets/avatars/switchy.webp';
+import sketchyAvatar from '../renderer/assets/avatars/sketchy.webp';
 
 export interface Agent {
   id: string;
@@ -116,5 +117,13 @@ export const agents: Agent[] = [
     icon: '✍️',
     colorAccent: '#f7fafc', // cream
     avatar: quillAvatar,
+  },
+  {
+    id: 'sketchy',
+    name: 'Sketchy',
+    title: 'UI/UX Designer',
+    icon: '🎨',
+    colorAccent: '#14b8a6', // teal
+    avatar: sketchyAvatar,
   },
 ]; 

@@ -201,7 +201,7 @@ export const MultiAgentChat: React.FC<MultiAgentChatProps> = ({
         <div className="mt-3 pt-2 border-t border-gray-200">
           <p className="text-xs text-gray-600 mb-2">Quick invite:</p>
           <div className="flex flex-wrap gap-1">
-            {['patchy', 'shiny', 'sniffy', 'trappy', 'nestor'].filter(id => !activeAgents.includes(id)).map(agentId => {
+            {['patchy', 'shiny', 'sketchy', 'sniffy', 'trappy', 'nestor'].filter(id => !activeAgents.includes(id)).map(agentId => {
               const agent = getAgentInfo(agentId);
               return (
                 <button

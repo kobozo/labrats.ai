@@ -15,6 +15,7 @@ import documentWriterPrompt from '../prompts/document-writer.prompt';
 import gitCommitGeneratorPrompt from '../prompts/git-commit-generator.prompt';
 import globalLabratsPrompt from '../prompts/global-labrats.prompt';
 import globalPrompt from '../prompts/global.prompt';
+import globalCompactPrompt from '../prompts/global-compact.prompt';
 import uiUxDesignerPrompt from '../prompts/ui-ux-designer.prompt';
 
 // Import agent personas
@@ -34,10 +35,20 @@ import switchyPersona from '../prompts/switchy-persona.prompt';
 
 // Import compact prompts for token optimization
 import productOwnerCompactPrompt from '../prompts/product-owner-compact.prompt';
+import productOwnerUltraCompactPrompt from '../prompts/product-owner-ultra-compact.prompt';
 import globalLabratsCompactPrompt from '../prompts/global-labrats-compact.prompt';
 import backendDevCompactPrompt from '../prompts/backend-dev-compact.prompt';
 import codeReviewerCompactPrompt from '../prompts/code-reviewer-compact.prompt';
 import uiUxDesignerCompactPrompt from '../prompts/ui-ux-designer-compact.prompt';
+import frontendDevCompactPrompt from '../prompts/frontend-dev-compact.prompt';
+import qualityEngineerCompactPrompt from '../prompts/quality-engineer-compact.prompt';
+import devopsCompactPrompt from '../prompts/devops-compact.prompt';
+import documentWriterCompactPrompt from '../prompts/document-writer-compact.prompt';
+import fullstackDevCompactPrompt from '../prompts/fullstack-dev-compact.prompt';
+import chaosMonkeyCompactPrompt from '../prompts/chaos-monkey-compact.prompt';
+import contrarianCompactPrompt from '../prompts/contrarian-compact.prompt';
+import securityAuditorCompactPrompt from '../prompts/security-auditor-compact.prompt';
+import architectCompactPrompt from '../prompts/architect-compact.prompt';
 
 // Import agent metadata for compact persona
 import { agents as agentMeta } from '../config/agents';
@@ -112,18 +123,34 @@ const DEFAULT_PROMPTS: { [key: string]: string } = {
 // Compact prompts mapping for token optimization
 const COMPACT_PROMPTS: { [key: string]: string } = {
   // Agent ID mapping
-  'cortex': productOwnerCompactPrompt,
+  'cortex': productOwnerUltraCompactPrompt, // Use ultra-compact to stay under 750 tokens
+  'ziggy': chaosMonkeyCompactPrompt,
   'patchy': backendDevCompactPrompt,
+  'shiny': frontendDevCompactPrompt,
+  'sniffy': qualityEngineerCompactPrompt,
+  'trappy': securityAuditorCompactPrompt,
+  'scratchy': contrarianCompactPrompt,
+  'wheelie': devopsCompactPrompt,
   'clawsy': codeReviewerCompactPrompt,
+  'nestor': architectCompactPrompt,
+  'quill': documentWriterCompactPrompt,
   'sketchy': uiUxDesignerCompactPrompt,
-  'switchy': fullstackDevPrompt, // Using regular prompt until compact version is created
+  'switchy': fullstackDevCompactPrompt,
   
   // Legacy role-based mapping for backwards compatibility
-  'product-owner': productOwnerCompactPrompt,
+  'product-owner': productOwnerUltraCompactPrompt,
+  'chaos-monkey': chaosMonkeyCompactPrompt,
   'backend-dev': backendDevCompactPrompt,
+  'frontend-dev': frontendDevCompactPrompt,
+  'quality-engineer': qualityEngineerCompactPrompt,
+  'security-auditor': securityAuditorCompactPrompt,
+  'contrarian': contrarianCompactPrompt,
+  'devops': devopsCompactPrompt,
   'code-reviewer': codeReviewerCompactPrompt,
+  'architect': architectCompactPrompt,
+  'document-writer': documentWriterCompactPrompt,
   'ui-ux-designer': uiUxDesignerCompactPrompt,
-  'fullstack-dev': fullstackDevPrompt // Using regular prompt until compact version is created
+  'fullstack-dev': fullstackDevCompactPrompt
 };
 
 // Agent persona cache
@@ -186,6 +213,7 @@ export class PromptManager {
       
       if (compact) {
         // Compact mode: Use minimal global context
+        completePrompt += globalCompactPrompt + '\n\n';
         completePrompt += globalLabratsCompactPrompt + '\n\n';
       } else {
         // 1. Add global professional standards

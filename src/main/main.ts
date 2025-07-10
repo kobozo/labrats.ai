@@ -49,7 +49,8 @@ function createSafeStore(): any {
     defaults: {
       recentProjects: [] as RecentProject[],
       windowStates: [] as WindowState[],
-      lastActiveWindows: [] as string[]
+      lastActiveWindows: [] as string[],
+      projectStates: {} as { [key: string]: any }
     }
   };
 
@@ -470,6 +471,28 @@ ipcMain.handle('remove-recent-project', async (event, projectPath: string) => {
   store.set('recentProjects', filtered);
   updateRecentProjectsMenu();
   return filtered;
+});
+
+// Project state management handlers
+ipcMain.handle('get-project-state', async (event, key: string) => {
+  const projectStates = store.get('projectStates', {}) as { [key: string]: any };
+  return projectStates[key] || null;
+});
+
+ipcMain.handle('set-project-state', async (event, key: string, value: any) => {
+  const projectStates = store.get('projectStates', {}) as { [key: string]: any };
+  if (value === null) {
+    delete projectStates[key];
+  } else {
+    projectStates[key] = value;
+  }
+  store.set('projectStates', projectStates);
+  return true;
+});
+
+ipcMain.handle('get-all-project-states', async () => {
+  const projectStates = store.get('projectStates', {}) as { [key: string]: any };
+  return Object.values(projectStates);
 });
 
 ipcMain.handle('read-directory', async (event, dirPath: string) => {

@@ -125,6 +125,38 @@ export const AgentSettings: React.FC = () => {
   };
 
   const renderAgentConfiguration = (agent: Agent) => {
+    // Special case for Switchy - only color configuration allowed
+    if (agent.id === 'switchy') {
+      return (
+        <div className="space-y-4">
+          <div className="bg-gray-700 p-4 rounded-lg">
+            <h6 className="font-medium text-yellow-400 mb-2">🔄 Single-Agent Assistant</h6>
+            <p className="text-sm text-gray-300 mb-4">
+              Switchy is a special agent that operates independently when the LabRats.AI backend is unavailable. 
+              Unlike other agents, Switchy assumes all roles and capabilities:
+            </p>
+            <ul className="text-sm text-gray-300 space-y-1 mb-4">
+              <li>🎯 <strong>Product Strategy</strong> - Requirements, user stories, roadmaps</li>
+              <li>💾 <strong>Backend Development</strong> - APIs, databases, server logic</li>
+              <li>🎨 <strong>Frontend Development</strong> - UI/UX, components, styling</li>
+              <li>🔍 <strong>Quality Assurance</strong> - Testing strategies, bug fixes</li>
+              <li>🔒 <strong>Security</strong> - Vulnerability analysis, best practices</li>
+              <li>⚙️ <strong>DevOps</strong> - Deployment, infrastructure, CI/CD</li>
+              <li>🏗️ <strong>Architecture</strong> - System design, scalability</li>
+              <li>📝 <strong>Documentation</strong> - Guides, specs, explanations</li>
+            </ul>
+            <div className="text-sm text-gray-400 bg-gray-800 p-3 rounded">
+              <strong>When is Switchy used?</strong><br />
+              Switchy automatically activates when the LabRats.AI backend is unavailable. 
+              All provider and model settings are inherited from your global AI configuration. 
+              Only the color accent can be customized.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Regular agent configuration
     const config = agentConfigs[agent.id] || { provider: 'inherit', model: 'inherit' };
 
     return (

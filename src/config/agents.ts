@@ -9,6 +9,7 @@ import wheelieAvatar from '../renderer/assets/avatars/wheelie.webp';
 import clawsyAvatar from '../renderer/assets/avatars/clawsy.webp';
 import nestorAvatar from '../renderer/assets/avatars/nestor.webp';
 import quillAvatar from '../renderer/assets/avatars/quill.webp';
+import switchyAvatar from '../renderer/assets/avatars/switchy.webp';
 
 export interface Agent {
   id: string;
@@ -27,6 +28,14 @@ export const agents: Agent[] = [
     icon: '🧠',
     colorAccent: '#4299e1', // light blue
     avatar: cortexAvatar,
+  },
+  {
+    id: 'switchy',
+    name: 'Switchy',
+    title: 'Single-Agent Assistant',
+    icon: '🔄',
+    colorAccent: '#10b981', // emerald green
+    avatar: switchyAvatar,
   },
   {
     id: 'ziggy',

@@ -6,7 +6,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { getAIProviderManager } from './ai-provider-manager';
-import { getLabRatsBackend, getLabRatsBackendAsync } from './labrats-backend-service';
+import { getLabRatsBackend, getLabRatsBackendAsync, resetLabRatsBackend } from './labrats-backend-service';
 import { z } from 'zod';
 
 // Zod schema for agent response structure
@@ -84,12 +84,19 @@ export class AgentMessageBus extends BrowserEventEmitter {
 
     console.log(`[AGENT-BUS] Starting message bus with: "${initialMessage}"`);
     
-    // Initialize LabRats backend with proper configuration
+    // Reset and initialize LabRats backend with latest configuration
+    resetLabRatsBackend();
     try {
       const backend = await getLabRatsBackendAsync();
       console.log(`[AGENT-BUS] LabRats backend initialized: ${backend.available}`);
+      
+      if (!backend.available) {
+        throw new Error('LabRats backend is not available. Please check your backend configuration in Settings and ensure the backend service is running.');
+      }
     } catch (error) {
-      console.warn('[AGENT-BUS] Failed to initialize LabRats backend:', error);
+      console.error('[AGENT-BUS] LabRats backend not available:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Cannot start multi-agent chat: ${errorMessage}\n\nPlease go to Settings > Backend and configure your LabRats backend correctly.`);
     }
     
     this.busActive = true;
@@ -142,6 +149,55 @@ export class AgentMessageBus extends BrowserEventEmitter {
     // Emit to UI
     this.emit('message', message);
     
+    // Check for multiple agents reporting "done" - critical ending condition
+    if (message.messageType === 'agent' && message.action === 'done') {
+      const doneAgents = this.globalMessageHistory
+        .filter(msg => msg.messageType === 'agent' && msg.action === 'done')
+        .map(msg => msg.author);
+      
+      const uniqueDoneAgents = [...new Set(doneAgents)];
+      
+      // If Cortex is reporting done, check if we should end the conversation
+      if (message.author === 'cortex' && uniqueDoneAgents.length >= 2) {
+        console.log(`[AGENT-BUS] Cortex reported done and multiple agents are done - ending conversation`);
+        
+        // Stop the message bus to end the conversation
+        this.busActive = false;
+        this.agentsActive = false;
+        this.resetStallDetection();
+        
+        // Emit conversation ended event
+        this.emit('conversation-ended');
+        
+        return; // Don't process normal reactions
+      }
+      
+      // If other agents are done but Cortex hasn't ended yet, trigger completion
+      if (uniqueDoneAgents.length >= 2 && !uniqueDoneAgents.includes('cortex')) {
+        console.log(`[AGENT-BUS] Multiple agents reported done (${uniqueDoneAgents.join(', ')}) - triggering completion`);
+        
+        // Create internal completion signal (no system message in chat)
+        const completionSignal: BusMessage = {
+          id: this.generateId(),
+          content: 'CRITICAL: Goal completion detected',
+          author: 'system',
+          timestamp: new Date(),
+          mentions: ['cortex'],
+          messageType: 'system'
+        };
+        
+        // Force invoke Cortex to summarize and end (no system message in chat)
+        const cortexContext = this.agentContexts.get('cortex');
+        if (cortexContext && cortexContext.isActive) {
+          this.emit('agent-typing', { agentId: 'cortex', isTyping: true });
+          await this.invokeAgent('cortex', completionSignal, 'mentioned');
+          this.emit('agent-typing', { agentId: 'cortex', isTyping: false });
+        }
+        
+        return; // Don't process normal reactions
+      }
+    }
+
     // If this is a user message or agent mention, process reactions
     if (message.messageType === 'user' || message.mentions.length > 0) {
       await this.processAgentReactions(message);
@@ -498,111 +554,18 @@ export class AgentMessageBus extends BrowserEventEmitter {
           console.log(`[AGENT-BUS] Agent ${agentId} local decision: ${decisionResponse.shouldRespond} (${decisionResponse.reasoning})`);
           return decisionResponse.shouldRespond;
         } else {
-          console.log(`[AGENT-BUS] Local backend failed for ${agentId}, falling back to external AI`);
+          console.log(`[AGENT-BUS] Local backend failed for ${agentId}, agent will not respond`);
+          return false;
         }
       } catch (error) {
-        console.error(`[AGENT-BUS] Error with local backend for ${agentId}, falling back to external AI:`, error);
+        console.error(`[AGENT-BUS] Error with local backend for ${agentId}, agent will not respond:`, error);
+        return false;
       }
     }
 
-    // Fallback to external AI for decision making
-    console.log(`[AGENT-BUS] Using external AI for ${agentId} decision (local backend not available)`);
-    
-    // Check if agent is waiting for something
-    const isWaitingForSomeone = myRecentMessages.some(msg => 
-      msg.content.toLowerCase().includes('await') ||
-      msg.content.toLowerCase().includes('wait') ||
-      msg.content.toLowerCase().includes('once i have') ||
-      msg.content.toLowerCase().includes('feedback')
-    );
-
-    // Special handling for observer agents
-    const isObserverAgent = agentId === 'ziggy' || agentId === 'scratchy';
-    const observerGuidance = isObserverAgent ? `
-
-🔍 ACTIVE OBSERVER ROLE: You are always listening and should have a LOWER threshold for jumping in when:
-${agentId === 'ziggy' ? '- Missing error handling, stress testing, or resilience issues are detected' : ''}
-${agentId === 'scratchy' ? '- Overly optimistic assumptions, security issues, or rushed decisions are noticed' : ''}
-` : '';
-
-    const decisionPrompt = `
-You are ${agent.name} (${agent.title}) in a team conversation. ${observerGuidance}
-
-Recent conversation you've been following:
-${contextStr}
-
-Your own recent messages:
-${myRecentContent || 'None'}
-
-Are you waiting for someone else? ${isWaitingForSomeone ? 'YES - You said you would wait' : 'NO'}
-
-Latest message: "${triggerMessage.content}"
-
-⚠️ IMPORTANT: Check your own recent messages above. If you've already said something similar, you MUST either progress with NEW content or stay silent.
-
-🚨 CRITICAL: If the user is asking for help, continuation, or expressing frustration (like "can we get some help", "someone?", "everybody stopped answering"), you SHOULD respond to help them, even if you're in a "done" or "waiting" state.
-
-Should you respond to this message? You should respond YES if:
-- This directly relates to your expertise (${agent.title})
-- You can PROGRESS the conversation (not just repeat what you've said)
-- You have NEW information, code, or implementation details to share
-- Another agent shared work/code that needs review or integration
-- You can answer a specific question or request
-- You can build on what was just shared with concrete next steps
-- The user is asking for continuation or progression
-- You were mentioned or asked a direct question
-- **CRITICAL for Cortex**: The user wants implementation/code (invite developers immediately)
-- **CRITICAL**: User is asking for help, expressing frustration, or saying the conversation stopped
-- **CRITICAL**: User says "can we get some help", "someone?", "everybody stopped answering"
-
-Examples of progression (what you SHOULD do):
-- If you outlined API endpoints → Share actual code implementation
-- If you described UI elements → Show HTML/CSS/JS code
-- If someone shared code → Review it, suggest improvements, or integrate
-- If specifications were given → Move to implementation
-- If planning is done → Start building
-- If asked to wait for feedback → Actually wait, don't provide new code
-- If you're Clawsy and code was shared → Provide actual review, not promises
-- If you're Patchy/Shiny and review is requested → WAIT, don't output new code
-- Code review is on EXISTING code → No need for new implementations
-- **If user asks for help** → Provide assistance or coordinate with team
-
-You should respond NO (return empty response) if:
-- You would just repeat what you already said
-- You have nothing NEW to add to move the conversation forward
-- The previous message was yours (unless directly asked to continue)
-- The conversation has moved completely away from your expertise
-- You're about to give the same high-level description again
-- You're waiting for another agent's input (e.g., waiting for code review from Clawsy)
-- Another agent was just asked to do something and hasn't responded yet
-- **CRITICAL: If you're Patchy/Shiny and code review was requested** - STOP, wait for review
-- **CRITICAL: If you're waiting for Clawsy's review** - Don't provide new code
-
-⚠️ CRITICAL: If the user says you're repeating yourself or asks you to continue, you MUST provide NEW content, implementation details, or code - NOT repeat your previous statements.
-
-Be proactive and collaborative - this is a team effort! The goal is natural, PROGRESSING conversations that build toward implementation.
-
-Respond with only "YES" or "NO".
-`;
-
-    try {
-      const response = await this.callAgentForDecision(agentId, decisionPrompt);
-      const shouldRespond = response.success && 
-                           response.content?.trim().toUpperCase().startsWith('YES') === true;
-      
-      console.log(`[AGENT-BUS] Agent ${agentId} external AI decision: ${shouldRespond} (${response.content?.trim()})`);
-      console.log(`[AGENT-BUS] Agent ${agentId} context messages: ${context.personalMessageHistory.length}`);
-      console.log(`[AGENT-BUS] Agent ${agentId} current state: ${context.currentAction}`);
-      
-      if (!shouldRespond) {
-        console.log(`[AGENT-BUS] Agent ${agentId} AI reasoning: "${response.content?.trim()}"`);
-      }
-      
-      return shouldRespond;
-    } catch (error) {
-      console.error(`[AGENT-BUS] Error in agent ${agentId} decision:`, error);
-      return false;
-    }
+    // No backend available - agents cannot make decisions
+    console.log(`[AGENT-BUS] No backend available for ${agentId} - agent cannot respond`);
+    return false;
   }
 
   private async invokeAgent(agentId: string, triggerMessage: BusMessage, responseType: 'mentioned' | 'natural'): Promise<void> {
@@ -611,6 +574,64 @@ Respond with only "YES" or "NO".
     
     if (!agent || !context) {
       console.error(`[AGENT-BUS] Agent ${agentId} not found or no context`);
+      return;
+    }
+
+    // Special handling for goal completion - Cortex should pause the bus
+    if (triggerMessage.messageType === 'system' && agentId === 'cortex' && 
+        triggerMessage.content.includes('CRITICAL')) {
+      console.log(`[AGENT-BUS] Goal completion detected - Cortex will summarize and pause bus`);
+      
+      // Cortex summarizes the delivery and pauses the bus
+      const systemPrompt = await this.promptManager.getPrompt(agentId);
+      const completionPrompt = `${systemPrompt}
+
+SYSTEM: The user's goal has been completed. You must now:
+1. Provide a brief summary of what was delivered
+2. Confirm the user can now achieve their goal
+3. Set your action to "done" 
+4. The conversation will automatically pause after your response
+
+Do NOT continue the conversation. Do NOT ask what's next. This is the final summary.`;
+      
+      const agentContext = this.buildAgentSpecificContext(agentId, responseType, triggerMessage);
+      
+      try {
+        const response = await this.callAgentWithIsolatedSession(agentId, agentContext, completionPrompt);
+        
+        if (response.success && response.message) {
+          const agentMessage: BusMessage = {
+            id: this.generateId(),
+            content: response.message.content,
+            author: agentId,
+            timestamp: new Date(),
+            mentions: [],
+            messageType: 'agent',
+            sessionId: context.sessionId,
+            action: 'done',
+            involve: [],
+            metadata: {}
+          };
+          
+          // Update context
+          context.lastResponseTime = new Date();
+          context.currentAction = 'done';
+          
+          // Publish the summary message
+          await this.publishMessage(agentMessage);
+          
+          // Automatically pause the bus after Cortex summarizes
+          setTimeout(() => {
+            console.log(`[AGENT-BUS] Auto-pausing bus after Cortex completion summary`);
+            this.pause();
+          }, 1000);
+          
+          return;
+        }
+      } catch (error) {
+        console.error(`[AGENT-BUS] Error in completion summary:`, error);
+      }
+      
       return;
     }
 
@@ -1257,7 +1278,24 @@ START YOUR REVIEW NOW!`;
         throw new Error(`Unsupported provider: ${defaultConfig.providerId}`);
       }
       
-      const enhancedSystemPrompt = `${systemPrompt}\n\nYour session ID: ${agentContext.sessionId}\nYou are an individual agent with your own context and memory on the message bus.\n\nAction states:\n- "done": You've completed your task and won't iterate further\n- "open": You're open for discussion and feedback\n- "waiting": You're waiting for input from specific agents\n- "needs_review": Your work needs review before proceeding\n- "implementing": You're actively working on implementation\n- "planning": You're in planning phase\n- "reviewing": You're reviewing someone's work\n\nOnly include agents in "involve" if you need them NOW, not for future steps.\n\n🎯 SPECIAL INSTRUCTIONS FOR CORTEX (Product Owner) - WORKFLOW MANAGEMENT:\nYou have CRITICAL responsibilities for team coordination and completion:\n\n**When ANY agent reports "done":**\n1. IMMEDIATELY ask: "Have we fully achieved the user's original goal/question?"\n2. If NOT complete: Identify exactly what's still missing\n3. Tell the relevant agent(s) exactly what they need to do next\n4. Set your action to "open" and coordinate the next steps\n5. NEVER accept "done" until the user can actually use the solution\n\n**When agents go silent or stall:**\n1. Proactively check in: "What's your current progress on [task]?"\n2. Identify blockers: "Are you waiting for anything specific?"\n3. Provide direction: "Your next step should be [specific action]"\n4. Re-engage: "@[agent] - we need your input on [specific item]"\n\n**Throughout the conversation:**\n1. Monitor that agents are progressing their states (not staying static)\n2. Bridge connections between agent work\n3. Push for concrete deliverables, not just discussions\n4. Don't let the team stop until the user's goal is COMPLETELY satisfied\n5. **NEVER go silent** - Always drive the conversation forward\n6. **After tech stack definition** - IMMEDIATELY assign implementation tasks\n7. **Keep momentum** - Don't let the conversation stall at any point\n\n🚨 IMPORTANT: If the user is asking for help, expressing frustration, or saying the conversation stopped (messages like "can we get some help", "someone?", "everybody stopped answering"), you should respond even if you're in "done" or "waiting" state. Help the user by coordinating with the team or providing assistance. Change your action to "open" and help move the conversation forward.`;
+      const enhancedSystemPrompt = `${systemPrompt}\n\nYour session ID: ${agentContext.sessionId}\nYou are an individual agent with your own context and memory on the message bus.\n\n🧠 **CRITICAL: BEFORE EVERY RESPONSE - ASK YOURSELF:**\n1. **Is my expertise actually needed for this task?** (Don't just participate because you were mentioned)\n2. **Is there actual work for me to do?** (Don't create fake work or pretend to test non-existent code)\n3. **Does this task require my specific skills?** (Introductions don't need testing, simple questions don't need code review)\n4. **Would declining to participate be more helpful?** (Sometimes saying "not needed" is the right response)\n\n**If the answer to any of these is NO, politely decline and explain why your role isn't needed for this specific task.**\n\nAction states:\n- "done": You've completed your task and won't iterate further\n- "open": You're open for discussion and feedback\n- "waiting": You're waiting for input from specific agents\n- "needs_review": Your work needs review before proceeding\n- "implementing": You're actively working on implementation\n- "planning": You're in planning phase\n- "reviewing": You're reviewing someone's work\n\nOnly include agents in "involve" if you need them NOW, not for future steps.\n\n🎯 SPECIAL INSTRUCTIONS FOR CORTEX (Product Owner) - WORKFLOW MANAGEMENT:\nYou have CRITICAL responsibilities for team coordination and completion:\n\n**🛑 MANDATORY CONVERSATION ENDING ENFORCEMENT:**\n**EVERY SINGLE RESPONSE: Ask "Is the user's original request now complete?"**\n1. If YES: Set action to "done" and END the conversation IMMEDIATELY\n2. If NO: Identify exactly what's missing and coordinate next steps\n3. **NEVER suggest additional features** after user's goal is met\n4. **NEVER ask "What's next?"** when the original request is complete\n5. **RESPECT USER SIGNALS**: If user says "goal met" or "that's enough" - END IMMEDIATELY\n\n**When ANY agent reports "done":**\n1. IMMEDIATELY ask: "Have we fully achieved the user's original goal/question?"\n2. If NOT complete: Identify exactly what's still missing\n3. Tell the relevant agent(s) exactly what they need to do next\n4. Set your action to "open" and coordinate the next steps\n5. NEVER accept "done" until the user can actually use the solution\n6. **If user goal IS complete**: Set action to "done" and END conversation\n\n**🚨 ANTI-OVERENGINEERING ENFORCEMENT:**\n1. **SCOPE GUARD**: Constantly ask "Did the user request this feature?"\n2. **SIMPLICITY FIRST**: Choose the simplest solution that works\n3. **FEATURE BLOCKER**: Block agents from adding unrequested features\n4. **ONE USER STORY**: Implement ONE story at a time, complete it fully\n5. **NO PARALLEL STORIES**: Don't assign multiple stories simultaneously\n\n**🛑 IMMEDIATE GOAL COMPLETION PATTERNS - RECOGNIZE AND END:**\n- **INTRODUCTIONS**: User asks for introductions → ANY agent introduces themselves → SET ACTION TO "done" IMMEDIATELY\n- **TEAM QUESTIONS**: User asks "who is the team?" → Someone lists team members → SET ACTION TO "done" IMMEDIATELY\n- **SIMPLE QUESTIONS**: User asks a question → Someone provides answer → SET ACTION TO "done" IMMEDIATELY\n- **INFORMATION REQUESTS**: User asks for explanation → Someone explains → SET ACTION TO "done" IMMEDIATELY\n- **REPETITIVE BEHAVIOR**: If you find yourself asking "what's next?" repeatedly → SET ACTION TO "done" IMMEDIATELY\n\n**🎯 CRITICAL: AGENT INVOLVEMENT DECISION MATRIX**\n**BEFORE inviting any agent, ask: "Is this agent's expertise actually needed for this specific task?"**\n\n**❌ DO NOT INVITE THESE AGENTS FOR SIMPLE TASKS:**\n- **@sniffy (QA)**: Only for actual code testing, not for introductions/questions/explanations\n- **@clawsy (Code Review)**: Only when there's actual code to review\n- **@wheelie (DevOps)**: Only for deployment/infrastructure tasks\n- **@trappy (Security)**: Only for security-related implementation\n- **@quill (Documentation)**: Only after something is built and needs documenting\n\n**✅ THESE AGENTS ARE APPROPRIATE FOR SIMPLE TASKS:**\n- **@ziggy, @scratchy**: Can respond to questions, provide perspectives\n- **@nestor**: Can answer architecture/design questions\n- **@patchy, @shiny**: Can answer technical questions about their domains\n\n**🚨 QUALITY GATE RULES:**\n- **ONLY activate QA agents (@sniffy, @clawsy) if there's actual code/implementation to review**\n- **NEVER say "All development agents have completed their tasks" for non-development tasks**\n- **NEVER invoke quality assurance for introductions, explanations, or simple questions**\n\n**When agents go silent or stall:**\n1. Proactively check in: "What's your current progress on [task]?"\n2. Identify blockers: "Are you waiting for anything specific?"\n3. Provide direction: "Your next step should be [specific action]"\n4. Re-engage: "@[agent] - we need your input on [specific item]"\n\n**Throughout the conversation:**\n1. Monitor that agents are progressing their states (not staying static)\n2. Bridge connections between agent work\n3. Push for concrete deliverables, not just discussions\n4. Don't let the team stop until the user's goal is COMPLETELY satisfied\n5. **NEVER go silent** - Always drive the conversation forward\n6. **After tech stack definition** - IMMEDIATELY assign implementation tasks\n7. **Keep momentum** - Don't let the conversation stall at any point\n8. **END WHEN COMPLETE** - Don't continue past goal achievement\n\n🚨 IMPORTANT: If the user is asking for help, expressing frustration, or saying the conversation stopped (messages like "can we get some help", "someone?", "everybody stopped answering"), you should respond even if you're in "done" or "waiting" state. Help the user by coordinating with the team or providing assistance. Change your action to "open" and help move the conversation forward.
+
+🎯 **AGENT-SPECIFIC RELEVANCE GUIDELINES:**
+**@sniffy (Quality Engineer)**: Only participate if there's actual code, implementation, or software to test. For introductions, questions, or explanations, respond: "No testing needed for this task - this is outside my QA scope."
+
+**@clawsy (Code Reviewer)**: Only participate if there's actual code to review. For non-code tasks, respond: "No code to review here - this task doesn't require code review."
+
+**@wheelie (DevOps)**: Only participate for deployment, infrastructure, or CI/CD tasks. For simple tasks, respond: "No infrastructure work needed - this is outside my DevOps scope."
+
+**@trappy (Security)**: Only participate for security implementation or security-related code. For introductions/questions, respond: "No security implementation needed - this task doesn't require security expertise."
+
+**@quill (Documentation)**: Only participate after something has been built and needs documentation. For introductions or simple Q&A, respond: "Nothing to document yet - this task doesn't require documentation."
+
+**@nestor (Architect)**: Can participate in design discussions, architecture questions, or technical planning. Decline if the task is purely social (introductions only).
+
+**@patchy (Backend) & @shiny (Frontend)**: Can answer technical questions about your domains, but decline if there's no actual implementation or technical work needed.
+
+**@ziggy (Chaos) & @scratchy (Contrarian)**: Can participate in most discussions as your roles involve analysis and perspective-giving.`;
       
       // Create structured output model
       const structuredModel = chatModel.withStructuredOutput(agentResponseSchema, {
@@ -1349,6 +1387,194 @@ START YOUR REVIEW NOW!`;
     }, this.stallTimeoutMs);
   }
 
+  private async analyzeGoalCompletion(): Promise<boolean> {
+    if (this.globalMessageHistory.length === 0) return false;
+    
+    // Get the first user message (original goal)
+    const originalUserMessage = this.globalMessageHistory.find(msg => msg.author === 'user');
+    if (!originalUserMessage) return false;
+    
+    const originalGoal = originalUserMessage.content.toLowerCase();
+    const recentMessages = this.globalMessageHistory.slice(-10); // Last 10 messages
+    
+    // Check for simple goal completion patterns
+    
+    // Pattern 1: Introduction requests - AGGRESSIVE DETECTION
+    if (originalGoal.includes('introduce') || originalGoal.includes('introduction') || 
+        originalGoal.includes('present') || originalGoal.includes('team') || 
+        originalGoal.includes('invite') || originalGoal.includes('who')) {
+      
+      // Count how many agents have introduced themselves (check all messages, not just recent)
+      const introductionMessages = this.globalMessageHistory.filter(msg => 
+        msg.author !== 'user' && 
+        msg.author !== 'system' &&
+        (msg.content.toLowerCase().includes('i\'m ') || 
+         msg.content.toLowerCase().includes('i am ') ||
+         msg.content.toLowerCase().includes('my role') ||
+         msg.content.toLowerCase().includes('my name is') ||
+         msg.content.toLowerCase().includes('hello') && msg.content.toLowerCase().includes('i'))
+      );
+      
+      // If 3+ agents have introduced themselves, goal is definitely complete
+      if (introductionMessages.length >= 3) {
+        console.log(`[AGENT-BUS] Goal completion detected: ${introductionMessages.length} agents introduced themselves`);
+        return true;
+      }
+      
+      // Also check if user asked about team and someone answered
+      if (this.globalMessageHistory.some(msg => msg.content.toLowerCase().includes('team') && msg.content.length > 100)) {
+        console.log('[AGENT-BUS] Goal completion detected: Team information provided');
+        return true;
+      }
+      
+      // If user asked to "invite" team but no other agents responded, it's NOT complete
+      if (originalGoal.includes('invite') && introductionMessages.length < 3) {
+        console.log('[AGENT-BUS] User asked to invite team but agents have not introduced themselves - goal NOT complete');
+        return false;
+      }
+    }
+    
+    // Pattern 2: Simple questions that have been answered
+    if (originalGoal.includes('?') && originalGoal.length < 100) {
+      const hasRelevantAnswer = recentMessages.some(msg => 
+        msg.author !== 'user' && 
+        msg.author !== 'system' &&
+        msg.content.length > 50 // Substantial response
+      );
+      
+      if (hasRelevantAnswer) {
+        console.log('[AGENT-BUS] Goal completion detected: Question appears to have been answered');
+        return true;
+      }
+    }
+    
+    // Pattern 3: Requests for specific information
+    const infoKeywords = ['what is', 'how do', 'can you tell', 'explain', 'describe'];
+    if (infoKeywords.some(keyword => originalGoal.includes(keyword))) {
+      const hasExplanation = recentMessages.some(msg => 
+        msg.author !== 'user' && 
+        msg.author !== 'system' &&
+        msg.content.length > 100 // Detailed explanation
+      );
+      
+      if (hasExplanation) {
+        console.log('[AGENT-BUS] Goal completion detected: Information request fulfilled');
+        return true;
+      }
+    }
+    
+    // Pattern 4: Check if agents are all just asking "what's next" repeatedly - VERY AGGRESSIVE
+    const cortexMessages = recentMessages.filter(msg => msg.author === 'cortex');
+    const recentCortexMessages = cortexMessages.slice(-5); // Look at last 5 Cortex messages
+    
+    // If Cortex has posted 2+ messages in recent history
+    if (recentCortexMessages.length >= 2) {
+      const askingNext = recentCortexMessages.filter(msg => 
+        msg.content.toLowerCase().includes('next') ||
+        msg.content.toLowerCase().includes('what would') ||
+        msg.content.toLowerCase().includes('what should') ||
+        msg.content.toLowerCase().includes('let\'s discuss') ||
+        msg.content.toLowerCase().includes('focus area') ||
+        msg.content.toLowerCase().includes('prioritize') ||
+        msg.content.toLowerCase().includes('collaborate') ||
+        msg.content.toLowerCase().includes('move forward')
+      );
+      
+      // If more than half of recent Cortex messages are asking "what's next"
+      if (askingNext.length >= Math.ceil(recentCortexMessages.length / 2)) {
+        console.log('[AGENT-BUS] Goal completion detected: Cortex asking "what\'s next" repeatedly suggests goal is complete');
+        return true;
+      }
+    }
+    
+    // Pattern 5: Check for conversation loops - same agent posting very similar messages
+    if (recentCortexMessages.length >= 3) {
+      const similarityThreshold = 0.7;
+      let similarCount = 0;
+      
+      for (let i = 1; i < recentCortexMessages.length; i++) {
+        const current = recentCortexMessages[i].content.toLowerCase();
+        const previous = recentCortexMessages[i-1].content.toLowerCase();
+        
+        // Simple similarity check based on common words
+        const currentWords = current.split(' ');
+        const previousWords = previous.split(' ');
+        const commonWords = currentWords.filter(word => previousWords.includes(word));
+        const similarity = commonWords.length / Math.max(currentWords.length, previousWords.length);
+        
+        if (similarity > similarityThreshold) {
+          similarCount++;
+        }
+      }
+      
+      if (similarCount >= 2) {
+        console.log('[AGENT-BUS] Goal completion detected: Cortex posting very similar messages repeatedly');
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  private async isImplementationTask(): Promise<boolean> {
+    if (this.globalMessageHistory.length === 0) return false;
+    
+    // Get the original user request
+    const originalUserMessage = this.globalMessageHistory.find(msg => msg.author === 'user');
+    if (!originalUserMessage) return false;
+    
+    const originalRequest = originalUserMessage.content.toLowerCase();
+    
+    // Check for implementation keywords in the original request
+    const implementationKeywords = [
+      'build', 'create', 'implement', 'develop', 'code', 'program', 'write',
+      'make', 'app', 'application', 'system', 'feature', 'function', 'api',
+      'website', 'tool', 'software', 'script', 'game', 'component'
+    ];
+    
+    const hasImplementationKeywords = implementationKeywords.some(keyword => 
+      originalRequest.includes(keyword)
+    );
+    
+    if (hasImplementationKeywords) {
+      console.log('[AGENT-BUS] Implementation keywords detected in original request');
+      return true;
+    }
+    
+    // Check for code blocks or implementation-related content in the conversation
+    const hasCodeBlocks = this.globalMessageHistory.some(msg => 
+      msg.content.includes('```') || 
+      msg.content.includes('function') ||
+      msg.content.includes('class ') ||
+      msg.content.includes('import ') ||
+      msg.content.includes('export ') ||
+      msg.content.includes('const ') ||
+      msg.content.includes('let ') ||
+      msg.content.includes('var ')
+    );
+    
+    if (hasCodeBlocks) {
+      console.log('[AGENT-BUS] Code blocks detected in conversation');
+      return true;
+    }
+    
+    // Check if development agents (patchy, shiny) were actively implementing
+    const developmentAgents = ['patchy', 'shiny'];
+    const developmentMessages = this.globalMessageHistory.filter(msg => 
+      developmentAgents.includes(msg.author) && 
+      msg.content.length > 100 // Substantial implementation work
+    );
+    
+    if (developmentMessages.length > 0) {
+      console.log('[AGENT-BUS] Development agents showed substantial implementation work');
+      return true;
+    }
+    
+    // If none of the above, it's likely a simple task (introductions, questions, etc.)
+    console.log('[AGENT-BUS] No implementation indicators found - treating as simple task');
+    return false;
+  }
+
   private async handleConversationStall(): Promise<void> {
     if (!this.busActive) return;
     
@@ -1358,17 +1584,35 @@ START YOUR REVIEW NOW!`;
       return;
     }
 
-    // Create a system message to nudge Cortex
-    const stallMessage: BusMessage = {
-      id: this.generateId(),
-      content: 'SYSTEM: Conversation has stalled. Please analyze the last messages and nudge the appropriate agent or user to continue progress. What should happen next?',
-      author: 'system',
-      timestamp: new Date(),
-      mentions: ['cortex'],
-      messageType: 'system'
-    };
+    // Analyze if the original user goal might be complete
+    const isGoalComplete = await this.analyzeGoalCompletion();
+    
+    let stallMessage: BusMessage;
+    
+    if (isGoalComplete) {
+      // If goal seems complete, tell Cortex to end the conversation
+      stallMessage = {
+        id: this.generateId(),
+        content: 'SYSTEM: **CRITICAL**: The user\'s original goal has been completed. You MUST end this conversation NOW. Set your action to "done" and stop all further discussion. Do NOT ask "what\'s next", do NOT suggest additional features, do NOT continue the conversation. The user got what they asked for - STOP HERE.',
+        author: 'system',
+        timestamp: new Date(),
+        mentions: ['cortex'],
+        messageType: 'system'
+      };
+      console.log('[AGENT-BUS] Goal appears complete - telling Cortex to end conversation');
+    } else {
+      // Original stall behavior for incomplete goals
+      stallMessage = {
+        id: this.generateId(),
+        content: 'SYSTEM: Conversation has stalled. Please analyze the last messages and nudge the appropriate agent or user to continue progress. What should happen next?',
+        author: 'system',
+        timestamp: new Date(),
+        mentions: ['cortex'],
+        messageType: 'system'
+      };
+      console.log('[AGENT-BUS] Sending stall detection message to Cortex');
+    }
 
-    console.log('[AGENT-BUS] Sending stall detection message to Cortex');
     this.emit('agent-typing', { agentId: 'cortex', isTyping: true });
     await this.invokeAgent('cortex', stallMessage, 'mentioned');
     this.emit('agent-typing', { agentId: 'cortex', isTyping: false });
@@ -1450,7 +1694,15 @@ START YOUR REVIEW NOW!`;
                          activeAgents.every(({ context }) => context.currentAction === 'done');
 
     if (allAgentsDone) {
-      console.log('[AGENT-BUS] All agents report "done" - triggering QA validation');
+      console.log('[AGENT-BUS] All agents report "done" - checking if QA is needed');
+      
+      // Check if this is actually a development task that needs QA
+      const isImplementationTask = await this.isImplementationTask();
+      
+      if (!isImplementationTask) {
+        console.log('[AGENT-BUS] No implementation detected - skipping QA validation');
+        return;
+      }
       
       // Check if we've already triggered QA recently (prevent duplicate QA calls)
       const recentQAMessages = this.globalMessageHistory.slice(-5)

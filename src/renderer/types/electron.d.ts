@@ -185,6 +185,12 @@ export interface ChatHistoryAPI {
   cleanup: (projectPath: string, maxAge?: number) => Promise<ChatHistoryResult>;
 }
 
+export interface ProjectStateAPI {
+  get: (key: string) => Promise<any>;
+  set: (key: string, value: any) => Promise<boolean>;
+  getAll: () => Promise<any[]>;
+}
+
 export interface ElectronAPI {
   openFolder: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   readDirectory: (dirPath: string) => Promise<FileNode[]>;
@@ -192,6 +198,7 @@ export interface ElectronAPI {
   onFolderOpened: (callback: (folderPath: string) => void) => void;
   getRecentProjects: () => Promise<RecentProject[]>;
   removeRecentProject: (path: string) => Promise<RecentProject[]>;
+  projectState: ProjectStateAPI;
   getEnv: (key: string) => Promise<string | undefined>;
   searchFiles: (rootPath: string, query: string, limit?: number) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory' }>>;
   openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;

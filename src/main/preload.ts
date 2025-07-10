@@ -8,6 +8,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('folder-opened', (_event, folderPath) => callback(folderPath)),
   getRecentProjects: () => ipcRenderer.invoke('get-recent-projects'),
   removeRecentProject: (path: string) => ipcRenderer.invoke('remove-recent-project', path),
+  
+  // Project state API
+  projectState: {
+    get: (key: string) => ipcRenderer.invoke('get-project-state', key),
+    set: (key: string, value: any) => ipcRenderer.invoke('set-project-state', key, value),
+    getAll: () => ipcRenderer.invoke('get-all-project-states'),
+  },
   getEnv: (key: string) => ipcRenderer.invoke('get-env', key),
   searchFiles: (rootPath: string, query: string, limit?: number) => ipcRenderer.invoke('search-files', rootPath, query, limit),
   

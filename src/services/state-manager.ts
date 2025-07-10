@@ -89,6 +89,9 @@ export class StateManager {
     this.currentProjectPath = projectPath;
     
     if (projectPath) {
+      // Migrate any existing project states from config.yaml on first load
+      await this.migrateProjectStatesFromConfig();
+      
       // Load state for the new project
       await this.loadState();
     } else {
@@ -112,9 +115,9 @@ export class StateManager {
         state: this.currentState
       };
 
-      // Use electron store to persist state
-      if (window.electronAPI?.config?.set) {
-        await window.electronAPI.config.set('projectStates', storageKey, projectState);
+      // Use project state API to persist state
+      if (window.electronAPI?.projectState?.set) {
+        await window.electronAPI.projectState.set(storageKey, projectState);
       }
     } catch (error) {
       console.error('Failed to persist state:', error);
@@ -127,8 +130,8 @@ export class StateManager {
     try {
       const storageKey = await this.getStorageKey(this.currentProjectPath);
       
-      if (window.electronAPI?.config?.get) {
-        const projectState = await window.electronAPI.config.get('projectStates', storageKey) as ProjectState;
+      if (window.electronAPI?.projectState?.get) {
+        const projectState = await window.electronAPI.projectState.get(storageKey) as ProjectState;
         
         if (projectState && projectState.state) {
           this.currentState = {
@@ -216,9 +219,9 @@ export class StateManager {
   async clearProjectState(projectPath: string) {
     try {
       const storageKey = await this.getStorageKey(projectPath);
-      if (window.electronAPI?.config?.set) {
-        // Since delete doesn't exist, set to null to clear the state
-        await window.electronAPI.config.set('projectStates', storageKey, null);
+      if (window.electronAPI?.projectState?.set) {
+        // Set to null to clear the state
+        await window.electronAPI.projectState.set(storageKey, null);
       }
     } catch (error) {
       console.error('Failed to clear project state:', error);
@@ -227,9 +230,8 @@ export class StateManager {
 
   async getAllProjectStates(): Promise<ProjectState[]> {
     try {
-      if (window.electronAPI?.config?.get) {
-        const allStates = await window.electronAPI.config.get('projectStates') as { [key: string]: ProjectState };
-        return Object.values(allStates || {});
+      if (window.electronAPI?.projectState?.getAll) {
+        return await window.electronAPI.projectState.getAll();
       }
     } catch (error) {
       console.error('Failed to get all project states:', error);
@@ -244,6 +246,32 @@ export class StateManager {
       this.debounceTimer = null;
     }
     await this.persistState();
+  }
+
+  // Migration method to move project states from config.yaml to projects.json
+  private async migrateProjectStatesFromConfig() {
+    try {
+      // Check if migration is needed (only run once)
+      if (window.electronAPI?.config?.get && window.electronAPI?.projectState?.set) {
+        const configProjectStates = await window.electronAPI.config.get('projectStates') as { [key: string]: ProjectState };
+        
+        if (configProjectStates && Object.keys(configProjectStates).length > 0) {
+          console.log('Migrating project states from config.yaml to projects.json...');
+          
+          // Migrate each project state
+          for (const [key, projectState] of Object.entries(configProjectStates)) {
+            await window.electronAPI.projectState.set(key, projectState);
+          }
+          
+          // Clear the project states from config.yaml after successful migration
+          await window.electronAPI.config.set('projectStates', null);
+          
+          console.log('Project states migration completed successfully');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to migrate project states from config:', error);
+    }
   }
 }
 

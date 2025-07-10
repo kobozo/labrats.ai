@@ -259,6 +259,32 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showBranchMenu]);
 
+  // Listen for settings navigation events from Chat component
+  useEffect(() => {
+    const handleNavigateToSettings = (event: CustomEvent) => {
+      const { section, scrollTo } = event.detail;
+      console.log('Navigating to settings:', { section, scrollTo });
+      
+      // Set previous view before going to settings
+      if (activeView !== 'settings' && activeView !== 'account') {
+        setPreviousView(activeView);
+      }
+      
+      // Navigate to settings
+      setActiveView('settings');
+      
+      // Dispatch event to Settings component with navigation details
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('settings-navigate', {
+          detail: { section, scrollTo }
+        }));
+      }, 100); // Small delay to ensure Settings component is mounted
+    };
+
+    window.addEventListener('navigate-to-settings', handleNavigateToSettings as EventListener);
+    return () => window.removeEventListener('navigate-to-settings', handleNavigateToSettings as EventListener);
+  }, [activeView]);
+
   const navItems = [
     { 
       id: 'chat' as const, 

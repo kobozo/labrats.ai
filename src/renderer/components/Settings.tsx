@@ -163,6 +163,39 @@ export const Settings: React.FC = () => {
     loadLabRatsBackendSettings();
   }, []);
 
+  // Listen for navigation events from App component
+  useEffect(() => {
+    const handleSettingsNavigate = (event: CustomEvent) => {
+      const { section, scrollTo } = event.detail;
+      console.log('Settings navigation received:', { section, scrollTo });
+      
+      // Set the active category
+      if (section && section !== activeCategory) {
+        setActiveCategory(section as SettingsCategory);
+      }
+      
+      // Scroll to specific section after a delay to ensure rendering
+      if (scrollTo) {
+        setTimeout(() => {
+          const element = document.getElementById(`settings-${scrollTo}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // Add a visual highlight
+            element.style.outline = '2px solid #4299e1';
+            element.style.outlineOffset = '4px';
+            setTimeout(() => {
+              element.style.outline = '';
+              element.style.outlineOffset = '';
+            }, 3000);
+          }
+        }, 200);
+      }
+    };
+
+    window.addEventListener('settings-navigate', handleSettingsNavigate as EventListener);
+    return () => window.removeEventListener('settings-navigate', handleSettingsNavigate as EventListener);
+  }, [activeCategory]);
+
   const checkMasterKeySetup = async () => {
     try {
       const isSetup = await window.electronAPI?.ai?.isMasterKeySetup();
@@ -493,7 +526,7 @@ export const Settings: React.FC = () => {
       </div>
 
       {/* LabRats Backend Configuration */}
-      <div>
+      <div id="settings-backend">
         <h3 className="text-lg font-semibold text-white mb-4">LabRats Backend</h3>
         <div className="space-y-4">
           <div className="flex items-center justify-between">

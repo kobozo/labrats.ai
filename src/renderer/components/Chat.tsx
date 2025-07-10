@@ -90,6 +90,17 @@ const getDisplayAgents = (): Agent[] => {
 
 const agents = getDisplayAgents();
 
+// Switchy agent for single-agent mode (when backend unavailable)
+const switchyAgent: Agent = {
+  id: 'switchy',
+  name: 'Switchy',
+  role: 'Full-Stack AI Assistant',
+  color: 'dynamic',
+  icon: Target,
+  isActive: true,
+  specialization: ['product', 'backend', 'frontend', 'qa', 'security', 'devops', 'architecture', 'documentation']
+};
+
 // Configure marked options
 marked.setOptions({
   breaks: true,
@@ -121,6 +132,9 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
   const [copiedChat, setCopiedChat] = useState(false);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [sessionTokenUsage, setSessionTokenUsage] = useState<TokenUsage>({ completionTokens: 0, promptTokens: 0, totalTokens: 0 });
+  const [showBackendWarning, setShowBackendWarning] = useState(false);
+  const [backendCheckInProgress, setBackendCheckInProgress] = useState(false);
+  const [singleAgentMode, setSingleAgentMode] = useState(false);
   const chatMenuRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -146,6 +160,9 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     console.log('Chat component mounted, initializing AI...');
     initializeAI();
     loadAgentColorOverrides();
+    
+    // Check LabRats backend availability
+    checkBackendAvailability();
 
     // Listen for config changes to reload color overrides
     const handleConfigChange = () => {
@@ -268,6 +285,18 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     loadPersistedMessages();
   }, [currentFolder]);
 
+  // Handle escape key for modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showBackendWarning) {
+        setShowBackendWarning(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showBackendWarning]);
+
   // Persist messages whenever they change
   useEffect(() => {
     if (currentFolder && messages.length > 0) {
@@ -320,6 +349,78 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     }
   };
 
+  const checkBackendAvailability = async () => {
+    try {
+      // Import the backend service dynamically to avoid circular deps
+      const { getLabRatsBackendAsync } = await import('../../services/labrats-backend-service');
+      const backend = await getLabRatsBackendAsync();
+      const result = await backend.testConnection();
+      
+      if (!result.success) {
+        console.warn('LabRats backend not available:', result.error);
+        // Show warning modal instead of chat message
+        setShowBackendWarning(true);
+      } else {
+        console.log('LabRats backend is available and ready');
+        setShowBackendWarning(false);
+      }
+    } catch (error) {
+      console.error('Failed to check backend availability:', error);
+      // Show warning modal for connection error
+      setShowBackendWarning(true);
+    }
+  };
+
+  const handleRecheckBackend = async () => {
+    setBackendCheckInProgress(true);
+    await checkBackendAvailability();
+    setBackendCheckInProgress(false);
+  };
+
+  const handleGoToSettings = () => {
+    setShowBackendWarning(false);
+    // Navigate to settings using window events
+    window.dispatchEvent(new CustomEvent('navigate-to-settings', {
+      detail: { section: 'general', scrollTo: 'backend' }
+    }));
+  };
+
+  const handleDismissWarning = () => {
+    setShowBackendWarning(false);
+  };
+
+  const handleContinueWithSingleAgent = () => {
+    setSingleAgentMode(true);
+    setShowBackendWarning(false);
+    
+    // Use the config agent if available, otherwise fall back to local definition
+    const configSwitchy = configAgents.find(a => a.id === 'switchy');
+    const agentToUse = configSwitchy ? {
+      id: configSwitchy.id,
+      name: configSwitchy.name,
+      role: configSwitchy.title,
+      color: 'dynamic',
+      icon: Target,
+      isActive: true,
+      specialization: ['product', 'backend', 'frontend', 'qa', 'security', 'devops', 'architecture', 'documentation']
+    } : switchyAgent;
+    
+    setActiveAgents([agentToUse]);
+    
+    // Add welcome message for single-agent mode
+    const welcomeMessage: Message = {
+      id: `switchy_welcome_${Date.now()}`,
+      content: `👋 **Hi! I'm Switchy, your full-stack AI assistant.**\n\nI'm running in single-agent mode since the LabRats.AI backend is unavailable. I can help you with:\n\n🎯 **Product Strategy** - Requirements, user stories, roadmaps\n💾 **Backend Development** - APIs, databases, server logic\n🎨 **Frontend Development** - UI/UX, components, styling\n🔍 **Quality Assurance** - Testing strategies, bug fixes\n🔒 **Security** - Vulnerability analysis, best practices\n⚙️ **DevOps** - Deployment, infrastructure, CI/CD\n🏗️ **Architecture** - System design, scalability\n📝 **Documentation** - Guides, specs, explanations\n\nWhat would you like to work on today?`,
+      sender: agentToUse,
+      timestamp: new Date(),
+      type: 'text'
+    };
+    
+    setMessages(prev => [...prev, welcomeMessage]);
+    
+    console.log('[CHAT] Switched to single-agent mode with Switchy');
+  };
+
   const initializeAI = async () => {
     try {
       console.log('Getting available providers...');
@@ -359,6 +460,87 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder }) => {
     const currentInput = inputValue;
     setInputValue('');
     
+    // Add user message to chat immediately
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content: currentInput,
+      sender: 'user',
+      timestamp: new Date(),
+      type: 'text'
+    };
+    setMessages(prev => [...prev, userMessage]);
+    
+    // Handle single-agent mode
+    if (singleAgentMode) {
+      // Get the current Switchy agent
+      const configSwitchy = configAgents.find(a => a.id === 'switchy');
+      const currentSwitchy = configSwitchy ? {
+        id: configSwitchy.id,
+        name: configSwitchy.name,
+        role: configSwitchy.title,
+        color: 'dynamic',
+        icon: Target,
+        isActive: true,
+        specialization: ['product', 'backend', 'frontend', 'qa', 'security', 'devops', 'architecture', 'documentation']
+      } : switchyAgent;
+      
+      // In single-agent mode, use direct chat service
+      if (!isAiEnabled || !currentProviderId || !currentModelId) {
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: `AI providers are not configured yet. Please configure your AI provider in settings to enable real AI responses.`,
+          sender: currentSwitchy,
+          timestamp: new Date(),
+          type: 'text'
+        };
+        setMessages(prev => [...prev, errorMessage]);
+        return;
+      }
+
+      try {
+        setTypingAgents(new Set(['switchy']));
+        
+        // Use the LangChain chat service directly for single-agent mode
+        const response = await chatService.sendMessage(currentInput, {
+          providerId: currentProviderId,
+          modelId: currentModelId,
+          systemPrompt: `You are Switchy, a full-stack AI assistant operating in single-agent mode. You can help with product strategy, backend development, frontend development, quality assurance, security, DevOps, architecture, and documentation. Provide helpful, practical responses to user requests.`
+        });
+
+        if (response.success && response.message) {
+          const agentMessage: Message = {
+            id: (Date.now() + 2).toString(),
+            content: response.message.content,
+            sender: currentSwitchy,
+            timestamp: new Date(),
+            type: 'text',
+            providerId: currentProviderId,
+            modelId: currentModelId
+          };
+          
+          setMessages(prev => [...prev, agentMessage]);
+        } else {
+          throw new Error(response.error || 'Failed to get response');
+        }
+        
+        setTypingAgents(new Set());
+      } catch (error) {
+        console.error('Single-agent response error:', error);
+        setTypingAgents(new Set());
+        
+        const errorMessage: Message = {
+          id: (Date.now() + 3).toString(),
+          content: `I'm sorry, I encountered an error while processing your request. Please try again or check your AI provider configuration.`,
+          sender: currentSwitchy,
+          timestamp: new Date(),
+          type: 'text'
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
+      return;
+    }
+    
+    // Multi-agent mode (original logic)
     // Check if AI is enabled and providers are available
     if (!isAiEnabled || !currentProviderId || !currentModelId) {
       // Fallback to mock response
@@ -854,7 +1036,22 @@ To debug the message bus, open console and type: debugBus()
         {typingAgents.size > 0 && (
           <div className="mb-3 space-y-2">
             {Array.from(typingAgents).map(agentId => {
-              const agent = agents.find(a => a.id === agentId);
+              let agent = agents.find(a => a.id === agentId);
+              
+              // Handle Switchy specially
+              if (!agent && agentId === 'switchy') {
+                const configSwitchy = configAgents.find(a => a.id === 'switchy');
+                agent = configSwitchy ? {
+                  id: configSwitchy.id,
+                  name: configSwitchy.name,
+                  role: configSwitchy.title,
+                  color: 'dynamic',
+                  icon: Target,
+                  isActive: true,
+                  specialization: ['product', 'backend', 'frontend', 'qa', 'security', 'devops', 'architecture', 'documentation']
+                } : switchyAgent;
+              }
+              
               if (!agent) return null;
               
               return (
@@ -973,6 +1170,77 @@ To debug the message bus, open console and type: debugBus()
         </div>
 
       </div>
+
+      {/* Backend Warning Modal */}
+      {showBackendWarning && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={handleDismissWarning}
+        >
+          <div 
+            className="bg-gray-800 rounded-lg p-6 max-w-md mx-4 border border-gray-600"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center space-x-3 mb-4">
+              <AlertTriangle className="text-yellow-500" size={24} />
+              <h3 className="text-lg font-semibold text-white">LabRats.AI Backend Unavailable</h3>
+            </div>
+            
+            <div className="text-gray-300 mb-6 space-y-3">
+              <p>The multi-agent chat system requires the LabRats.AI backend to be running. Without it:</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>Only single-agent chat is available</li>
+                <li>Agent filtering and decision-making is disabled</li>
+              </ul>
+              <p className="text-sm">To enable multi-agent features:</p>
+              <ol className="list-decimal list-inside space-y-1 text-sm">
+                <li>Go to Settings → Backend</li>
+                <li>Configure your LabRats.AI backend endpoint</li>
+                <li>Ensure the backend service is running</li>
+              </ol>
+              <p className="text-yellow-400 text-sm font-medium">Current status: <span className="text-red-400">Disconnected</span></p>
+            </div>
+            
+            <div className="flex flex-col space-y-3">
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleRecheckBackend}
+                  disabled={backendCheckInProgress}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2"
+                >
+                  {backendCheckInProgress ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Checking...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search size={16} />
+                      <span>Recheck</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={handleGoToSettings}
+                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2"
+                >
+                  <Settings size={16} />
+                  <span>Go to Settings</span>
+                </button>
+              </div>
+              
+              <button
+                onClick={handleContinueWithSingleAgent}
+                className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2"
+              >
+                <Target size={16} />
+                <span>Continue with Single Agent</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

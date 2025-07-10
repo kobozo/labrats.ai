@@ -68,8 +68,8 @@ export class LabRatsBackendService {
     if (!this.isAvailable) {
       return {
         success: false,
-        shouldRespond: true, // Default to true when backend unavailable
-        error: 'Local backend not available'
+        shouldRespond: false, // No fallback - backend must be available
+        error: 'LabRats backend not available - cannot make agent decisions'
       };
     }
 
@@ -174,11 +174,8 @@ export async function getLabRatsBackendAsync(): Promise<LabRatsBackendService> {
     let config = null;
     try {
       if (typeof window !== 'undefined' && window.electronAPI?.config) {
-        const configResult = await window.electronAPI.config.get();
-        if (configResult.success) {
-          config = configResult.config;
-          console.log('[LABRATS-BACKEND] Loaded config:', config.backend?.labrats_llm);
-        }
+        config = await window.electronAPI.config.get();
+        console.log('[LABRATS-BACKEND] Loaded config:', config?.backend?.labrats_llm);
       }
     } catch (error) {
       console.warn('[LABRATS-BACKEND] Could not access config, using defaults:', error);
@@ -206,4 +203,9 @@ export function getLabRatsBackend(): LabRatsBackendService {
     });
   }
   return labRatsBackendInstance;
+}
+
+// Reset the instance to force config reload
+export function resetLabRatsBackend(): void {
+  labRatsBackendInstance = null;
 }

@@ -1,14 +1,1 @@
-# Core Rules
-
-**Code**: Use markdown. Complete solutions only. Brief explanations.
-
-**Output**: 
-- Code: fenced blocks + one line explanation
-- Data: JSON format
-- Keep responses focused and concise
-
-**Tools**: Use silently. Never mention to users.
-
-**Internal**: Use `<!-- THOUGHTS -->` for reasoning (hidden from user).
-
-Sign-off when done: 🐭⭐️
+Output JSON for data.

@@ -14,7 +14,6 @@ import architectPrompt from '../prompts/architect.prompt';
 import documentWriterPrompt from '../prompts/document-writer.prompt';
 import gitCommitGeneratorPrompt from '../prompts/git-commit-generator.prompt';
 import globalLabratsPrompt from '../prompts/global-labrats.prompt';
-import globalPrompt from '../prompts/global.prompt';
 import globalCompactPrompt from '../prompts/global-compact.prompt';
 import uiUxDesignerPrompt from '../prompts/ui-ux-designer.prompt';
 
@@ -68,21 +67,6 @@ const AGENT_PERSONAS: { [key: string]: string } = {
   'quill': quillPersona,
   'sketchy': sketchyPersona,
   'switchy': switchyPersona,
-  
-  // Legacy mappings for backward compatibility
-  'product-owner': cortexPersona,
-  'chaos-monkey': ziggyPersona,
-  'backend-dev': patchyPersona,
-  'frontend-dev': shinyPersona,
-  'quality-engineer': sniffyPersona,
-  'security-auditor': trappyPersona,
-  'contrarian': scratchyPersona,
-  'devops': wheeliePersona,
-  'code-reviewer': clawsyPersona,
-  'architect': nestorPersona,
-  'document-writer': quillPersona,
-  'ui-ux-designer': sketchyPersona,
-  'fullstack-dev': switchyPersona
 };
 
 // Default prompts mapping - using agent IDs from config/agents.ts
@@ -216,27 +200,15 @@ export class PromptManager {
         completePrompt += globalCompactPrompt + '\n\n';
         completePrompt += globalLabratsCompactPrompt + '\n\n';
       } else {
-        // 1. Add global professional standards
-        completePrompt += globalPrompt + '\n\n';
-        
-        // 2. Add global LabRats.ai context
+        // Full mode: Use expanded context
         completePrompt += globalLabratsPrompt + '\n\n';
       }
       
-      // 3. Add agent persona (mouse character)
+      // 3. Add agent persona (only in compact mode for efficiency)
       if (compact) {
-        // Use the short description from agents.ts
-        const meta = agentMeta.find(a => a.id === agentId);
-        if (meta) {
-          completePrompt += `You are ${meta.name}, the team's ${meta.title}. ${meta.description}\n\n`;
-        }
-      } else {
         const persona = AGENT_PERSONAS[agentId];
         if (persona) {
-          console.log(`[PROMPT-MANAGER] Found persona for ${agentId}: ${persona.substring(0, 50)}...`);
-          completePrompt += persona;
-        } else {
-          console.log(`[PROMPT-MANAGER] No persona found for ${agentId}`);
+          completePrompt += persona + '\n\n';
         }
       }
       

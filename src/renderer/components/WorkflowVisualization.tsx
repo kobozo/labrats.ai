@@ -23,7 +23,7 @@ interface WorkflowVisualizationProps {
 
 const nodeWidth = 200;
 const nodeHeight = 120;
-const horizontalSpacing = 280;
+const horizontalSpacing = 250;
 const verticalSpacing = 180;
 
 // Custom node component
@@ -64,13 +64,32 @@ const nodeTypes = {
 
 export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ onClose }) => {
   const nodes = useMemo<Node[]>(() => {
-    // Create a horizontal layout
+    // Create a 4-row layout for better spacing
     return workflowStages.map((stage, index) => {
       const colors = getStageColors(stage.color);
       
-      // Position nodes horizontally with some vertical offset for visual interest
-      const x = index * horizontalSpacing;
-      const y = index % 2 === 0 ? 0 : verticalSpacing * 0.5; // Zigzag pattern
+      // Arrange in 4 rows with 3-2-3-2 pattern
+      let row, col;
+      if (index < 3) {
+        // First row: stages 0-2
+        row = 0;
+        col = index;
+      } else if (index < 5) {
+        // Second row: stages 3-4 (centered)
+        row = 1;
+        col = index - 3 + 0.5; // Offset by 0.5 to center
+      } else if (index < 8) {
+        // Third row: stages 5-7
+        row = 2;
+        col = index - 5;
+      } else {
+        // Fourth row: stages 8-9 (centered)
+        row = 3;
+        col = index - 8 + 0.5; // Offset by 0.5 to center
+      }
+      
+      const x = col * horizontalSpacing;
+      const y = row * verticalSpacing;
       
       return {
         id: stage.id,
@@ -134,7 +153,7 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
               id: `return-${stage.id}-${targetStage}`,
               source: stage.id,
               target: targetStage,
-              type: 'step',
+              type: 'smoothstep',
               animated: false,
               style: {
                 stroke: '#ef4444',
@@ -203,8 +222,8 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
           elementsSelectable={false}
           panOnScroll={true}
           preventScrolling={false}
-          defaultViewport={{ x: 50, y: 100, zoom: 0.8 }}
-          fitViewOptions={{ padding: 0.2 }}
+          defaultViewport={{ x: 50, y: 50, zoom: 0.7 }}
+          fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
         >
           <Background color="#374151" gap={20} />
           <Controls className="bg-gray-800 border-gray-700" />

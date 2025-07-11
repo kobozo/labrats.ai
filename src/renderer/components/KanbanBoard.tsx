@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow, Circle } from 'lucide-react';
+import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow } from 'lucide-react';
 import { Task, WorkflowStage } from '../../types/kanban';
-import { getStageConfig } from '../../config/workflow-stages';
-import { kanbanColumns, getColumnForStage, getStageNumber } from '../../config/kanban-columns';
+import { workflowStages, getStageConfig } from '../../config/workflow-stages';
 import { kanbanService } from '../../services/kanban-service';
 import { WorkflowVisualization } from './WorkflowVisualization';
 import { CreateTaskDialog } from './CreateTaskDialog';
@@ -39,16 +38,10 @@ export const KanbanBoard: React.FC = () => {
 
   const backlogTasks = tasks.filter(task => task.status === 'backlog');
   
-  const getTasksByColumn = (columnId: string): Task[] => {
-    const column = kanbanColumns.find(col => col.id === columnId);
-    if (!column) return [];
-    return tasks.filter(task => column.stages.includes(task.status));
+  const getTasksByStatus = (status: WorkflowStage): Task[] => {
+    return tasks.filter(task => task.status === status);
   };
 
-  const getStageColor = (stage: WorkflowStage): string => {
-    const config = getStageConfig(stage);
-    return config?.color || 'gray';
-  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -94,37 +87,33 @@ export const KanbanBoard: React.FC = () => {
       </div>
 
       <div className="flex flex-col h-full">
-        {/* Main workflow columns */}
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 overflow-x-auto mb-4">
-        {kanbanColumns.map((column) => (
+        {/* Main workflow columns - all 9 stages */}
+        <div className="flex-1 flex gap-4 overflow-x-auto mb-4 pb-2 px-1">
+        {workflowStages.slice(1).map((stage) => (
           <div 
-            key={column.id} 
-            className={`bg-gray-800 rounded-lg p-3 border min-w-[280px] transition-colors ${
-              dragOverColumn === column.id ? 'border-blue-500 bg-gray-700' : 'border-gray-700'
+            key={stage.id} 
+            className={`bg-gray-800 rounded-lg p-3 border-2 min-w-[280px] flex-shrink-0 transition-colors ${
+              dragOverColumn === stage.id ? 'border-blue-500 bg-gray-700' : `border-${stage.color}-800 border-opacity-50`
             }`}
             onDragOver={(e) => {
               e.preventDefault();
-              setDragOverColumn(column.id);
+              setDragOverColumn(stage.id);
             }}
             onDragLeave={() => setDragOverColumn(null)}
             onDrop={(e) => {
               e.preventDefault();
-              if (draggedTask) {
-                // Find the first stage in this column
-                const targetStage = column.stages[0];
-                if (draggedTask.status !== targetStage) {
-                  const updatedTasks = tasks.map(task => 
-                    task.id === draggedTask.id 
-                      ? { ...task, status: targetStage }
-                      : task
-                  );
-                  setTasks(updatedTasks);
-                  // Save to backend
-                  kanbanService.updateTask(boardId, {
-                    ...draggedTask,
-                    status: targetStage
-                  });
-                }
+              if (draggedTask && draggedTask.status !== stage.id) {
+                const updatedTasks = tasks.map(task => 
+                  task.id === draggedTask.id 
+                    ? { ...task, status: stage.id }
+                    : task
+                );
+                setTasks(updatedTasks);
+                // Save to backend
+                kanbanService.updateTask(boardId, {
+                  ...draggedTask,
+                  status: stage.id
+                });
               }
               setDraggedTask(null);
               setDragOverColumn(null);
@@ -132,21 +121,18 @@ export const KanbanBoard: React.FC = () => {
           >
             <div className="mb-3">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-white text-sm">{column.title}</h3>
+                <h3 className={`font-semibold text-${stage.color}-300 text-sm`}>{stage.title}</h3>
                 <span className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded">
-                  {getTasksByColumn(column.id).length}
+                  {getTasksByStatus(stage.id).length}
                 </span>
               </div>
               <div className="text-xs text-gray-500 mb-1">
-                {column.description}
-              </div>
-              <div className="text-xs text-gray-400 italic">
-                Exit: {column.exitGate}
+                {stage.primaryRats.join(', ')}
               </div>
             </div>
 
             <div className="space-y-3">
-              {getTasksByColumn(column.id).map((task) => (
+              {getTasksByStatus(stage.id).map((task) => (
                 <div
                   key={task.id}
                   className={`p-3 rounded-lg border-l-4 ${getPriorityColor(task.priority)} bg-gray-700 hover:bg-gray-600 transition-colors cursor-move`}
@@ -157,22 +143,15 @@ export const KanbanBoard: React.FC = () => {
                     setDragOverColumn(null);
                   }}
                 >
-                  <div className="mb-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className={`flex items-center space-x-1 px-2 py-1 rounded text-xs font-medium bg-${getStageColor(task.status)}-900 text-${getStageColor(task.status)}-300`}>
-                        <Circle className="w-3 h-3" />
-                        <span>{getStageNumber(task.status)}</span>
-                        <span>{getStageConfig(task.status)?.title}</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        {task.hasBranch && <GitBranch className="w-3 h-3 text-green-400" />}
-                        {getTypeIcon(task.type)}
-                      </div>
-                    </div>
-                    <h4 className="text-white font-medium text-sm leading-tight">
+                  <div className="flex items-start justify-between mb-2">
+                    <h4 className="text-white font-medium text-sm leading-tight flex-1">
                       <span className="text-xs text-gray-500 mr-1">{task.id}</span>
                       {task.title}
                     </h4>
+                    <div className="flex items-center space-x-1">
+                      {task.hasBranch && <GitBranch className="w-4 h-4 text-green-400" />}
+                      {getTypeIcon(task.type)}
+                    </div>
                   </div>
                   
                   <p className="text-gray-300 text-xs mb-3 leading-relaxed">
@@ -213,7 +192,7 @@ export const KanbanBoard: React.FC = () => {
               {/* Add new task placeholder */}
               <button 
                 onClick={() => {
-                  setCreateTaskStatus(column.stages[0]);
+                  setCreateTaskStatus(stage.id);
                   setShowCreateDialog(true);
                 }}
                 className="w-full p-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors flex items-center justify-center space-x-1"

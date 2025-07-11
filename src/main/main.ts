@@ -10,6 +10,7 @@ import { LABRATS_CONFIG_DIR } from './constants';
 import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
 import { getAIProviderManager } from '../services/ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager';
+import { setupKanbanHandlers } from './kanban-ipc-handlers';
 
 app.name = 'LabRats.AI';
 
@@ -141,6 +142,9 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
     
     // Initialize git service for this window
     initializeGitServiceForWindow(window.id, projectPath);
+    
+    // Setup kanban handlers for this project
+    setupKanbanHandlers(projectPath);
   }
 
   if (isDev) {

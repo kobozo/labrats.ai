@@ -185,6 +185,17 @@ export interface ChatHistoryAPI {
   cleanup: (projectPath: string, maxAge?: number) => Promise<ChatHistoryResult>;
 }
 
+export interface KanbanAPI {
+  getBoard: (boardId: string) => Promise<any>;
+  saveBoard: (board: any) => Promise<void>;
+  getTasks: (boardId: string) => Promise<any[]>;
+  updateTask: (boardId: string, task: any) => Promise<void>;
+  deleteTask: (boardId: string, taskId: string) => Promise<void>;
+  getEpics: (boardId: string) => Promise<any[]>;
+  updateEpic: (boardId: string, epic: any) => Promise<void>;
+  checkBranches: () => Promise<string[]>;
+}
+
 export interface ProjectStateAPI {
   get: (key: string) => Promise<any>;
   set: (key: string, value: any) => Promise<boolean>;
@@ -211,6 +222,7 @@ export interface ElectronAPI {
   ai?: AIAPI;
   prompt?: PromptAPI;
   chatHistory?: ChatHistoryAPI;
+  kanban?: KanbanAPI;
 }
 
 declare global {

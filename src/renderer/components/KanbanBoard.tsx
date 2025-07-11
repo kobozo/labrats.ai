@@ -1,76 +1,109 @@
-import React, { useState } from 'react';
-import { Plus, User, Clock, CheckCircle, AlertCircle, Zap } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch } from 'lucide-react';
+import { Task, WorkflowStage } from '../../types/kanban';
+import { workflowStages } from '../../config/workflow-stages';
+import { kanbanService } from '../../services/kanban-service';
 
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  assignee: string;
-  priority: 'low' | 'medium' | 'high';
-  type: 'feature' | 'bug' | 'task' | 'agent-task';
-  status: 'todo' | 'in-progress' | 'review' | 'done';
-  createdBy: 'user' | 'agent';
-  agentColor?: string;
-}
 
 const mockTasks: Task[] = [
   {
-    id: '1',
+    id: 'TASK-001',
     title: 'Implement agent coordination system',
     description: 'Build the core system for multi-agent communication and task delegation',
-    assignee: 'Team Leader',
+    assignee: 'Patchy',
     priority: 'high',
     type: 'feature',
-    status: 'in-progress',
+    status: 'development',
     createdBy: 'agent',
-    agentColor: 'blue'
+    agentColor: 'blue',
+    primaryRats: ['Patchy', 'Shiny'],
+    hasBranch: true,
+    branchName: 'feature/TASK-001',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    projectPath: ''
   },
   {
-    id: '2',
+    id: 'TASK-002',
     title: 'Add stress testing for chat system',
     description: 'Test concurrent users and edge cases for chat reliability',
-    assignee: 'Chaos Monkey',
+    assignee: 'Ziggy',
     priority: 'medium',
     type: 'agent-task',
-    status: 'todo',
+    status: 'qa-validation',
     createdBy: 'agent',
-    agentColor: 'orange'
+    agentColor: 'orange',
+    primaryRats: ['Ziggy', 'Sniffy'],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    projectPath: ''
   },
   {
-    id: '3',
+    id: 'TASK-003',
     title: 'Design responsive chat interface',
     description: 'Create beautiful, accessible UI components for multi-agent chat',
-    assignee: 'Frontend Dev',
+    assignee: 'Sketchy',
     priority: 'high',
     type: 'feature',
-    status: 'review',
+    status: 'ux-design',
     createdBy: 'agent',
-    agentColor: 'purple'
+    agentColor: 'purple',
+    primaryRats: ['Sketchy'],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    projectPath: ''
   },
   {
-    id: '4',
+    id: 'BUG-001',
     title: 'Fix memory leak in agent spawning',
     description: 'Optimize agent lifecycle management to prevent memory issues',
-    assignee: 'Contrarian',
+    assignee: 'Trappy',
     priority: 'high',
     type: 'bug',
-    status: 'done',
+    status: 'security-hardening',
     createdBy: 'agent',
-    agentColor: 'red'
+    agentColor: 'red',
+    primaryRats: ['Trappy'],
+    hasBranch: true,
+    branchName: 'bugfix/BUG-001',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    projectPath: ''
   }
 ];
 
 export const KanbanBoard: React.FC = () => {
-  const [tasks] = useState<Task[]>(mockTasks);
+  const [tasks, setTasks] = useState<Task[]>(mockTasks);
+  const [isLoading, setIsLoading] = useState(false);
+  const boardId = 'main-board'; // For now, using a single board
 
-  const columns = [
-    { id: 'todo', title: 'To Do', color: 'gray' },
-    { id: 'in-progress', title: 'In Progress', color: 'blue' },
-    { id: 'review', title: 'Review', color: 'yellow' },
-    { id: 'done', title: 'Done', color: 'green' }
-  ];
+  // Load tasks on component mount
+  useEffect(() => {
+    loadTasks();
+  }, []);
 
-  const getTasksByStatus = (status: string) => {
+  const loadTasks = async () => {
+    try {
+      setIsLoading(true);
+      const loadedTasks = await kanbanService.getTasks(boardId);
+      if (loadedTasks.length > 0) {
+        setTasks(loadedTasks);
+      }
+    } catch (error) {
+      console.error('Error loading tasks:', error);
+      // Keep mock data if loading fails
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const columns = workflowStages.map(stage => ({
+    id: stage.id,
+    title: stage.title,
+    color: stage.color
+  }));
+
+  const getTasksByStatus = (status: WorkflowStage) => {
     return tasks.filter(task => task.status === status);
   };
 
@@ -88,6 +121,7 @@ export const KanbanBoard: React.FC = () => {
       case 'bug': return <AlertCircle className="w-4 h-4 text-red-400" />;
       case 'feature': return <Plus className="w-4 h-4 text-blue-400" />;
       case 'agent-task': return <Zap className="w-4 h-4 text-orange-400" />;
+      case 'hotfix': return <AlertCircle className="w-4 h-4 text-yellow-400" />;
       default: return <CheckCircle className="w-4 h-4 text-gray-400" />;
     }
   };
@@ -95,29 +129,42 @@ export const KanbanBoard: React.FC = () => {
   return (
     <div className="flex-1 bg-gray-900 p-6 overflow-y-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-2">AI Task Board</h1>
-        <p className="text-gray-400">Track AI-generated tasks and development workflow</p>
+        <h1 className="text-2xl font-bold text-white mb-2">LabRats Workflow Board</h1>
+        <p className="text-gray-400">9-stage pipeline from idea to retrospective</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 h-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 h-full overflow-x-auto">
         {columns.map((column) => (
-          <div key={column.id} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-white">{column.title}</h3>
-              <span className="text-sm text-gray-400 bg-gray-700 px-2 py-1 rounded">
-                {getTasksByStatus(column.id).length}
-              </span>
+          <div key={column.id} className="bg-gray-800 rounded-lg p-3 border border-gray-700 min-w-[280px]">
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-semibold text-white text-sm">{column.title}</h3>
+                <span className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded">
+                  {getTasksByStatus(column.id).length}
+                </span>
+              </div>
+              {workflowStages.find(s => s.id === column.id)?.primaryRats && (
+                <div className="text-xs text-gray-500">
+                  {workflowStages.find(s => s.id === column.id)?.primaryRats.join(', ')}
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
               {getTasksByStatus(column.id).map((task) => (
                 <div
                   key={task.id}
-                  className={`p-4 rounded-lg border-l-4 ${getPriorityColor(task.priority)} bg-gray-700 hover:bg-gray-600 transition-colors cursor-pointer`}
+                  className={`p-3 rounded-lg border-l-4 ${getPriorityColor(task.priority)} bg-gray-700 hover:bg-gray-600 transition-colors cursor-pointer`}
                 >
                   <div className="flex items-start justify-between mb-2">
-                    <h4 className="text-white font-medium text-sm leading-tight">{task.title}</h4>
-                    {getTypeIcon(task.type)}
+                    <h4 className="text-white font-medium text-sm leading-tight flex-1">
+                      <span className="text-xs text-gray-500 mr-1">{task.id}</span>
+                      {task.title}
+                    </h4>
+                    <div className="flex items-center space-x-1">
+                      {task.hasBranch && <GitBranch className="w-4 h-4 text-green-400" />}
+                      {getTypeIcon(task.type)}
+                    </div>
                   </div>
                   
                   <p className="text-gray-300 text-xs mb-3 leading-relaxed">
@@ -146,13 +193,19 @@ export const KanbanBoard: React.FC = () => {
                       )}
                     </div>
                   </div>
+                  
+                  {task.returnReason && (
+                    <div className="mt-2 text-xs text-red-400 italic">
+                      ⟲ {task.returnReason}
+                    </div>
+                  )}
                 </div>
               ))}
               
               {/* Add new task placeholder */}
-              <button className="w-full p-4 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors flex items-center justify-center space-x-2">
-                <Plus className="w-4 h-4" />
-                <span className="text-sm">Add task</span>
+              <button className="w-full p-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors flex items-center justify-center space-x-1">
+                <Plus className="w-3 h-3" />
+                <span className="text-xs">Add task</span>
               </button>
             </div>
           </div>

@@ -7,6 +7,51 @@ import { WorkflowVisualization } from './WorkflowVisualization';
 
 
 const mockTasks: Task[] = [
+  // Backlog items
+  {
+    id: 'IDEA-001',
+    title: 'AI-powered code review suggestions',
+    description: 'Implement AI to provide intelligent code review comments and suggestions',
+    assignee: 'Unassigned',
+    priority: 'medium',
+    type: 'feature',
+    status: 'backlog',
+    createdBy: 'user',
+    primaryRats: ['Cortex', 'Clawsy'],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    projectPath: ''
+  },
+  {
+    id: 'IDEA-002',
+    title: 'Performance monitoring dashboard',
+    description: 'Create real-time dashboard for monitoring agent performance metrics',
+    assignee: 'Unassigned',
+    priority: 'low',
+    type: 'feature',
+    status: 'backlog',
+    createdBy: 'agent',
+    agentColor: 'green',
+    primaryRats: ['Sniffy', 'Ziggy'],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    projectPath: ''
+  },
+  {
+    id: 'BUG-002',
+    title: 'Chat history export fails on large conversations',
+    description: 'Export functionality times out when conversation exceeds 1000 messages',
+    assignee: 'Unassigned',
+    priority: 'high',
+    type: 'bug',
+    status: 'backlog',
+    createdBy: 'user',
+    primaryRats: ['Patchy'],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    projectPath: ''
+  },
+  // Active workflow items
   {
     id: 'TASK-001',
     title: 'Implement agent coordination system',
@@ -77,6 +122,8 @@ export const KanbanBoard: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>(mockTasks);
   const [isLoading, setIsLoading] = useState(false);
   const [showWorkflow, setShowWorkflow] = useState(false);
+  const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const boardId = 'main-board'; // For now, using a single board
 
   // Load tasks on component mount
@@ -99,11 +146,14 @@ export const KanbanBoard: React.FC = () => {
     }
   };
 
-  const columns = workflowStages.map(stage => ({
+  // Exclude backlog from main columns
+  const columns = workflowStages.slice(1).map(stage => ({
     id: stage.id,
     title: stage.title,
     color: stage.color
   }));
+  
+  const backlogTasks = tasks.filter(task => task.status === 'backlog');
 
   const getTasksByStatus = (status: WorkflowStage) => {
     return tasks.filter(task => task.status === status);
@@ -146,9 +196,39 @@ export const KanbanBoard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 h-full overflow-x-auto">
+      <div className="flex flex-col h-full">
+        {/* Main workflow columns */}
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-x-auto mb-4">
         {columns.map((column) => (
-          <div key={column.id} className="bg-gray-800 rounded-lg p-3 border border-gray-700 min-w-[280px]">
+          <div 
+            key={column.id} 
+            className={`bg-gray-800 rounded-lg p-3 border min-w-[280px] transition-colors ${
+              dragOverColumn === column.id ? 'border-blue-500 bg-gray-700' : 'border-gray-700'
+            }`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOverColumn(column.id);
+            }}
+            onDragLeave={() => setDragOverColumn(null)}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (draggedTask && draggedTask.status !== column.id) {
+                const updatedTasks = tasks.map(task => 
+                  task.id === draggedTask.id 
+                    ? { ...task, status: column.id as WorkflowStage }
+                    : task
+                );
+                setTasks(updatedTasks);
+                // Save to backend
+                kanbanService.updateTask(boardId, {
+                  ...draggedTask,
+                  status: column.id as WorkflowStage
+                });
+              }
+              setDraggedTask(null);
+              setDragOverColumn(null);
+            }}
+          >
             <div className="mb-3">
               <div className="flex items-center justify-between mb-1">
                 <h3 className="font-semibold text-white text-sm">{column.title}</h3>
@@ -167,7 +247,13 @@ export const KanbanBoard: React.FC = () => {
               {getTasksByStatus(column.id).map((task) => (
                 <div
                   key={task.id}
-                  className={`p-3 rounded-lg border-l-4 ${getPriorityColor(task.priority)} bg-gray-700 hover:bg-gray-600 transition-colors cursor-pointer`}
+                  className={`p-3 rounded-lg border-l-4 ${getPriorityColor(task.priority)} bg-gray-700 hover:bg-gray-600 transition-colors cursor-move`}
+                  draggable
+                  onDragStart={() => setDraggedTask(task)}
+                  onDragEnd={() => {
+                    setDraggedTask(null);
+                    setDragOverColumn(null);
+                  }}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <h4 className="text-white font-medium text-sm leading-tight flex-1">
@@ -223,6 +309,67 @@ export const KanbanBoard: React.FC = () => {
             </div>
           </div>
         ))}
+        </div>
+        
+        {/* Backlog section */}
+        <div className="border-t border-gray-700 pt-4">
+          <div className="mb-3">
+            <h3 className="text-lg font-semibold text-white">Backlog & Discovery</h3>
+            <p className="text-sm text-gray-400">Drag items to move them into the workflow</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-3">
+            {backlogTasks.map((task) => (
+              <div
+                key={task.id}
+                className={`p-3 rounded-lg border ${getPriorityColor(task.priority)} bg-gray-800 hover:bg-gray-700 transition-colors cursor-move`}
+                draggable
+                onDragStart={() => setDraggedTask(task)}
+                onDragEnd={() => {
+                  setDraggedTask(null);
+                  setDragOverColumn(null);
+                }}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <h4 className="text-white font-medium text-sm leading-tight flex-1">
+                    <span className="text-xs text-gray-500 mr-1">{task.id}</span>
+                    {task.title}
+                  </h4>
+                  <div className="flex items-center space-x-1">
+                    {task.hasBranch && <GitBranch className="w-4 h-4 text-green-400" />}
+                    {getTypeIcon(task.type)}
+                  </div>
+                </div>
+                
+                <p className="text-gray-300 text-xs mb-2 line-clamp-2">
+                  {task.description}
+                </p>
+                
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">{task.assignee}</span>
+                  <div className="flex items-center space-x-1">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      task.priority === 'high' ? 'bg-red-900 text-red-300' :
+                      task.priority === 'medium' ? 'bg-yellow-900 text-yellow-300' :
+                      'bg-green-900 text-green-300'
+                    }`}>
+                      {task.priority}
+                    </span>
+                    {task.createdBy === 'agent' && (
+                      <span className="text-xs text-blue-400">🤖</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {/* Add new backlog item */}
+            <button className="p-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors flex items-center justify-center space-x-1 h-32">
+              <Plus className="w-4 h-4" />
+              <span className="text-sm">Add to backlog</span>
+            </button>
+          </div>
+        </div>
       </div>
       
       {showWorkflow && (

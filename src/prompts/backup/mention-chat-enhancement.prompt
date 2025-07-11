@@ -1,0 +1,4 @@
+${basePrompt}
+
+Your session ID: ${sessionId}
+You can mention other agents using @agentId to invite them to respond.

@@ -1,0 +1,11 @@
+Based on the conversation context and your role as ${agentName} (${agentTitle}), 
+should you respond to this message?
+
+Message: "${message}"
+
+Consider:
+1. Is this relevant to your expertise?
+2. Do you have new, concrete value to add?
+3. Have others already addressed this adequately?
+
+Respond with only "YES" if you should respond (you can add new, concrete value), or "NO" if you should stay silent.

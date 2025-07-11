@@ -1,4 +1,4 @@
-// Import all default prompts
+// Import all prompts
 import teamLeaderPrompt from '../prompts/team-leader.prompt';
 import contrarianPrompt from '../prompts/contrarian.prompt';
 import chaosMonkeyPrompt from '../prompts/chaos-monkey.prompt';
@@ -14,8 +14,8 @@ import architectPrompt from '../prompts/architect.prompt';
 import documentWriterPrompt from '../prompts/document-writer.prompt';
 import gitCommitGeneratorPrompt from '../prompts/git-commit-generator.prompt';
 import globalLabratsPrompt from '../prompts/global-labrats.prompt';
-import globalCompactPrompt from '../prompts/global-compact.prompt';
 import uiUxDesignerPrompt from '../prompts/ui-ux-designer.prompt';
+import switchySingleAgentPrompt from '../prompts/switchy-single-agent.prompt';
 
 // Import agent personas
 import cortexPersona from '../prompts/cortex-persona.prompt';
@@ -31,26 +31,6 @@ import nestorPersona from '../prompts/nestor-persona.prompt';
 import quillPersona from '../prompts/quill-persona.prompt';
 import sketchyPersona from '../prompts/sketchy-persona.prompt';
 import switchyPersona from '../prompts/switchy-persona.prompt';
-
-// Import compact prompts for token optimization
-import productOwnerCompactPrompt from '../prompts/product-owner-compact.prompt';
-import productOwnerUltraCompactPrompt from '../prompts/product-owner-ultra-compact.prompt';
-import globalLabratsCompactPrompt from '../prompts/global-labrats-compact.prompt';
-import backendDevCompactPrompt from '../prompts/backend-dev-compact.prompt';
-import codeReviewerCompactPrompt from '../prompts/code-reviewer-compact.prompt';
-import uiUxDesignerCompactPrompt from '../prompts/ui-ux-designer-compact.prompt';
-import frontendDevCompactPrompt from '../prompts/frontend-dev-compact.prompt';
-import qualityEngineerCompactPrompt from '../prompts/quality-engineer-compact.prompt';
-import devopsCompactPrompt from '../prompts/devops-compact.prompt';
-import documentWriterCompactPrompt from '../prompts/document-writer-compact.prompt';
-import fullstackDevCompactPrompt from '../prompts/fullstack-dev-compact.prompt';
-import chaosMonkeyCompactPrompt from '../prompts/chaos-monkey-compact.prompt';
-import contrarianCompactPrompt from '../prompts/contrarian-compact.prompt';
-import securityAuditorCompactPrompt from '../prompts/security-auditor-compact.prompt';
-import architectCompactPrompt from '../prompts/architect-compact.prompt';
-
-// Import agent metadata for compact persona
-import { agents as agentMeta } from '../config/agents';
 
 // Agent personas mapping
 const AGENT_PERSONAS: { [key: string]: string } = {
@@ -69,289 +49,197 @@ const AGENT_PERSONAS: { [key: string]: string } = {
   'switchy': switchyPersona,
 };
 
-// Default prompts mapping - using agent IDs from config/agents.ts
+// Default prompts mapping
 const DEFAULT_PROMPTS: { [key: string]: string } = {
-  // Agent ID mapping
+  'team-leader': teamLeaderPrompt,
   'cortex': productOwnerPrompt,
+  'scratchy': contrarianPrompt,
   'ziggy': chaosMonkeyPrompt,
   'patchy': backendDevPrompt,
   'shiny': frontendDevPrompt,
+  'switchy': fullstackDevPrompt,
   'sniffy': qualityEngineerPrompt,
   'trappy': securityAuditorPrompt,
-  'scratchy': contrarianPrompt,
   'wheelie': devopsPrompt,
   'clawsy': codeReviewerPrompt,
   'nestor': architectPrompt,
   'quill': documentWriterPrompt,
-  'sketchy': uiUxDesignerPrompt,
-  'switchy': fullstackDevPrompt,
-  
-  // Legacy role-based mapping for backwards compatibility
-  'team-leader': teamLeaderPrompt,
-  'contrarian': contrarianPrompt,
-  'chaos-monkey': chaosMonkeyPrompt,
-  'backend-dev': backendDevPrompt,
-  'frontend-dev': frontendDevPrompt,
-  'fullstack-dev': fullstackDevPrompt,
-  'product-owner': productOwnerPrompt,
-  'quality-engineer': qualityEngineerPrompt,
-  'security-auditor': securityAuditorPrompt,
-  'devops': devopsPrompt,
-  'code-reviewer': codeReviewerPrompt,
-  'architect': architectPrompt,
-  'document-writer': documentWriterPrompt,
   'git-commit-generator': gitCommitGeneratorPrompt,
-  'ui-ux-designer': uiUxDesignerPrompt
+  'sketchy': uiUxDesignerPrompt,
 };
 
-// Compact prompts mapping for token optimization
-const COMPACT_PROMPTS: { [key: string]: string } = {
-  // Agent ID mapping
-  'cortex': productOwnerUltraCompactPrompt, // Use ultra-compact to stay under 750 tokens
-  'ziggy': chaosMonkeyCompactPrompt,
-  'patchy': backendDevCompactPrompt,
-  'shiny': frontendDevCompactPrompt,
-  'sniffy': qualityEngineerCompactPrompt,
-  'trappy': securityAuditorCompactPrompt,
-  'scratchy': contrarianCompactPrompt,
-  'wheelie': devopsCompactPrompt,
-  'clawsy': codeReviewerCompactPrompt,
-  'nestor': architectCompactPrompt,
-  'quill': documentWriterCompactPrompt,
-  'sketchy': uiUxDesignerCompactPrompt,
-  'switchy': fullstackDevCompactPrompt,
-  
-  // Legacy role-based mapping for backwards compatibility
-  'product-owner': productOwnerUltraCompactPrompt,
-  'chaos-monkey': chaosMonkeyCompactPrompt,
-  'backend-dev': backendDevCompactPrompt,
-  'frontend-dev': frontendDevCompactPrompt,
-  'quality-engineer': qualityEngineerCompactPrompt,
-  'security-auditor': securityAuditorCompactPrompt,
-  'contrarian': contrarianCompactPrompt,
-  'devops': devopsCompactPrompt,
-  'code-reviewer': codeReviewerCompactPrompt,
-  'architect': architectCompactPrompt,
-  'document-writer': documentWriterCompactPrompt,
-  'ui-ux-designer': uiUxDesignerCompactPrompt,
-  'fullstack-dev': fullstackDevCompactPrompt
-};
+class PromptManager {
+  private userPrompts: Map<string, string> = new Map();
+  private singleAgentMode: boolean = false;
 
-// Agent persona cache
-const personaCache: { [key: string]: string } = {};
-
-export class PromptManager {
-  private configDir: string | null = null;
-
-  constructor() {
-    this.initializeConfigDir();
+  /**
+   * Set whether we're in single-agent mode
+   */
+  setSingleAgentMode(enabled: boolean): void {
+    this.singleAgentMode = enabled;
+    console.log(`[PROMPT-MANAGER] Single-agent mode set to: ${enabled}`);
   }
 
-  private async initializeConfigDir(): Promise<void> {
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI?.config?.getConfigDir) {
-        this.configDir = await window.electronAPI.config.getConfigDir();
-      }
-    } catch (error) {
-      console.error('Failed to get config directory:', error);
-    }
+  /**
+   * Set a user-defined prompt override for a specific agent
+   */
+  setUserPrompt(agentId: string, prompt: string): void {
+    console.log(`[PROMPT-MANAGER] Setting user prompt for ${agentId}`);
+    this.userPrompts.set(agentId, prompt);
   }
 
-  private async getConfigDir(): Promise<string> {
-    if (!this.configDir) {
-      await this.initializeConfigDir();
-    }
-    
-    if (!this.configDir) {
-      throw new Error('Config directory not available');
-    }
-    
-    return this.configDir;
+  /**
+   * Get a user-defined prompt override for a specific agent
+   */
+  getUserPrompt(agentId: string): string | undefined {
+    return this.userPrompts.get(agentId);
+  }
+
+  /**
+   * Clear user prompt override for a specific agent
+   */
+  clearUserPrompt(agentId: string): void {
+    console.log(`[PROMPT-MANAGER] Clearing user prompt for ${agentId}`);
+    this.userPrompts.delete(agentId);
+  }
+
+  /**
+   * Clear all user prompt overrides
+   */
+  clearAllUserPrompts(): void {
+    console.log('[PROMPT-MANAGER] Clearing all user prompts');
+    this.userPrompts.clear();
   }
 
   /**
    * Get the complete prompt for a specific agent
-   * Includes: global professional standards + labrats context + agent persona + (user override OR default prompt)
+   * Includes: global context + agent persona + role prompt
    */
-  async getPrompt(agentId: string, compact: boolean = true): Promise<string> {
+  async getPrompt(agentId: string): Promise<string> {
     console.log(`[PROMPT-MANAGER] Getting prompt for agent: ${agentId}`);
     
     try {
       // Special handling for git-commit-generator - no personas or global context needed
       if (agentId === 'git-commit-generator') {
-        console.log(`[PROMPT-MANAGER] Returning git commit generator prompt`);
-        // Check for user override first
-        if (typeof window !== 'undefined' && window.electronAPI?.prompt?.read) {
-          const userPrompt = await window.electronAPI.prompt.read(agentId);
-          if (userPrompt) {
-            return userPrompt.trim();
+        return gitCommitGeneratorPrompt.trim();
+      }
+
+      // Build prompt components
+      let promptParts: string[] = [];
+      
+      // 1. Add global LabRats context
+      const globalPrompt = globalLabratsPrompt.trim();
+      if (globalPrompt) {
+        promptParts.push(globalPrompt);
+      }
+      
+      // 2. Add agent persona if available
+      const persona = AGENT_PERSONAS[agentId];
+      if (persona) {
+        promptParts.push(persona.trim());
+      }
+      
+      // 3. Add role-specific prompt (user override or default)
+      let rolePrompt = '';
+      
+      // Special handling for Switchy
+      if (agentId === 'switchy') {
+        // In single-agent mode, use the compact single-agent prompt
+        if (this.singleAgentMode) {
+          console.log(`[PROMPT-MANAGER] Using single-agent prompt for Switchy`);
+          // Clear prompt parts and only use the single-agent prompt
+          promptParts = [switchySingleAgentPrompt.trim()];
+          return promptParts.join('\n\n');
+        }
+        
+        // In multi-agent mode, combine ALL role prompts
+        console.log(`[PROMPT-MANAGER] Building combined prompt for Switchy`);
+        const rolePrompts: string[] = [];
+        
+        // Add clear instructions first
+        rolePrompts.push(`## IMPORTANT: How to Respond\n\nYou are Switchy, a helpful AI assistant. When users ask questions:\n- Answer directly and naturally\n- Don't classify or categorize their questions\n- Provide helpful, conversational responses\n- When asked "who are you?", introduce yourself and explain your capabilities\n\n## Combined Capabilities\n\nYou have the combined expertise of all roles:`);
+        
+        // Collect all role prompts (excluding personas and git-commit)
+        const rolesToCombine = [
+          'product-owner', 'architect', 'backend-dev', 'frontend-dev',
+          'quality-engineer', 'security-auditor', 'devops', 'code-reviewer',
+          'ui-ux-designer', 'document-writer', 'contrarian', 'chaos-monkey'
+        ];
+        
+        for (const role of rolesToCombine) {
+          const prompt = DEFAULT_PROMPTS[role] || DEFAULT_PROMPTS[Object.keys(DEFAULT_PROMPTS).find(k => k.includes(role.split('-')[0])) || ''];
+          if (prompt) {
+            // Extract just the core responsibilities section
+            const lines = prompt.split('\n');
+            const coreIndex = lines.findIndex(line => line.includes('Core Responsibilities'));
+            if (coreIndex !== -1) {
+              // Find the next section header
+              let endIndex = lines.findIndex((line, idx) => idx > coreIndex && line.startsWith('##'));
+              if (endIndex === -1) endIndex = lines.length;
+              
+              const responsibilities = lines.slice(coreIndex, endIndex).join('\n');
+              rolePrompts.push(`\n### From ${role}:\n${responsibilities}`);
+            }
           }
         }
         
-        // Fall back to default prompt
-        return DEFAULT_PROMPTS[agentId] || '';
-      }
-
-      // Build the complete prompt with all components for regular agents
-      let completePrompt = '';
-      
-      if (compact) {
-        // Compact mode: Use minimal global context
-        completePrompt += globalCompactPrompt + '\n\n';
-        completePrompt += globalLabratsCompactPrompt + '\n\n';
+        // Add unified communication style
+        rolePrompts.push(`\n## Unified Approach:\n- Switch between roles as needed with "Switching to [role] mode!"\n- Provide comprehensive solutions using all your capabilities\n- Maintain consistency while adapting your expertise\n- Be explicit about which role you're using when relevant`);
+        
+        rolePrompt = rolePrompts.join('\n');
+        console.log(`[PROMPT-MANAGER] Combined ${rolesToCombine.length} role prompts for Switchy`);
       } else {
-        // Full mode: Use expanded context
-        completePrompt += globalLabratsPrompt + '\n\n';
-      }
-      
-      // 3. Add agent persona (only in compact mode for efficiency)
-      if (compact) {
-        const persona = AGENT_PERSONAS[agentId];
-        if (persona) {
-          completePrompt += persona + '\n\n';
-        }
-      }
-      
-      // 4. Add role-specific prompt (user override or default)
-      let rolePrompt = '';
-      
-      // Check for user override first
-      if (typeof window !== 'undefined' && window.electronAPI?.prompt?.read) {
-        const userPrompt = await window.electronAPI.prompt.read(agentId);
+        // Check for user override first
+        const userPrompt = this.getUserPrompt(agentId);
         if (userPrompt) {
           rolePrompt = userPrompt.trim();
           console.log(`[PROMPT-MANAGER] Using user override prompt for ${agentId}`);
-        }
-      }
-      
-      // If no user override, use default or compact prompt
-      if (!rolePrompt) {
-        if (compact && COMPACT_PROMPTS[agentId]) {
-          rolePrompt = COMPACT_PROMPTS[agentId].trim();
-          console.log(`[PROMPT-MANAGER] Using compact prompt for ${agentId}, length: ${rolePrompt.length}`);
         } else {
+          // Use default prompt
           const defaultPrompt = DEFAULT_PROMPTS[agentId];
           if (defaultPrompt) {
             rolePrompt = defaultPrompt.trim();
-            console.log(`[PROMPT-MANAGER] Using default prompt for ${agentId}, length: ${rolePrompt.length}`);
-          } else {
-            // Fallback for unknown agents
-            console.log(`[PROMPT-MANAGER] No default prompt found for ${agentId}, using generic`);
-            rolePrompt = this.getGenericPrompt(agentId);
+            console.log(`[PROMPT-MANAGER] Using default prompt for ${agentId}`);
           }
         }
       }
       
-      completePrompt += rolePrompt;
+      if (rolePrompt) {
+        promptParts.push(rolePrompt);
+      }
       
-      console.log(`[PROMPT-MANAGER] Complete prompt for ${agentId}, total length: ${completePrompt.length}`);
+      // Combine all parts
+      const fullPrompt = promptParts.filter(part => part.length > 0).join('\n\n');
       
-      return completePrompt;
+      console.log(`[PROMPT-MANAGER] Final prompt length for ${agentId}: ${fullPrompt.length} characters`);
+      
+      return fullPrompt;
+      
     } catch (error) {
-      console.error(`Failed to load prompt for agent ${agentId}:`, error);
-      return this.getGenericPrompt(agentId);
+      console.error(`[PROMPT-MANAGER] Error getting prompt for ${agentId}:`, error);
+      return `You are ${agentId}, an AI assistant. Please help with the task at hand.`;
     }
   }
 
   /**
-   * Save a custom prompt for an agent
-   */
-  async savePrompt(agentId: string, prompt: string): Promise<void> {
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI?.prompt?.write) {
-        const success = await window.electronAPI.prompt.write(agentId, prompt);
-        if (!success) {
-          throw new Error('Failed to write prompt file');
-        }
-      } else {
-        throw new Error('Prompt API not available');
-      }
-    } catch (error) {
-      console.error(`Failed to save prompt for agent ${agentId}:`, error);
-      throw new Error(`Failed to save custom prompt: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Reset an agent's prompt to default by removing the user override
-   */
-  async resetPrompt(agentId: string): Promise<void> {
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI?.prompt?.delete) {
-        const success = await window.electronAPI.prompt.delete(agentId);
-        if (!success) {
-          throw new Error('Failed to delete prompt file');
-        }
-      } else {
-        throw new Error('Prompt API not available');
-      }
-    } catch (error) {
-      console.error(`Failed to reset prompt for agent ${agentId}:`, error);
-      throw new Error(`Failed to reset prompt: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Check if an agent has a custom prompt override
-   */
-  async hasCustomPrompt(agentId: string): Promise<boolean> {
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI?.prompt?.exists) {
-        return await window.electronAPI.prompt.exists(agentId);
-      }
-      return false;
-    } catch (error) {
-      console.error(`Failed to check custom prompt for agent ${agentId}:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Get the default prompt for an agent
-   */
-  async getDefaultPrompt(agentId: string): Promise<string> {
-    const defaultPrompt = DEFAULT_PROMPTS[agentId];
-    if (defaultPrompt) {
-      return defaultPrompt.trim();
-    }
-    return this.getGenericPrompt(agentId);
-  }
-
-  /**
-   * Get list of all available agent IDs with prompts
+   * Get list of all available agents
    */
   getAvailableAgents(): string[] {
     return Object.keys(DEFAULT_PROMPTS);
   }
 
   /**
-   * Get list of agents with custom prompts
+   * Check if an agent has a custom prompt
    */
-  async getCustomPromptAgents(): Promise<string[]> {
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI?.prompt?.listCustom) {
-        return await window.electronAPI.prompt.listCustom();
-      }
-      return [];
-    } catch (error) {
-      console.error('Failed to get custom prompt agents:', error);
-      return [];
-    }
-  }
-
-  private getGenericPrompt(agentId: string): string {
-    return `You are an AI assistant specializing in software development. Your role is to help with ${agentId.replace('-', ' ')} related tasks. 
-
-Please provide helpful, accurate, and professional assistance while maintaining a collaborative tone. Focus on best practices, clear explanations, and practical solutions.`;
+  hasCustomPrompt(agentId: string): boolean {
+    return this.userPrompts.has(agentId);
   }
 }
 
-// Singleton instance
-let promptManagerInstance: PromptManager | null = null;
+// Export singleton instance
+export const promptManager = new PromptManager();
 
+// Export for convenience
 export function getPromptManager(): PromptManager {
-  if (!promptManagerInstance) {
-    promptManagerInstance = new PromptManager();
-  }
-  return promptManagerInstance;
+  return promptManager;
 }

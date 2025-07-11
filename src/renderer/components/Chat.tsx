@@ -30,7 +30,9 @@ import {
   MoreVertical,
   Archive,
   Trash2,
-  Download
+  Download,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -140,8 +142,21 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
   const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
   const [chatTitle, setChatTitle] = useState('Agent Chat');
   const [titleGenerated, setTitleGenerated] = useState(false);
+  const [agentTokenUsage, setAgentTokenUsage] = useState<Map<string, TokenUsage>>(new Map());
+  const [povMode, setPovMode] = useState<{ enabled: boolean; agentId: string | null }>({ enabled: false, agentId: null });
+  const [showAgentMenu, setShowAgentMenu] = useState<string | null>(null);
+  const [lastSystemPrompt, setLastSystemPrompt] = useState<string>('');
+  const [lastRawInput, setLastRawInput] = useState<string>('');
+  const [lastRawOutput, setLastRawOutput] = useState<string>('');
+  const [rawCommunicationFlow, setRawCommunicationFlow] = useState<Array<{
+    id: string;
+    type: 'system' | 'input' | 'output';
+    content: string;
+    timestamp: Date;
+  }>>([]);
   const chatMenuRef = useRef<HTMLDivElement>(null);
   const agentsDropdownRef = useRef<HTMLDivElement>(null);
+  const agentMenuRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -185,6 +200,10 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
         // Still update active agents list for user messages
         const activeAgentIds = messageBus.activeAgents;
         setActiveAgents(agents.filter(a => activeAgentIds.includes(a.id)));
+        
+        // Update agent token usage
+        const tokenUsage = messageBus.getAllAgentsTokenUsage();
+        setAgentTokenUsage(tokenUsage);
         return;
       }
       
@@ -201,6 +220,10 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
       // Update active agents list
       const activeAgentIds = messageBus.activeAgents;
       setActiveAgents(agents.filter(a => activeAgentIds.includes(a.id)));
+      
+      // Update agent token usage
+      const tokenUsage = messageBus.getAllAgentsTokenUsage();
+      setAgentTokenUsage(tokenUsage);
     };
 
     const handleBusReset = () => {
@@ -352,6 +375,16 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
       if (agentsDropdownRef.current && !agentsDropdownRef.current.contains(event.target as Node)) {
         setShowAgentsDropdown(false);
       }
+      // Check all agent menu refs
+      let clickedInsideAgentMenu = false;
+      agentMenuRefs.current.forEach((ref) => {
+        if (ref && ref.contains(event.target as Node)) {
+          clickedInsideAgentMenu = true;
+        }
+      });
+      if (!clickedInsideAgentMenu) {
+        setShowAgentMenu(null);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -390,11 +423,19 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
         console.warn('LabRats backend not available');
         // Show warning modal instead of chat message
         setShowBackendWarning(true);
+        // If already in single-agent mode, notify prompt manager
+        if (singleAgentMode) {
+          const promptManager = getPromptManager();
+          promptManager.setSingleAgentMode(true);
+        }
       } else {
         console.log('LabRats backend is available and ready');
         setShowBackendWarning(false);
         // Reset single agent mode when backend becomes available
         setSingleAgentMode(false);
+        // Notify prompt manager that we're back to multi-agent mode
+        const promptManager = getPromptManager();
+        promptManager.setSingleAgentMode(false);
       }
     } catch (error) {
       console.error('Failed to check backend availability:', error);
@@ -420,10 +461,24 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
   const handleDismissWarning = () => {
     setShowBackendWarning(false);
   };
+  
+  const createSwitchyWelcomeMessage = (agent: Agent): Message => {
+    return {
+      id: `switchy_welcome_${Date.now()}`,
+      content: `👋 **Hi! I'm Switchy, your full-stack AI assistant.**\n\nI'm running in single-agent mode since the LabRats.AI backend is unavailable. I can help you with:\n\n🎯 **Product Strategy** - Requirements, user stories, roadmaps\n💾 **Backend Development** - APIs, databases, server logic\n🎨 **Frontend Development** - UI/UX, components, styling\n🔍 **Quality Assurance** - Testing strategies, bug fixes\n🔒 **Security** - Vulnerability analysis, best practices\n⚙️ **DevOps** - Deployment, infrastructure, CI/CD\n🏗️ **Architecture** - System design, scalability\n📝 **Documentation** - Guides, specs, explanations\n\nWhat would you like to work on today?`,
+      sender: agent,
+      timestamp: new Date(),
+      type: 'text'
+    };
+  };
 
   const handleContinueWithSingleAgent = () => {
     setSingleAgentMode(true);
     setShowBackendWarning(false);
+    
+    // Notify prompt manager about single-agent mode
+    const promptManager = getPromptManager();
+    promptManager.setSingleAgentMode(true);
     
     // Use the config agent if available, otherwise fall back to local definition
     const configSwitchy = configAgents.find(a => a.id === 'switchy');
@@ -440,14 +495,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
     setActiveAgents([agentToUse]);
     
     // Add welcome message for single-agent mode
-    const welcomeMessage: Message = {
-      id: `switchy_welcome_${Date.now()}`,
-      content: `👋 **Hi! I'm Switchy, your full-stack AI assistant.**\n\nI'm running in single-agent mode since the LabRats.AI backend is unavailable. I can help you with:\n\n🎯 **Product Strategy** - Requirements, user stories, roadmaps\n💾 **Backend Development** - APIs, databases, server logic\n🎨 **Frontend Development** - UI/UX, components, styling\n🔍 **Quality Assurance** - Testing strategies, bug fixes\n🔒 **Security** - Vulnerability analysis, best practices\n⚙️ **DevOps** - Deployment, infrastructure, CI/CD\n🏗️ **Architecture** - System design, scalability\n📝 **Documentation** - Guides, specs, explanations\n\nWhat would you like to work on today?`,
-      sender: agentToUse,
-      timestamp: new Date(),
-      type: 'text'
-    };
-    
+    const welcomeMessage = createSwitchyWelcomeMessage(agentToUse);
     setMessages(prev => [...prev, welcomeMessage]);
     
     console.log('[CHAT] Switched to single-agent mode with Switchy');
@@ -537,14 +585,55 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
       try {
         setTypingAgents(new Set(['switchy']));
         
+        // Get Switchy's full prompt from prompt manager
+        const promptManager = getPromptManager();
+        const switchyPrompt = await promptManager.getPrompt('switchy');
+        const finalSystemPrompt = switchyPrompt || `You are Switchy, a full-stack AI assistant operating in single-agent mode. You can help with product strategy, backend development, frontend development, quality assurance, security, DevOps, architecture, and documentation. Provide helpful, practical responses to user requests.`;
+        
+        // Save system prompt and raw input for POV debug view
+        setLastSystemPrompt(finalSystemPrompt);
+        setLastRawInput(currentInput);
+        
+        // Track raw communication flow for POV mode
+        const timestamp = new Date();
+        setRawCommunicationFlow(prev => [
+          ...prev,
+          {
+            id: `system_${Date.now()}`,
+            type: 'system',
+            content: `[SYSTEM PROMPT SENT]\n${finalSystemPrompt}`,
+            timestamp
+          },
+          {
+            id: `input_${Date.now() + 1}`,
+            type: 'input',
+            content: `[USER INPUT]\n${currentInput}`,
+            timestamp: new Date(timestamp.getTime() + 100)
+          }
+        ]);
+        
         // Use the LangChain chat service directly for single-agent mode
         const response = await chatService.sendMessage(currentInput, {
           providerId: currentProviderId,
           modelId: currentModelId,
-          systemPrompt: `You are Switchy, a full-stack AI assistant operating in single-agent mode. You can help with product strategy, backend development, frontend development, quality assurance, security, DevOps, architecture, and documentation. Provide helpful, practical responses to user requests.`
+          systemPrompt: finalSystemPrompt
         });
 
         if (response.success && response.message) {
+          // Save raw output for POV debug view
+          setLastRawOutput(response.message.content);
+          
+          // Add raw output to communication flow
+          setRawCommunicationFlow(prev => [
+            ...prev,
+            {
+              id: `output_${Date.now()}`,
+              type: 'output',
+              content: `[AI RESPONSE]\n${response.message?.content || ''}`,
+              timestamp: new Date()
+            }
+          ]);
+          
           const agentMessage: Message = {
             id: (Date.now() + 2).toString(),
             content: response.message.content,
@@ -609,6 +698,10 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
         // Update active agents list
         const activeAgentIds = messageBus.activeAgents;
         setActiveAgents(agents.filter(a => activeAgentIds.includes(a.id)));
+        
+        // Update agent token usage
+        const tokenUsage = messageBus.getAllAgentsTokenUsage();
+        setAgentTokenUsage(tokenUsage);
       } else {
         // Send message to bus
         await messageBus.sendUserMessage(currentInput);
@@ -759,7 +852,33 @@ To debug the message bus, open console and type: debugBus()
       baseChatService.clearConversation();
       chatService.clearSessionTokenUsage();
       messageBus.clearSessionTokenUsage();
-      setActiveAgents(agents.filter(a => a.id === 'cortex'));
+      // In single-agent mode, keep Switchy; otherwise reset to Cortex
+      if (singleAgentMode) {
+        const configSwitchy = configAgents.find(a => a.id === 'switchy');
+        const switchyAgent = configSwitchy ? {
+          id: configSwitchy.id,
+          name: configSwitchy.name,
+          role: configSwitchy.title,
+          color: 'dynamic',
+          icon: Target,
+          isActive: true,
+          specialization: ['product', 'backend', 'frontend', 'qa', 'security', 'devops', 'architecture', 'documentation']
+        } : {
+          id: 'switchy',
+          name: 'Switchy',
+          role: 'Full-Stack AI Assistant',
+          color: 'dynamic',
+          icon: Target,
+          isActive: true,
+          specialization: ['product', 'backend', 'frontend', 'qa', 'security', 'devops', 'architecture', 'documentation']
+        };
+        setActiveAgents([switchyAgent]);
+        // Add welcome message for Switchy
+        const welcomeMessage = createSwitchyWelcomeMessage(switchyAgent);
+        setMessages([welcomeMessage]);
+      } else {
+        setActiveAgents(agents.filter(a => a.id === 'cortex'));
+      }
       setIsBusActive(false);
       setAgentsPaused(false);
       setShowChatMenu(false);
@@ -792,7 +911,33 @@ To debug the message bus, open console and type: debugBus()
       baseChatService.clearConversation();
       chatService.clearSessionTokenUsage();
       messageBus.clearSessionTokenUsage();
-      setActiveAgents(agents.filter(a => a.id === 'cortex'));
+      // In single-agent mode, keep Switchy; otherwise reset to Cortex
+      if (singleAgentMode) {
+        const configSwitchy = configAgents.find(a => a.id === 'switchy');
+        const switchyAgent = configSwitchy ? {
+          id: configSwitchy.id,
+          name: configSwitchy.name,
+          role: configSwitchy.title,
+          color: 'dynamic',
+          icon: Target,
+          isActive: true,
+          specialization: ['product', 'backend', 'frontend', 'qa', 'security', 'devops', 'architecture', 'documentation']
+        } : {
+          id: 'switchy',
+          name: 'Switchy',
+          role: 'Full-Stack AI Assistant',
+          color: 'dynamic',
+          icon: Target,
+          isActive: true,
+          specialization: ['product', 'backend', 'frontend', 'qa', 'security', 'devops', 'architecture', 'documentation']
+        };
+        setActiveAgents([switchyAgent]);
+        // Add welcome message for Switchy
+        const welcomeMessage = createSwitchyWelcomeMessage(switchyAgent);
+        setMessages([welcomeMessage]);
+      } else {
+        setActiveAgents(agents.filter(a => a.id === 'cortex'));
+      }
       setIsBusActive(false);
       setAgentsPaused(false);
       setShowChatMenu(false);
@@ -919,7 +1064,17 @@ To debug the message bus, open console and type: debugBus()
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <MessageSquare className="w-5 h-5 text-blue-400" />
-            <h2 className="text-lg font-semibold text-white">{chatTitle}</h2>
+            <h2 className="text-lg font-semibold text-white">
+              {povMode.enabled && povMode.agentId ? (
+                <div className="flex items-center space-x-2">
+                  <span>{chatTitle}</span>
+                  <span className="text-sm text-gray-400">•</span>
+                  <span className="text-sm text-yellow-400">POV: {(singleAgentMode ? activeAgents : agents).find(a => a.id === povMode.agentId)?.name}</span>
+                </div>
+              ) : (
+                chatTitle
+              )}
+            </h2>
           </div>
           
           <div className="flex items-center space-x-3">
@@ -935,14 +1090,14 @@ To debug the message bus, open console and type: debugBus()
               </button>
               
               {showAgentsDropdown && activeAgents.length > 0 && (
-                <div className="absolute right-0 mt-2 w-64 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-2 z-50">
+                <div className="absolute right-0 mt-2 w-72 bg-gray-800 rounded-lg shadow-lg border border-gray-700 py-2 z-50">
                   <div className="px-3 py-1 text-xs text-gray-400 border-b border-gray-700 mb-2">
                     Active Agents ({activeAgents.length})
                   </div>
                   {activeAgents.map((agent) => {
                     const avatar = getAgentAvatar(agent);
                     return (
-                      <div key={agent.id} className="flex items-center space-x-3 px-3 py-2 hover:bg-gray-700 transition-colors">
+                      <div key={agent.id} className="flex items-center space-x-3 px-3 py-2 hover:bg-gray-700 transition-colors relative">
                         <div 
                           className="w-2 h-2 rounded-full"
                           style={{ backgroundColor: getAgentColorHex(agent) }}
@@ -959,6 +1114,56 @@ To debug the message bus, open console and type: debugBus()
                         <div className="flex-1 min-w-0">
                           <div className="text-sm text-white font-medium">{agent.name}</div>
                           <div className="text-xs text-gray-400 truncate">{agent.role}</div>
+                          {agentTokenUsage.has(agent.id) && (() => {
+                            const usage = agentTokenUsage.get(agent.id)!;
+                            return (
+                              <div className="flex items-center space-x-3 mt-1 text-xs">
+                                <div className="flex items-center space-x-1">
+                                  <ArrowUp className="w-3 h-3 text-blue-400" />
+                                  <span className="text-gray-400">{usage.promptTokens.toLocaleString()}</span>
+                                </div>
+                                <div className="flex items-center space-x-1">
+                                  <ArrowDown className="w-3 h-3 text-green-400" />
+                                  <span className="text-gray-400">{usage.completionTokens.toLocaleString()}</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        
+                        {/* Kebab menu */}
+                        <div className="relative" ref={(el) => {
+                          if (el) {
+                            agentMenuRefs.current.set(agent.id, el);
+                          }
+                        }}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowAgentMenu(showAgentMenu === agent.id ? null : agent.id);
+                            }}
+                            className="p-1 text-gray-400 hover:text-white rounded hover:bg-gray-600"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                          
+                          {showAgentMenu === agent.id && (
+                            <div className="absolute right-0 mt-1 w-48 bg-gray-700 rounded-lg shadow-lg border border-gray-600 py-1 z-50">
+                              <button
+                                onClick={() => {
+                                  setPovMode({ enabled: true, agentId: agent.id });
+                                  setShowAgentMenu(null);
+                                  setShowAgentsDropdown(false);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm text-white hover:bg-gray-600 transition-colors"
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <User className="w-4 h-4" />
+                                  <span>Enter POV Mode</span>
+                                </div>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1024,9 +1229,104 @@ To debug the message bus, open console and type: debugBus()
 
       {/* Messages */}
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 scroll-smooth">
-        {messages.map((message) => (
+        {(() => {
+          // Special handling for single-agent POV mode - show raw communication flow
+          if (singleAgentMode && povMode.enabled && povMode.agentId === 'switchy') {
+            return rawCommunicationFlow.map((flow) => {
+              const isSystem = flow.type === 'system';
+              const isInput = flow.type === 'input';
+              const isOutput = flow.type === 'output';
+              
+              return (
+                <div key={flow.id} className="w-full">
+                  {isSystem && (
+                    <div className="flex space-x-3">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
+                          <Settings className="w-4 h-4 text-white" />
+                        </div>
+                      </div>
+                      <div className="flex-1 bg-purple-900/20 border border-purple-700 rounded-lg p-4">
+                        <div className="text-xs text-purple-400 mb-1">System Prompt to LangChain</div>
+                        <pre className="text-white text-sm whitespace-pre-wrap font-mono">{flow.content}</pre>
+                        <div className="text-xs text-gray-500 mt-2">{flow.timestamp.toLocaleTimeString()}</div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {isInput && (
+                    <div className="flex space-x-3 justify-end">
+                      <div className="max-w-2xl bg-blue-600 rounded-lg p-4">
+                        <div className="text-xs text-blue-200 mb-1">Raw User Input to LangChain</div>
+                        <pre className="text-white text-sm whitespace-pre-wrap font-mono">{flow.content}</pre>
+                        <div className="text-xs text-blue-300 mt-2">{flow.timestamp.toLocaleTimeString()}</div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                          <User className="w-4 h-4 text-white" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {isOutput && (
+                    <div className="flex space-x-3">
+                      <div className="flex-shrink-0">
+                        <img 
+                          src={getAgentAvatar(activeAgents[0]) || ''} 
+                          alt="Switchy"
+                          className="w-8 h-8 rounded-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 bg-green-900/20 border border-green-700 rounded-lg p-4">
+                        <div className="text-xs text-green-400 mb-1">Raw AI Response from LangChain</div>
+                        <pre className="text-white text-sm whitespace-pre-wrap font-mono">{flow.content}</pre>
+                        <div className="text-xs text-gray-500 mt-2">{flow.timestamp.toLocaleTimeString()}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          }
+          
+          // Normal message display logic
+          let displayMessages = messages;
+          
+          if (povMode.enabled && povMode.agentId && !singleAgentMode) {
+            // Get agent's personal message history from the message bus
+            const agentHistory = messageBus.getAgentPersonalHistory ? messageBus.getAgentPersonalHistory(povMode.agentId) : [];
+            
+            // Convert bus messages to display messages
+            displayMessages = messages.filter(msg => {
+              // Show messages in agent's personal history OR messages from the agent themselves
+              const isInHistory = agentHistory.some(busMsg => busMsg.id === msg.id);
+              const isFromAgent = msg.sender !== 'user' && (msg.sender as Agent).id === povMode.agentId;
+              return isInHistory || isFromAgent;
+            });
+            
+            // If no personal history yet, show a message
+            if (displayMessages.length === 0) {
+              return (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center text-gray-400">
+                    <User className="w-12 h-12 mx-auto mb-4" />
+                    <p className="text-lg">{(singleAgentMode ? activeAgents : agents).find(a => a.id === povMode.agentId)?.name} hasn't seen any messages yet</p>
+                    <p className="text-sm mt-2">They will only see messages when they decide to participate</p>
+                  </div>
+                </div>
+              );
+            }
+          }
+          
+          return displayMessages.map((message) => {
+          const isUser = message.sender === 'user';
+          const isPovAgent = povMode.enabled && povMode.agentId && message.sender !== 'user' && (message.sender as Agent).id === povMode.agentId;
+          const shouldShowOnRight = isUser || isPovAgent;
+          
+          return (
           <div key={message.id} className="w-full">
-            {message.sender === 'user' ? (
+            {shouldShowOnRight ? (
               // User messages - keep existing style with max width
               <div className="flex space-x-3 justify-end group">
                 <div className="max-w-2xl bg-blue-600 rounded-lg p-4 relative">
@@ -1040,7 +1340,19 @@ To debug the message bus, open console and type: debugBus()
                   </button>
                 </div>
                 <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
+                  {isPovAgent ? (
+                    (() => {
+                      const agent = message.sender as Agent;
+                      const avatar = getAgentAvatar(agent);
+                      return avatar ? (
+                        <img src={avatar} alt={agent.name} className="w-8 h-8 rounded-full object-cover" />
+                      ) : (
+                        <agent.icon className="w-4 h-4 text-white" />
+                      );
+                    })()
+                  ) : (
+                    <User className="w-4 h-4 text-white" />
+                  )}
                 </div>
               </div>
             ) : (
@@ -1118,13 +1430,129 @@ To debug the message bus, open console and type: debugBus()
               </div>
             )}
           </div>
-        ))}
+          );
+        });
+        })()}
         
         <div ref={messagesEndRef} className="h-1" />
       </div>
 
-      {/* Input */}
+      {/* Input or POV Info Panel */}
       <div className="p-4 border-t border-gray-700 bg-gray-800 flex-shrink-0">
+        {povMode.enabled && povMode.agentId ? (
+          // POV Mode Info Panel
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white flex items-center space-x-2">
+                {(() => {
+                  // In single-agent mode, check Switchy
+                  const agent = singleAgentMode && povMode.agentId === 'switchy' 
+                    ? activeAgents.find(a => a.id === 'switchy')
+                    : agents.find(a => a.id === povMode.agentId);
+                  if (!agent) return null;
+                  const avatar = getAgentAvatar(agent);
+                  return (
+                    <>
+                      {avatar ? (
+                        <img src={avatar} alt={agent.name} className="w-6 h-6 rounded-full" />
+                      ) : (
+                        <agent.icon className="w-6 h-6" style={{ color: getAgentColorHex(agent) }} />
+                      )}
+                      <span>{agent.name}'s Perspective</span>
+                    </>
+                  );
+                })()}
+              </h3>
+              <button
+                onClick={() => setPovMode({ enabled: false, agentId: null })}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm transition-colors"
+              >
+                Exit POV Mode
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              {(() => {
+                // In single-agent mode, check active agents
+                const agent = singleAgentMode && povMode.agentId === 'switchy'
+                  ? activeAgents.find(a => a.id === 'switchy')
+                  : agents.find(a => a.id === povMode.agentId);
+                const agentContext = messageBus.getAgentContext ? messageBus.getAgentContext(povMode.agentId) : null;
+                const tokenUsage = singleAgentMode 
+                  ? sessionTokenUsage // In single-agent mode, use session totals
+                  : agentTokenUsage.get(povMode.agentId);
+                
+                return (
+                  <>
+                    <div className="bg-gray-700 p-3 rounded-lg">
+                      <div className="text-gray-400 mb-1">Role</div>
+                      <div className="text-white">{agent?.role}</div>
+                    </div>
+                    
+                    <div className="bg-gray-700 p-3 rounded-lg">
+                      <div className="text-gray-400 mb-1">Session ID</div>
+                      <div className="text-white text-xs font-mono truncate" title={agentContext?.sessionId}>
+                        {agentContext?.sessionId || 'N/A'}
+                      </div>
+                    </div>
+                    
+                    <div className="bg-gray-700 p-3 rounded-lg">
+                      <div className="text-gray-400 mb-1">Current Action</div>
+                      <div className="text-white">{agentContext?.currentAction || 'N/A'}</div>
+                    </div>
+                    
+                    <div className="bg-gray-700 p-3 rounded-lg">
+                      <div className="text-gray-400 mb-1">Token Usage</div>
+                      <div className="flex items-center space-x-3 text-white">
+                        <div className="flex items-center space-x-1">
+                          <ArrowUp className="w-3 h-3 text-blue-400" />
+                          <span>{tokenUsage?.promptTokens.toLocaleString() || 0}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <ArrowDown className="w-3 h-3 text-green-400" />
+                          <span>{tokenUsage?.completionTokens.toLocaleString() || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-gray-700 p-3 rounded-lg">
+                      <div className="text-gray-400 mb-1">Messages Seen</div>
+                      <div className="text-white">
+                        {messageBus.getAgentPersonalHistory ? messageBus.getAgentPersonalHistory(povMode.agentId).length : 0}
+                      </div>
+                    </div>
+                    
+                    <div className="bg-gray-700 p-3 rounded-lg">
+                      <div className="text-gray-400 mb-1">Last Response</div>
+                      <div className="text-white">
+                        {agentContext?.lastResponseTime 
+                          ? new Date(agentContext.lastResponseTime).toLocaleTimeString() 
+                          : 'No response yet'}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            
+            <div className="text-center text-gray-400 text-sm">
+              {singleAgentMode && povMode.agentId === 'switchy' ? (
+                <>
+                  <p>You are viewing the raw LangChain communication flow.</p>
+                  <p className="mt-1">This shows exactly what is sent to and received from the AI service.</p>
+                  <p className="mt-1 text-xs">Purple = System Prompt | Blue = User Input | Green = AI Response</p>
+                </>
+              ) : (
+                <>
+                  <p>You are viewing the conversation from {(singleAgentMode ? activeAgents : agents).find(a => a.id === povMode.agentId)?.name}'s perspective.</p>
+                  <p className="mt-1">They only see messages when they decide to participate.</p>
+                  <p className="mt-1 text-xs">Their messages appear on the right side like yours would.</p>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
         {/* Multiple Typing Indicators */}
         {typingAgents.size > 0 && (
           <div className="mb-3 space-y-2">
@@ -1269,7 +1697,8 @@ To debug the message bus, open console and type: debugBus()
             )}
           </div>
         </div>
-
+        </>
+        )}
       </div>
 
       {/* Backend Warning Modal */}

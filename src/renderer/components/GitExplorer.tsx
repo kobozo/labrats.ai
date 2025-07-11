@@ -32,7 +32,7 @@ import { GitStatus, GitFileStatus, GitDiff } from '../types/electron';
 import { getFileIconInfo } from '../utils/fileIcons';
 import { stateManager } from '../../services/state-manager';
 import { gitMonitor, GitMonitorState } from '../../services/git-monitor';
-import { PromptManager } from '../../services/prompt-manager';
+import { getPromptManager } from '../../services/prompt-manager';
 
 interface GitExplorerProps {
   currentFolder: string | null;
@@ -519,7 +519,7 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
     setIsGeneratingCommitMessage(true);
     try {
       // Initialize prompt manager
-      const promptManager = new PromptManager();
+      const promptManager = getPromptManager();
 
       // Get the diff for staged files
       const diffs = await Promise.all(

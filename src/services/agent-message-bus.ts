@@ -55,6 +55,10 @@ export interface AgentContext {
   currentAction: AgentAction; // Track agent's current state
   metadata?: AgentMetadata; // Additional context and waiting dependencies
   promptInitialized?: boolean; // Track if agent has received full prompt
+  tokenUsage?: TokenUsage; // Track token usage for this agent
+  lastSystemPrompt?: string; // Last system prompt sent to agent
+  lastContext?: string; // Last context sent to agent
+  lastRawResponse?: string; // Last raw response from agent (including internal thoughts)
 }
 
 export interface MessageBusOptions {
@@ -78,6 +82,7 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private queueProcessing = false; // Flag to prevent concurrent queue processing
   private conversationGoals: string[] = []; // Track defined goals for this conversation
   private goalsEstablished = false; // Whether Cortex has defined the goals yet
+  private conversationId: string = ''; // Unique ID for this conversation
 
   constructor(options: MessageBusOptions = {}) {
     super();
@@ -92,6 +97,10 @@ export class AgentMessageBus extends BrowserEventEmitter {
 
     console.log(`[AGENT-BUS] Starting message bus with: "${initialMessage}"`);
     
+    // Generate unique conversation ID
+    this.conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log(`[AGENT-BUS] New conversation ID: ${this.conversationId}`);
+    
     // Reset and initialize LabRats backend with latest configuration
     resetLabRatsBackend();
     try {
@@ -101,6 +110,9 @@ export class AgentMessageBus extends BrowserEventEmitter {
       if (!backend.available) {
         throw new Error('LabRats backend is not available. Please check your backend configuration in Settings and ensure the backend service is running.');
       }
+      
+      // Clean up old conversations periodically
+      backend.cleanupOldConversations();
     } catch (error) {
       console.error('[AGENT-BUS] LabRats backend not available:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -116,7 +128,7 @@ export class AgentMessageBus extends BrowserEventEmitter {
     this.goalsEstablished = false; // Reset goals flag
     
     // Initialize Cortex as the primary coordinator
-    this.createAgentContext('cortex');
+    await this.createAgentContext('cortex');
     
     // NOTE: Ziggy and Scratchy will be created only when they decide to join
     // through the AI decision process, not automatically
@@ -279,7 +291,7 @@ export class AgentMessageBus extends BrowserEventEmitter {
     // First, activate any mentioned agents
     for (const mentionedId of triggerMessage.mentions) {
       if (agents.find(a => a.id === mentionedId)) {
-        this.createAgentContext(mentionedId);
+        await this.createAgentContext(mentionedId);
         console.log(`[AGENT-BUS] Activated agent ${mentionedId} due to mention`);
       }
     }
@@ -423,7 +435,7 @@ export class AgentMessageBus extends BrowserEventEmitter {
       const aiDecision = await this.aiDecisionToRespond(agentId, triggerMessage);
       if (aiDecision) {
         console.log(`[AGENT-BUS] Observer agent ${agentId} decided to join - creating context`);
-        this.createAgentContext(agentId);
+        await this.createAgentContext(agentId);
         context = this.agentContexts.get(agentId)!;
       } else {
         console.log(`[AGENT-BUS] Observer agent ${agentId} decided not to join`);
@@ -640,10 +652,15 @@ export class AgentMessageBus extends BrowserEventEmitter {
 You were invited, so you should join if you can help. But still be selective about when to actually respond.`;
         }
         
+        // Get agent persona for better decision making
+        const agentPersona = await this.promptManager.getPrompt(agentId);
+        
         const decisionResponse = await labRatsBackend.shouldAgentRespond({
+          conversationId: this.conversationId,
           agentId,
           agentName: agent.name,
           agentTitle: agent.title + observerGuidance,
+          agentPersona,
           message: triggerMessage.content,
           messageAuthor: triggerMessage.author,
           conversationContext: contextStr,
@@ -926,9 +943,16 @@ Respond with structured output containing: message, action, involve (array), met
       
       const agentContext = this.buildAgentSpecificContext(agentId, responseType, triggerMessage);
       
+      // Store the prompt and context for POV mode
+      context.lastSystemPrompt = systemPrompt;
+      context.lastContext = agentContext;
+      
       const response = await this.callAgentWithIsolatedSession(agentId, agentContext, systemPrompt);
       
       if (response.success && response.message) {
+        // Store raw response for POV mode
+        context.lastRawResponse = response.message.content;
+        
         // Get structured response if available
         const structured = (response.message as any).structuredResponse || {
           message: response.message.content,
@@ -944,25 +968,25 @@ Respond with structured output containing: message, action, involve (array), met
           timestamp: new Date(),
           mentions: this.extractMentions(response.message.content),
           messageType: 'agent',
-          sessionId: context.sessionId,
+          sessionId: context!.sessionId,
           action: structured.action,
           involve: structured.involve || [],
           metadata: structured.metadata
         };
 
         // Update agent's last response time and current action
-        context.lastResponseTime = new Date();
-        context.currentAction = structured.action;
+        context!.lastResponseTime = new Date();
+        context!.currentAction = structured.action;
         
         // Update agent's metadata
         if (structured.metadata) {
-          context.metadata = { ...context.metadata, ...structured.metadata };
+          context!.metadata = { ...context!.metadata, ...structured.metadata };
         }
         
         // Activate any newly mentioned agents
         for (const mentionedId of agentMessage.mentions) {
           if (agents.find(a => a.id === mentionedId)) {
-            this.createAgentContext(mentionedId);
+            await this.createAgentContext(mentionedId);
           }
         }
         
@@ -981,7 +1005,7 @@ Respond with structured output containing: message, action, involve (array), met
             console.log(`[AGENT-BUS] Agent ${agentId} wants to involve: ${agentInvolve.join(', ')}`);
             for (const involveId of agentInvolve) {
               if (agents.find(a => a.id === involveId)) {
-                this.createAgentContext(involveId);
+                await this.createAgentContext(involveId);
                 // Add them to mentions so they get notified
                 if (!agentMessage.mentions.includes(involveId)) {
                   agentMessage.mentions.push(involveId);
@@ -1067,9 +1091,16 @@ Respond with structured output containing: message, action, involve (array), met
       
       const agentContext = this.buildAgentSpecificContextFromSnapshot(agentId, responseType, triggerMessage, contextSnapshot);
       
+      // Store the prompt and context for POV mode
+      context.lastSystemPrompt = systemPrompt;
+      context.lastContext = agentContext;
+      
       const response = await this.callAgentWithIsolatedSession(agentId, agentContext, systemPrompt);
       
       if (response.success && response.message) {
+        // Store raw response for POV mode
+        context.lastRawResponse = response.message.content;
+        
         // Get structured response if available
         const structured = (response.message as any).structuredResponse || {
           message: response.message.content,
@@ -1085,23 +1116,23 @@ Respond with structured output containing: message, action, involve (array), met
           timestamp: new Date(),
           mentions: this.extractMentions(response.message.content),
           messageType: 'agent',
-          sessionId: context.sessionId,
+          sessionId: context!.sessionId,
           action: structured.action,
           involve: structured.involve,
           metadata: structured.metadata
         };
 
         // Update context
-        context.lastResponseTime = new Date();
-        context.currentAction = structured.action;
-        context.metadata = structured.metadata;
+        context!.lastResponseTime = new Date();
+        context!.currentAction = structured.action;
+        context!.metadata = structured.metadata;
         
         // Check if agent wants to involve labrats (user) - automatically convert to wait_for_user
         if (structured.involve && structured.involve.includes('labrats')) {
           console.log(`[AGENT-BUS] Agent ${agentId} mentioned @labrats - converting to wait_for_user action`);
           structured.action = 'wait_for_user';
           agentMessage.action = 'wait_for_user';
-          context.currentAction = 'wait_for_user';
+          context!.currentAction = 'wait_for_user';
         }
 
         // Activate agents specified in the "involve" field (excluding labrats since it's the user)
@@ -1111,7 +1142,7 @@ Respond with structured output containing: message, action, involve (array), met
             console.log(`[AGENT-BUS] Agent ${agentId} wants to involve: ${agentInvolve.join(', ')}`);
             for (const involveId of agentInvolve) {
               if (agents.find(a => a.id === involveId)) {
-                this.createAgentContext(involveId);
+                await this.createAgentContext(involveId);
                 // Add them to mentions so they get notified
                 if (!agentMessage.mentions.includes(involveId)) {
                   agentMessage.mentions.push(involveId);
@@ -1687,7 +1718,7 @@ START YOUR REVIEW NOW!`;
     return (hasCollaborativeContent || hasDeliveryPromise || hasQuestion) && !isSimpleAcknowledgment;
   }
 
-  private createAgentContext(agentId: string): void {
+  private async createAgentContext(agentId: string): Promise<void> {
     // Always create a fresh context with new session ID for each chat session
     const context: AgentContext = {
       agentId,
@@ -1696,11 +1727,27 @@ START YOUR REVIEW NOW!`;
       personalMessageHistory: [],
       lastResponseTime: null,
       currentAction: 'open', // Default state
-      metadata: {} // Initialize metadata object
+      metadata: {}, // Initialize metadata object
+      tokenUsage: { completionTokens: 0, promptTokens: 0, totalTokens: 0 } // Initialize token usage
     };
 
     this.agentContexts.set(agentId, context);
     console.log(`[AGENT-BUS] Created context for agent ${agentId} with session ${context.sessionId}`);
+    
+    // Initialize conversation in backend with agent persona
+    try {
+      const agent = agents.find(a => a.id === agentId);
+      if (agent) {
+        const backend = getLabRatsBackend();
+        if (backend.available) {
+          const agentPrompt = await this.promptManager.getPrompt(agentId);
+          await backend.initializeConversation(this.conversationId, agentId, agentPrompt);
+          console.log(`[AGENT-BUS] Initialized backend conversation for ${agentId}`);
+        }
+      }
+    } catch (error) {
+      console.error(`[AGENT-BUS] Error initializing backend conversation for ${agentId}:`, error);
+    }
   }
 
   private async callAgentForDecision(agentId: string, prompt: string): Promise<{ success: boolean; content?: string }> {
@@ -1820,6 +1867,14 @@ START YOUR REVIEW NOW!`;
                 this.sessionTokenUsage.promptTokens += tokenUsage.promptTokens;
                 this.sessionTokenUsage.totalTokens += tokenUsage.totalTokens;
                 
+                // Update agent-specific token usage
+                const agentContext = this.agentContexts.get(agentId);
+                if (agentContext && agentContext.tokenUsage) {
+                  agentContext.tokenUsage.completionTokens += tokenUsage.completionTokens;
+                  agentContext.tokenUsage.promptTokens += tokenUsage.promptTokens;
+                  agentContext.tokenUsage.totalTokens += tokenUsage.totalTokens;
+                }
+                
                 console.log(`[AGENT-BUS-TOKEN] Agent ${agentId}: ${tokenUsage.promptTokens} prompt + ${tokenUsage.completionTokens} completion = ${tokenUsage.totalTokens} total`);
                 console.log(`[AGENT-BUS-TOKEN] Bus session total: ${this.sessionTokenUsage.totalTokens} tokens`);
               }
@@ -1852,6 +1907,14 @@ START YOUR REVIEW NOW!`;
                 this.sessionTokenUsage.promptTokens += tokenUsage.promptTokens;
                 this.sessionTokenUsage.totalTokens += tokenUsage.totalTokens;
                 
+                // Update agent-specific token usage
+                const agentContext = this.agentContexts.get(agentId);
+                if (agentContext && agentContext.tokenUsage) {
+                  agentContext.tokenUsage.completionTokens += tokenUsage.completionTokens;
+                  agentContext.tokenUsage.promptTokens += tokenUsage.promptTokens;
+                  agentContext.tokenUsage.totalTokens += tokenUsage.totalTokens;
+                }
+                
                 console.log(`[AGENT-BUS-TOKEN] Agent ${agentId}: ${tokenUsage.promptTokens} prompt + ${tokenUsage.completionTokens} completion = ${tokenUsage.totalTokens} total`);
                 console.log(`[AGENT-BUS-TOKEN] Bus session total: ${this.sessionTokenUsage.totalTokens} tokens`);
               }
@@ -1880,7 +1943,7 @@ START YOUR REVIEW NOW!`;
       }
       
       // Create structured output model
-      const structuredModel = chatModel.withStructuredOutput(agentResponseSchema, {
+      const structuredModel = chatModel.withStructuredOutput(agentResponseSchema as any, {
         name: "agent_response",
         method: defaultConfig.providerId === 'openai' ? 'json_mode' : 'function_calling'
       });
@@ -2271,6 +2334,31 @@ START YOUR REVIEW NOW!`;
     return Array.from(this.agentContexts.entries())
       .filter(([_, context]) => context.isActive)
       .map(([agentId, _]) => agentId);
+  }
+
+  getAgentTokenUsage(agentId: string): TokenUsage | undefined {
+    const context = this.agentContexts.get(agentId);
+    return context?.tokenUsage ? { ...context.tokenUsage } : undefined;
+  }
+
+  getAllAgentsTokenUsage(): Map<string, TokenUsage> {
+    const tokenUsageMap = new Map<string, TokenUsage>();
+    for (const [agentId, context] of this.agentContexts.entries()) {
+      if (context.tokenUsage) {
+        tokenUsageMap.set(agentId, { ...context.tokenUsage });
+      }
+    }
+    return tokenUsageMap;
+  }
+
+  getAgentContext(agentId: string): AgentContext | undefined {
+    const context = this.agentContexts.get(agentId);
+    return context ? { ...context } : undefined;
+  }
+
+  getAgentPersonalHistory(agentId: string): BusMessage[] {
+    const context = this.agentContexts.get(agentId);
+    return context ? [...context.personalMessageHistory] : [];
   }
 
   getGlobalHistory(): BusMessage[] {

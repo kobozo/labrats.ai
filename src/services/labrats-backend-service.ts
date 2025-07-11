@@ -1,7 +1,9 @@
 export interface DecisionRequest {
+  conversationId: string;
   agentId: string;
   agentName: string;
   agentTitle: string;
+  agentPersona?: string;
   message: string;
   messageAuthor: string;
   conversationContext: string;
@@ -15,6 +17,9 @@ export interface DecisionResponse {
   error?: string;
 }
 
+// Import the decision prompt template
+import agentDecisionPrompt from '../prompts/agent-decision.prompt';
+
 export class LabRatsBackendService {
   private backendUrl: string;
   private model: string;
@@ -22,6 +27,7 @@ export class LabRatsBackendService {
   private isAvailable: boolean = false;
   private statusListeners: Set<(isOnline: boolean) => void> = new Set();
   private statusCheckInterval: NodeJS.Timeout | null = null;
+  private conversationStates: Map<string, Map<string, any>> = new Map();
 
   constructor(backendUrl?: string, model?: string, timeout?: number) {
     // Default values or from config
@@ -66,21 +72,50 @@ export class LabRatsBackendService {
     }
   }
 
+  async initializeConversation(conversationId: string, agentId: string, persona: string): Promise<void> {
+    if (!this.conversationStates.has(conversationId)) {
+      this.conversationStates.set(conversationId, new Map());
+    }
+    
+    const conversation = this.conversationStates.get(conversationId)!;
+    conversation.set(agentId, {
+      persona,
+      decisionHistory: [],
+      lastDecisionTime: null
+    });
+    
+    console.log(`[LABRATS-BACKEND] Initialized conversation ${conversationId} for agent ${agentId}`);
+  }
+
   async shouldAgentRespond(request: DecisionRequest): Promise<DecisionResponse> {
-    console.log(`[LABRATS-BACKEND-DECISION] 🤔 Making decision for agent ${request.agentName} on message: "${request.message.substring(0, 50)}..."`);
+    console.log(`[LABRATS-BACKEND-DECISION] Making decision for ${request.agentName} in conversation ${request.conversationId}`);
     
     if (!this.isAvailable) {
-      console.log(`[LABRATS-BACKEND-DECISION] ❌ Backend not available for ${request.agentName} decision`);
+      console.log(`[LABRATS-BACKEND-DECISION] Backend not available for ${request.agentName} decision`);
       return {
         success: false,
-        shouldRespond: false, // No fallback - backend must be available
+        shouldRespond: false,
         error: 'LabRats backend not available - cannot make agent decisions'
       };
     }
 
+    // Initialize conversation if needed
+    if (!this.conversationStates.has(request.conversationId)) {
+      this.conversationStates.set(request.conversationId, new Map());
+    }
+    
+    const conversation = this.conversationStates.get(request.conversationId)!;
+    if (!conversation.has(request.agentId) && request.agentPersona) {
+      conversation.set(request.agentId, {
+        persona: request.agentPersona,
+        decisionHistory: [],
+        lastDecisionTime: null
+      });
+    }
+
     try {
       const decisionPrompt = this.buildDecisionPrompt(request);
-      console.log(`[LABRATS-BACKEND-DECISION] 📤 Sending decision request to backend for ${request.agentName}`);
+      console.log(`[LABRATS-BACKEND-DECISION] Sending decision request to backend for ${request.agentName}`);
       
       const response = await fetch(`${this.backendUrl}/api/generate`, {
         method: 'POST',
@@ -109,7 +144,24 @@ export class LabRatsBackendService {
       // Parse the response - look for YES/NO
       const shouldRespond = responseText.includes('yes') || responseText.startsWith('y');
       
-      console.log(`[LABRATS-BACKEND-DECISION] 📥 Backend decision for ${request.agentName}: ${shouldRespond ? 'YES' : 'NO'} (raw: "${responseText}")`);
+      // Store decision history
+      const agentState = conversation.get(request.agentId);
+      if (agentState) {
+        agentState.decisionHistory.push({
+          timestamp: Date.now(),
+          message: request.message,
+          decision: shouldRespond,
+          reasoning: responseText
+        });
+        agentState.lastDecisionTime = Date.now();
+        
+        // Keep only last 10 decisions per agent
+        if (agentState.decisionHistory.length > 10) {
+          agentState.decisionHistory.shift();
+        }
+      }
+      
+      console.log(`[LABRATS-BACKEND-DECISION] Backend decision for ${request.agentName}: ${shouldRespond ? 'YES' : 'NO'} (raw: "${responseText}")`);
       
       return {
         success: true,
@@ -128,32 +180,25 @@ export class LabRatsBackendService {
   }
 
   private buildDecisionPrompt(request: DecisionRequest): string {
-    return `You are a decision system determining if an AI agent should respond to a team message.
-
-AGENT: ${request.agentName} (${request.agentTitle})
-MESSAGE: "${request.message}"
-AUTHOR: ${request.messageAuthor}
-
-DECISION RULES:
-1. RESPOND "YES" ONLY IF:
-   - Agent is directly mentioned (@${request.agentId})
-   - Message specifically requires their expertise
-   - User asks for introductions AND agent hasn't introduced themselves yet
-   - There's actual work that needs their specific skills
-
-2. RESPOND "NO" IF:
-   - Simple greetings or social messages
-   - Other agents already handled the request
-   - Agent has nothing meaningful to contribute
-   - Would just be participating to participate
-
-RECENT CONTEXT:
-${request.conversationContext}
-
-AGENT'S RECENT ACTIVITY:
-${request.agentRecentMessages || 'None'}
-
-Decision (respond ONLY with "YES" or "NO"):`;
+    // Use the agent-decision.prompt template with variable substitution
+    let prompt = agentDecisionPrompt;
+    
+    // Replace template variables
+    prompt = prompt.replace('${agentName}', request.agentName);
+    prompt = prompt.replace('${agentTitle}', request.agentTitle);
+    prompt = prompt.replace('${messageAuthor}', request.messageAuthor);
+    prompt = prompt.replace('${message}', request.message);
+    prompt = prompt.replace('${conversationContext}', request.conversationContext);
+    prompt = prompt.replace('${agentRecentMessages}', request.agentRecentMessages || 'None');
+    
+    // If we have the agent's persona stored, include it for better context
+    const conversation = this.conversationStates.get(request.conversationId);
+    const agentState = conversation?.get(request.agentId);
+    if (agentState?.persona) {
+      prompt = `AGENT PERSONA:\n${agentState.persona}\n\n${prompt}`;
+    }
+    
+    return prompt;
   }
 
   get available(): boolean {
@@ -162,6 +207,32 @@ Decision (respond ONLY with "YES" or "NO"):`;
 
   async ensureAvailable(): Promise<void> {
     await this.checkAvailability();
+  }
+
+  // Clean up old conversation states (older than 24 hours)
+  cleanupOldConversations(): void {
+    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    
+    for (const [conversationId, agents] of this.conversationStates.entries()) {
+      let hasRecentActivity = false;
+      
+      for (const agentState of agents.values()) {
+        if (agentState.lastDecisionTime && agentState.lastDecisionTime > oneDayAgo) {
+          hasRecentActivity = true;
+          break;
+        }
+      }
+      
+      if (!hasRecentActivity) {
+        this.conversationStates.delete(conversationId);
+        console.log(`[LABRATS-BACKEND] Cleaned up old conversation: ${conversationId}`);
+      }
+    }
+  }
+
+  // Get conversation state for debugging
+  getConversationState(conversationId: string): Map<string, any> | undefined {
+    return this.conversationStates.get(conversationId);
   }
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {

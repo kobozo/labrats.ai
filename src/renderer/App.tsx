@@ -28,7 +28,9 @@ import {
   User,
   Crown,
   Folder,
-  Terminal
+  Terminal,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import './App.css';
 
@@ -542,17 +544,18 @@ function App() {
             {tokenUsage.totalTokens > 0 ? (
               <>
                 <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  <ArrowUp className="w-3 h-3 text-blue-400" />
                   <span>{tokenUsage.promptTokens.toLocaleString()} sent</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  <ArrowDown className="w-3 h-3 text-green-400" />
                   <span>{tokenUsage.completionTokens.toLocaleString()} received</span>
                 </div>
               </>
             ) : (
               <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                <ArrowUp className="w-3 h-3 text-gray-400" />
+                <ArrowDown className="w-3 h-3 text-gray-400" />
                 <span>No tokens used</span>
               </div>
             )}

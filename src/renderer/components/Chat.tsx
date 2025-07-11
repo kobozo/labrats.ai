@@ -46,6 +46,7 @@ import { getAgentMessageBus, BusMessage } from '../../services/agent-message-bus
 import { chatHistoryManager } from '../../services/chat-history-manager-renderer';
 import { MentionAutocomplete } from './MentionAutocomplete';
 import { getLabRatsBackend } from '../../services/labrats-backend-service';
+import { RichTextInput, RichTextInputRef } from './RichTextInput';
 
 interface Agent {
   id: string;
@@ -159,7 +160,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
   const agentMenuRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<RichTextInputRef>(null);
   const chatService = getLangChainChatService();
   const providerManager = getAIProviderManager();
   const baseChatService = getChatService();
@@ -741,21 +742,17 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    const cursorPos = e.target.selectionStart || 0;
-    
+  const handleInputChange = (value: string) => {
     setInputValue(value);
-    setCursorPosition(cursorPos);
     
     // Check if we should show mention autocomplete
-    const textBeforeCursor = value.substring(0, cursorPos);
-    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+    const lastAtIndex = value.lastIndexOf('@');
     
     if (lastAtIndex !== -1) {
-      const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1);
-      if (!textAfterAt.includes(' ')) {
+      const textAfterAt = value.substring(lastAtIndex + 1);
+      if (!textAfterAt.includes(' ') && !textAfterAt.includes('\n')) {
         setShowMentionAutocomplete(true);
+        setCursorPosition(lastAtIndex + textAfterAt.length + 1);
       } else {
         setShowMentionAutocomplete(false);
       }
@@ -771,7 +768,7 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
     inputRef.current?.focus();
   };
 
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
     if (showMentionAutocomplete && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) {
       // Let the MentionAutocomplete component handle these keys
       return;
@@ -1327,32 +1324,46 @@ To debug the message bus, open console and type: debugBus()
           return (
           <div key={message.id} className="w-full">
             {shouldShowOnRight ? (
-              // User messages - keep existing style with max width
-              <div className="flex space-x-3 justify-end group">
-                <div className="max-w-2xl bg-blue-600 rounded-lg p-4 relative">
-                  <p className="text-white text-sm leading-relaxed">{message.content}</p>
+              // User messages - now with full width and styled markdown
+              <div className="w-full bg-blue-600 rounded-lg p-4 group">
+                <div className="flex items-center space-x-3 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-blue-700 flex items-center justify-center flex-shrink-0">
+                    {isPovAgent ? (
+                      (() => {
+                        const agent = message.sender as Agent;
+                        const avatar = getAgentAvatar(agent);
+                        return avatar ? (
+                          <img src={avatar} alt={agent.name} className="w-8 h-8 rounded-full object-cover" />
+                        ) : (
+                          <agent.icon className="w-4 h-4 text-white" />
+                        );
+                      })()
+                    ) : (
+                      <User className="w-4 h-4 text-white" />
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-2 flex-1">
+                    <span className="font-medium text-white">
+                      {isPovAgent ? (message.sender as Agent).name : 'You'}
+                    </span>
+                    <span className="text-xs text-blue-200">
+                      {message.timestamp.toLocaleTimeString()}
+                    </span>
+                  </div>
                   <button
                     onClick={() => copyMessage(message)}
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 text-blue-200 hover:text-white transition-all"
+                    className="opacity-0 group-hover:opacity-100 p-1 text-blue-200 hover:text-white transition-all"
                     title="Copy message"
                   >
-                    {copiedMessageId === message.id ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                    {copiedMessageId === message.id ? <Check className="w-3 h-3 text-green-300" /> : <Copy className="w-3 h-3" />}
                   </button>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-                  {isPovAgent ? (
-                    (() => {
-                      const agent = message.sender as Agent;
-                      const avatar = getAgentAvatar(agent);
-                      return avatar ? (
-                        <img src={avatar} alt={agent.name} className="w-8 h-8 rounded-full object-cover" />
-                      ) : (
-                        <agent.icon className="w-4 h-4 text-white" />
-                      );
-                    })()
-                  ) : (
-                    <User className="w-4 h-4 text-white" />
-                  )}
+                
+                <div className="pl-11">
+                  <div 
+                    className="text-white text-sm leading-relaxed markdown-content user-message"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
+                  />
                 </div>
               </div>
             ) : (
@@ -1535,6 +1546,43 @@ To debug the message bus, open console and type: debugBus()
               })()}
             </div>
             
+            {/* Raw Communication Details for Multi-Agent Mode */}
+            {(() => {
+              const agentContext = messageBus.getAgentContext ? messageBus.getAgentContext(povMode.agentId) : null;
+              return !singleAgentMode && agentContext && (agentContext.lastSystemPrompt || agentContext.lastContext || agentContext.lastRawResponse) ? (
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-300">Raw Communication (Last Exchange)</h4>
+                
+                {agentContext.lastSystemPrompt && (
+                  <div className="bg-purple-900/20 border border-purple-700/50 rounded-lg p-3">
+                    <div className="text-xs text-purple-400 mb-1">System Prompt</div>
+                    <div className="text-xs text-gray-300 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
+                      {agentContext.lastSystemPrompt}
+                    </div>
+                  </div>
+                )}
+                
+                {agentContext.lastContext && (
+                  <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3">
+                    <div className="text-xs text-blue-400 mb-1">Input Context</div>
+                    <div className="text-xs text-gray-300 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
+                      {agentContext.lastContext}
+                    </div>
+                  </div>
+                )}
+                
+                {agentContext.lastRawResponse && (
+                  <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3">
+                    <div className="text-xs text-green-400 mb-1">Raw Response</div>
+                    <div className="text-xs text-gray-300 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
+                      {agentContext.lastRawResponse}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null;
+            })()}
+            
             <div className="text-center text-gray-400 text-sm">
               {singleAgentMode && povMode.agentId === 'switchy' ? (
                 <>
@@ -1611,14 +1659,13 @@ To debug the message bus, open console and type: debugBus()
         
         <form onSubmit={handleSend} className="flex space-x-3 relative">
           <div className="flex-1 relative">
-            <input
+            <RichTextInput
               ref={inputRef}
-              type="text"
               value={inputValue}
               onChange={handleInputChange}
+              onSubmit={() => handleSend({ preventDefault: () => {} } as React.FormEvent)}
               onKeyDown={handleInputKeyDown}
               placeholder="Describe what you want to build... (Use @agent to mention team members)"
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             {showMentionAutocomplete && (
               <MentionAutocomplete
@@ -1771,6 +1818,67 @@ To debug the message bus, open console and type: debugBus()
           </div>
         </div>
       )}
+      
+      <style>{`
+        /* User message markdown styling */
+        .markdown-content.user-message {
+          color: white;
+        }
+        
+        .markdown-content.user-message strong {
+          color: white;
+          font-weight: 700;
+        }
+        
+        .markdown-content.user-message em {
+          color: white;
+          opacity: 0.95;
+        }
+        
+        .markdown-content.user-message code {
+          color: #bfdbfe;
+          background-color: rgba(30, 58, 138, 0.5);
+          padding: 0.125rem 0.25rem;
+          border-radius: 0.25rem;
+        }
+        
+        .markdown-content.user-message pre {
+          background-color: rgba(30, 58, 138, 0.5);
+          border: 1px solid rgba(147, 197, 253, 0.3);
+          color: white;
+        }
+        
+        .markdown-content.user-message pre code {
+          background-color: transparent;
+          color: white;
+        }
+        
+        .markdown-content.user-message h1,
+        .markdown-content.user-message h2,
+        .markdown-content.user-message h3 {
+          color: white;
+          font-weight: 700;
+        }
+        
+        .markdown-content.user-message ul,
+        .markdown-content.user-message ol {
+          color: white;
+        }
+        
+        .markdown-content.user-message blockquote {
+          border-left-color: rgba(147, 197, 253, 0.5);
+          color: rgba(255, 255, 255, 0.9);
+        }
+        
+        .markdown-content.user-message a {
+          color: #bfdbfe;
+          text-decoration: underline;
+        }
+        
+        .markdown-content.user-message a:hover {
+          color: #dbeafe;
+        }
+      `}</style>
     </div>
   );
 };

@@ -82,6 +82,8 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private queueProcessing = false; // Flag to prevent concurrent queue processing
   private conversationGoals: string[] = []; // Track defined goals for this conversation
   private goalsEstablished = false; // Whether Cortex has defined the goals yet
+  private loopDetection: Map<string, { lastContent: string; count: number; lastTimestamp: number }> = new Map();
+  private failedAgents: Set<string> = new Set(); // Track agents that have failed
   private conversationId: string = ''; // Unique ID for this conversation
 
   constructor(options: MessageBusOptions = {}) {
@@ -149,6 +151,24 @@ export class AgentMessageBus extends BrowserEventEmitter {
   async publishMessage(message: BusMessage): Promise<void> {
     if (!this.busActive) {
       throw new Error('Message bus is not active');
+    }
+    
+    // Check for loop detection on agent messages
+    if (message.messageType === 'agent' && message.author !== 'user') {
+      const isLoop = this.detectLoop(message.author, message.content);
+      if (isLoop) {
+        console.log(`[AGENT-BUS] Loop detected for ${message.author} - modifying response`);
+        // Modify Cortex's response if it's in a loop
+        if (message.author === 'cortex') {
+          message.content = `I notice I'm repeating myself. Let me refocus on what needs to be done next.\n\nLooking at our conversation, it seems we need to move forward with concrete implementation steps. Let me check with the team on their progress.`;
+          message.action = 'open';
+          message.involve = ['patchy', 'shiny']; // Involve dev agents to break the loop
+        } else {
+          // For other agents, skip publishing if looping
+          console.log(`[AGENT-BUS] Skipping message from ${message.author} due to loop detection`);
+          return;
+        }
+      }
     }
 
     console.log(`[AGENT-BUS] Publishing message from ${message.author}: "${message.content.substring(0, 50)}..."`);
@@ -1048,6 +1068,14 @@ Respond with structured output containing: message, action, involve (array), met
       }
     } catch (error) {
       console.error(`[AGENT-BUS] Error invoking agent ${agentId}:`, error);
+      // Add agent to failed set
+      this.failedAgents.add(agentId);
+      console.log(`[AGENT-BUS] Added ${agentId} to failed agents set`);
+      
+      // Notify Cortex if this was a mentioned agent
+      if (responseType === 'mentioned' && agentId !== 'cortex') {
+        await this.notifyCortexOfFailedAgent(agentId, triggerMessage);
+      }
     }
   }
 
@@ -1055,6 +1083,12 @@ Respond with structured output containing: message, action, involve (array), met
     // Don't invoke agents if they're paused
     if (!this.agentsActive) {
       console.log(`[AGENT-BUS] Skipping agent ${agentId} invocation - agents are paused`);
+      return;
+    }
+    
+    // Skip if agent has failed
+    if (this.failedAgents.has(agentId)) {
+      console.log(`[AGENT-BUS] Skipping agent ${agentId} - previously failed`);
       return;
     }
     
@@ -1185,7 +1219,32 @@ Respond with structured output containing: message, action, involve (array), met
       }
     } catch (error) {
       console.error(`[AGENT-BUS] Error invoking agent ${agentId}:`, error);
+      // Add agent to failed set
+      this.failedAgents.add(agentId);
+      console.log(`[AGENT-BUS] Added ${agentId} to failed agents set`);
+      
+      // Notify Cortex if this was a mentioned agent
+      if (responseType === 'mentioned' && agentId !== 'cortex') {
+        await this.notifyCortexOfFailedAgent(agentId, triggerMessage);
+      }
     }
+  }
+
+  private async notifyCortexOfFailedAgent(failedAgentId: string, originalMessage: BusMessage): Promise<void> {
+    const failedAgent = agents.find(a => a.id === failedAgentId);
+    if (!failedAgent) return;
+    
+    // Create a system message for Cortex
+    const systemMessage: BusMessage = {
+      id: this.generateId(),
+      content: `⚠️ ${failedAgent.name} failed to respond when mentioned. They may be experiencing technical issues. Please proceed without them or assign their tasks to another team member.`,
+      author: 'system',
+      timestamp: new Date(),
+      mentions: ['cortex'],
+      messageType: 'system'
+    };
+    
+    await this.publishMessage(systemMessage);
   }
 
   private buildAgentSpecificContext(agentId: string, responseType: 'mentioned' | 'natural', triggerMessage: BusMessage): string {
@@ -1986,6 +2045,64 @@ START YOUR REVIEW NOW!`;
     }
   }
 
+  private detectLoop(agentId: string, content: string): boolean {
+    const detection = this.loopDetection.get(agentId);
+    const now = Date.now();
+    
+    // Clean content for comparison (remove whitespace variations)
+    const cleanContent = content.trim().toLowerCase().replace(/\s+/g, ' ');
+    
+    if (detection) {
+      // Check if content is similar to last message
+      const similarity = this.calculateSimilarity(detection.lastContent, cleanContent);
+      
+      // If very similar and within 2 minutes
+      if (similarity > 0.85 && (now - detection.lastTimestamp) < 120000) {
+        detection.count++;
+        detection.lastTimestamp = now;
+        
+        // If repeated 3+ times, it's a loop
+        if (detection.count >= 3) {
+          console.log(`[AGENT-BUS] Loop detected for ${agentId} - repeated ${detection.count} times`);
+          return true;
+        }
+      } else {
+        // Reset if different content
+        detection.lastContent = cleanContent;
+        detection.count = 1;
+        detection.lastTimestamp = now;
+      }
+    } else {
+      // First time seeing this agent
+      this.loopDetection.set(agentId, {
+        lastContent: cleanContent,
+        count: 1,
+        lastTimestamp: now
+      });
+    }
+    
+    return false;
+  }
+  
+  private calculateSimilarity(str1: string, str2: string): number {
+    // Simple Jaccard similarity
+    const set1 = new Set(str1.split(' '));
+    const set2 = new Set(str2.split(' '));
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    return intersection.size / union.size;
+  }
+  
+  private isGroupChat(): boolean {
+    // Count unique agents who have participated (excluding user)
+    const participatingAgents = new Set(
+      this.globalMessageHistory
+        .filter(msg => msg.author !== 'user')
+        .map(msg => msg.author)
+    );
+    return participatingAgents.size > 1;
+  }
+
   private extractMentions(content: string): string[] {
     const mentionRegex = /@(\w+)/g;
     const mentions: string[] = [];
@@ -2284,6 +2401,12 @@ START YOUR REVIEW NOW!`;
 
   private async handleConversationStall(): Promise<void> {
     if (!this.busActive) return;
+    
+    // Check if this is a group chat
+    if (!this.isGroupChat()) {
+      console.log('[AGENT-BUS] 1-on-1 conversation detected - skipping stall nudging');
+      return;
+    }
     
     const cortexContext = this.agentContexts.get('cortex');
     if (!cortexContext || !cortexContext.isActive) {

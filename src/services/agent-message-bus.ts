@@ -160,9 +160,39 @@ export class AgentMessageBus extends BrowserEventEmitter {
         console.log(`[AGENT-BUS] Loop detected for ${message.author} - modifying response`);
         // Modify Cortex's response if it's in a loop
         if (message.author === 'cortex') {
-          message.content = `I notice I'm repeating myself. Let me refocus on what needs to be done next.\n\nLooking at our conversation, it seems we need to move forward with concrete implementation steps. Let me check with the team on their progress.`;
+          // Determine which agents to involve based on the conversation context
+          const userRequest = this.globalMessageHistory.find(msg => msg.author === 'user')?.content.toLowerCase() || '';
+          let agentsToInvolve: string[] = [];
+          let taskDescription = '';
+          
+          // Analyze the user's request to determine appropriate agents
+          if (userRequest.includes('game') || userRequest.includes('snake')) {
+            agentsToInvolve = ['patchy', 'shiny'];
+            taskDescription = 'start implementing the game';
+          } else if (userRequest.includes('api') || userRequest.includes('backend')) {
+            agentsToInvolve = ['patchy'];
+            taskDescription = 'implement the backend functionality';
+          } else if (userRequest.includes('ui') || userRequest.includes('frontend') || userRequest.includes('design')) {
+            agentsToInvolve = ['shiny', 'sketchy'];
+            taskDescription = 'work on the UI implementation';
+          } else if (userRequest.includes('test')) {
+            agentsToInvolve = ['sniffy'];
+            taskDescription = 'set up the testing framework';
+          } else if (userRequest.includes('deploy') || userRequest.includes('docker')) {
+            agentsToInvolve = ['wheelie'];
+            taskDescription = 'handle the deployment setup';
+          } else {
+            // Default to dev agents for general implementation
+            agentsToInvolve = ['patchy', 'shiny'];
+            taskDescription = 'start the implementation';
+          }
+          
+          // Build the mention string
+          const mentions = agentsToInvolve.map(id => `@${id}`).join(' and ');
+          
+          message.content = `I notice I'm repeating myself. Let me refocus on concrete next steps.\n\nBased on our discussion, ${mentions} - can you ${taskDescription}? Please share your implementation approach and any initial code.`;
           message.action = 'open';
-          message.involve = ['patchy', 'shiny']; // Involve dev agents to break the loop
+          message.involve = agentsToInvolve;
         } else {
           // For other agents, skip publishing if looping
           console.log(`[AGENT-BUS] Skipping message from ${message.author} due to loop detection`);
@@ -2466,7 +2496,7 @@ START YOUR REVIEW NOW!`;
       // Original stall behavior for incomplete goals
       stallMessage = {
         id: this.generateId(),
-        content: 'SYSTEM: Conversation has stalled. Please analyze the last messages and nudge the appropriate agent or user to continue progress. What should happen next?',
+        content: 'SYSTEM: Conversation has stalled. Please analyze the last messages and identify SPECIFIC agents to continue progress. You MUST mention agents by name using @agentname to move the conversation forward. Which specific agent should handle the next step?',
         author: 'system',
         timestamp: new Date(),
         mentions: ['cortex'],

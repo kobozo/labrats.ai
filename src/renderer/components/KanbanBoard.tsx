@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch } from 'lucide-react';
+import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow } from 'lucide-react';
 import { Task, WorkflowStage } from '../../types/kanban';
 import { workflowStages } from '../../config/workflow-stages';
 import { kanbanService } from '../../services/kanban-service';
+import { WorkflowVisualization } from './WorkflowVisualization';
 
 
 const mockTasks: Task[] = [
@@ -75,6 +76,7 @@ const mockTasks: Task[] = [
 export const KanbanBoard: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>(mockTasks);
   const [isLoading, setIsLoading] = useState(false);
+  const [showWorkflow, setShowWorkflow] = useState(false);
   const boardId = 'main-board'; // For now, using a single board
 
   // Load tasks on component mount
@@ -129,8 +131,19 @@ export const KanbanBoard: React.FC = () => {
   return (
     <div className="flex-1 bg-gray-900 p-6 overflow-y-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-2">LabRats Workflow Board</h1>
-        <p className="text-gray-400">9-stage pipeline from idea to retrospective</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white mb-2">LabRats Workflow Board</h1>
+            <p className="text-gray-400">9-stage pipeline from idea to retrospective</p>
+          </div>
+          <button
+            onClick={() => setShowWorkflow(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg transition-colors"
+          >
+            <Workflow className="w-4 h-4" />
+            <span>View Workflow</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 h-full overflow-x-auto">
@@ -211,6 +224,10 @@ export const KanbanBoard: React.FC = () => {
           </div>
         ))}
       </div>
+      
+      {showWorkflow && (
+        <WorkflowVisualization onClose={() => setShowWorkflow(false)} />
+      )}
     </div>
   );
 };

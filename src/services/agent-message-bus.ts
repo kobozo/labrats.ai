@@ -2052,18 +2052,50 @@ START YOUR REVIEW NOW!`;
     // Clean content for comparison (remove whitespace variations)
     const cleanContent = content.trim().toLowerCase().replace(/\s+/g, ' ');
     
+    // Special handling for Cortex - more aggressive loop detection
+    if (agentId === 'cortex') {
+      // Check for common repetitive patterns
+      const loopPhrases = [
+        'let\'s define',
+        'to move forward',
+        'to proceed',
+        'let\'s set clear goals',
+        'what do you think',
+        'what specific',
+        'consider outlining',
+        'we need to outline',
+        'please share'
+      ];
+      
+      const hasLoopPhrase = loopPhrases.some(phrase => cleanContent.includes(phrase));
+      
+      if (detection && hasLoopPhrase) {
+        // For Cortex, if we see similar phrases within 5 minutes, count it
+        if ((now - detection.lastTimestamp) < 300000) { // 5 minutes
+          detection.count++;
+          detection.lastTimestamp = now;
+          
+          // After 2 similar messages, it's a loop for Cortex
+          if (detection.count >= 2) {
+            console.log(`[AGENT-BUS] Loop detected for Cortex - repeated pattern ${detection.count} times`);
+            return true;
+          }
+        }
+      }
+    }
+    
     if (detection) {
       // Check if content is similar to last message
       const similarity = this.calculateSimilarity(detection.lastContent, cleanContent);
       
-      // If very similar and within 2 minutes
-      if (similarity > 0.85 && (now - detection.lastTimestamp) < 120000) {
+      // Lower threshold for all agents (was 0.85, now 0.65)
+      if (similarity > 0.65 && (now - detection.lastTimestamp) < 120000) {
         detection.count++;
         detection.lastTimestamp = now;
         
         // If repeated 3+ times, it's a loop
         if (detection.count >= 3) {
-          console.log(`[AGENT-BUS] Loop detected for ${agentId} - repeated ${detection.count} times`);
+          console.log(`[AGENT-BUS] Loop detected for ${agentId} - repeated ${detection.count} times with ${Math.round(similarity * 100)}% similarity`);
           return true;
         }
       } else {

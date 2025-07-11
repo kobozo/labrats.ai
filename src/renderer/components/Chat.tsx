@@ -1227,9 +1227,54 @@ To debug the message bus, open console and type: debugBus()
       {/* Messages */}
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 scroll-smooth">
         {(() => {
-          // Special handling for single-agent POV mode - show raw communication flow
-          if (singleAgentMode && povMode.enabled && povMode.agentId === 'switchy') {
-            return rawCommunicationFlow.map((flow) => {
+          // Special handling for POV mode - show raw communication flow
+          if (povMode.enabled && povMode.agentId && (singleAgentMode || !singleAgentMode)) {
+            // For multi-agent mode, create a flow from agent context
+            let flowToRender = rawCommunicationFlow;
+            
+            if (!singleAgentMode) {
+              // Build flow from agent context
+              const agentContext = messageBus.getAgentContext ? messageBus.getAgentContext(povMode.agentId) : null;
+              flowToRender = [];
+              
+              if (agentContext) {
+                // Add system prompt if available
+                if (agentContext.lastSystemPrompt) {
+                  flowToRender.push({
+                    id: `${povMode.agentId}-prompt`,
+                    type: 'system',
+                    content: agentContext.lastSystemPrompt,
+                    timestamp: new Date()
+                  });
+                }
+                
+                // Add context/input if available
+                if (agentContext.lastContext) {
+                  flowToRender.push({
+                    id: `${povMode.agentId}-context`,
+                    type: 'input',
+                    content: agentContext.lastContext,
+                    timestamp: new Date()
+                  });
+                }
+                
+                // Add raw response if available
+                if (agentContext.lastRawResponse) {
+                  flowToRender.push({
+                    id: `${povMode.agentId}-response`,
+                    type: 'output',
+                    content: agentContext.lastRawResponse,
+                    timestamp: new Date()
+                  });
+                }
+              }
+            }
+            
+            // If single-agent mode but not Switchy, return normal messages
+            if (singleAgentMode && povMode.agentId !== 'switchy') {
+              // Fall through to normal message display
+            } else if (flowToRender.length > 0) {
+              return flowToRender.map((flow) => {
               const isSystem = flow.type === 'system';
               const isInput = flow.type === 'input';
               const isOutput = flow.type === 'output';
@@ -1269,11 +1314,23 @@ To debug the message bus, open console and type: debugBus()
                   {isOutput && (
                     <div className="flex space-x-3">
                       <div className="flex-shrink-0">
-                        <img 
-                          src={getAgentAvatar(activeAgents[0]) || ''} 
-                          alt="Switchy"
-                          className="w-8 h-8 rounded-full object-cover"
-                        />
+                        {(() => {
+                          const agent = singleAgentMode 
+                            ? activeAgents[0] 
+                            : agents.find(a => a.id === povMode.agentId);
+                          const avatar = agent ? getAgentAvatar(agent) : null;
+                          return avatar ? (
+                            <img 
+                              src={avatar} 
+                              alt={agent?.name || 'Agent'}
+                              className="w-8 h-8 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
+                              <Bot className="w-4 h-4 text-white" />
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="flex-1 bg-green-900/20 border border-green-700 rounded-lg p-4">
                         <div className="text-xs text-green-400 mb-1">Raw AI Response from LangChain</div>
@@ -1285,6 +1342,18 @@ To debug the message bus, open console and type: debugBus()
                 </div>
               );
             });
+            } else if (!singleAgentMode && flowToRender.length === 0) {
+              // No raw communication yet for this agent
+              return (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center text-gray-400">
+                    <Bot className="w-12 h-12 mx-auto mb-4" />
+                    <p className="text-lg">{agents.find(a => a.id === povMode.agentId)?.name} hasn't been invoked yet</p>
+                    <p className="text-sm mt-2">Raw communication will appear here when they respond</p>
+                  </div>
+                </div>
+              );
+            }
           }
           
           // Normal message display logic
@@ -1546,57 +1615,13 @@ To debug the message bus, open console and type: debugBus()
               })()}
             </div>
             
-            {/* Raw Communication Details for Multi-Agent Mode */}
-            {(() => {
-              const agentContext = messageBus.getAgentContext ? messageBus.getAgentContext(povMode.agentId) : null;
-              return !singleAgentMode && agentContext && (agentContext.lastSystemPrompt || agentContext.lastContext || agentContext.lastRawResponse) ? (
-              <div className="space-y-3">
-                <h4 className="text-sm font-semibold text-gray-300">Raw Communication (Last Exchange)</h4>
-                
-                {agentContext.lastSystemPrompt && (
-                  <div className="bg-purple-900/20 border border-purple-700/50 rounded-lg p-3">
-                    <div className="text-xs text-purple-400 mb-1">System Prompt</div>
-                    <div className="text-xs text-gray-300 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
-                      {agentContext.lastSystemPrompt}
-                    </div>
-                  </div>
-                )}
-                
-                {agentContext.lastContext && (
-                  <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3">
-                    <div className="text-xs text-blue-400 mb-1">Input Context</div>
-                    <div className="text-xs text-gray-300 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
-                      {agentContext.lastContext}
-                    </div>
-                  </div>
-                )}
-                
-                {agentContext.lastRawResponse && (
-                  <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-3">
-                    <div className="text-xs text-green-400 mb-1">Raw Response</div>
-                    <div className="text-xs text-gray-300 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
-                      {agentContext.lastRawResponse}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : null;
-            })()}
             
             <div className="text-center text-gray-400 text-sm">
-              {singleAgentMode && povMode.agentId === 'switchy' ? (
-                <>
-                  <p>You are viewing the raw LangChain communication flow.</p>
-                  <p className="mt-1">This shows exactly what is sent to and received from the AI service.</p>
-                  <p className="mt-1 text-xs">Purple = System Prompt | Blue = User Input | Green = AI Response</p>
-                </>
-              ) : (
-                <>
-                  <p>You are viewing the conversation from {(singleAgentMode ? activeAgents : agents).find(a => a.id === povMode.agentId)?.name}'s perspective.</p>
-                  <p className="mt-1">They only see messages when they decide to participate.</p>
-                  <p className="mt-1 text-xs">Their messages appear on the right side like yours would.</p>
-                </>
-              )}
+              <>
+                <p>You are viewing the raw LangChain communication flow for {(singleAgentMode ? activeAgents : agents).find(a => a.id === povMode.agentId)?.name}.</p>
+                <p className="mt-1">This shows exactly what is sent to and received from the AI service.</p>
+                <p className="mt-1 text-xs">Purple = System Prompt | Blue = User Input | Green = AI Response</p>
+              </>
             </div>
           </div>
         ) : (

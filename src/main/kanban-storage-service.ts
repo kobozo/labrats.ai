@@ -16,6 +16,7 @@ export class KanbanStorageService {
 
   // Board operations
   async getBoard(boardId: string): Promise<Board | null> {
+    await this.ensureDirectories();
     try {
       const boardPath = path.join(this.boardsPath, 'boards.json');
       const data = await fs.readFile(boardPath, 'utf8');
@@ -52,6 +53,7 @@ export class KanbanStorageService {
   }
 
   async getTasks(boardId: string): Promise<Task[]> {
+    await this.ensureDirectories();
     try {
       const tasksPath = path.join(this.boardsPath, 'tasks', `${boardId}.json`);
       const data = await fs.readFile(tasksPath, 'utf8');

@@ -21,10 +21,10 @@ interface WorkflowVisualizationProps {
   onClose: () => void;
 }
 
-const nodeWidth = 300;
-const nodeHeight = 160;
-const horizontalSpacing = 380;
-const verticalSpacing = 220;
+const nodeWidth = 200;
+const nodeHeight = 120;
+const horizontalSpacing = 280;
+const verticalSpacing = 180;
 
 // Custom node component
 const WorkflowNode = ({ data }: { data: any }) => {
@@ -37,13 +37,23 @@ const WorkflowNode = ({ data }: { data: any }) => {
         '--node-border': data.borderColor,
       } as React.CSSProperties}
     >
-      <Handle type="target" position={Position.Left} style={{ background: '#6b7280' }} />
+      <Handle 
+        type="target" 
+        position={Position.Left} 
+        style={{ background: '#6b7280', left: -8 }} 
+        id="target"
+      />
       <div className="workflow-node-title">{data.title}</div>
       <div className="workflow-node-rats">{data.rats}</div>
       {data.parallel && (
         <div className="workflow-node-parallel">{data.parallel}</div>
       )}
-      <Handle type="source" position={Position.Right} style={{ background: '#6b7280' }} />
+      <Handle 
+        type="source" 
+        position={Position.Right} 
+        style={{ background: '#6b7280', right: -8 }} 
+        id="source"
+      />
     </div>
   );
 };
@@ -54,19 +64,18 @@ const nodeTypes = {
 
 export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ onClose }) => {
   const nodes = useMemo<Node[]>(() => {
+    // Create a horizontal layout
     return workflowStages.map((stage, index) => {
-      const column = index % 3;
-      const row = Math.floor(index / 3);
-      
       const colors = getStageColors(stage.color);
+      
+      // Position nodes horizontally with some vertical offset for visual interest
+      const x = index * horizontalSpacing;
+      const y = index % 2 === 0 ? 0 : verticalSpacing * 0.5; // Zigzag pattern
       
       return {
         id: stage.id,
         type: 'workflow',
-        position: {
-          x: column * horizontalSpacing,
-          y: row * verticalSpacing,
-        },
+        position: { x, y },
         data: {
           title: stage.title,
           rats: stage.primaryRats.join(', '),
@@ -125,7 +134,7 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
               id: `return-${stage.id}-${targetStage}`,
               source: stage.id,
               target: targetStage,
-              type: 'smoothstep',
+              type: 'step',
               animated: false,
               style: {
                 stroke: '#ef4444',
@@ -189,7 +198,13 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
           fitView
           attributionPosition="bottom-left"
           proOptions={{ hideAttribution: true }}
-          defaultViewport={{ x: 50, y: 50, zoom: 0.75 }}
+          nodesDraggable={false}
+          edgesFocusable={false}
+          elementsSelectable={false}
+          panOnScroll={true}
+          preventScrolling={false}
+          defaultViewport={{ x: 50, y: 100, zoom: 0.8 }}
+          fitViewOptions={{ padding: 0.2 }}
         >
           <Background color="#374151" gap={20} />
           <Controls className="bg-gray-800 border-gray-700" />

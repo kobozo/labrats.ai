@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { Task, WorkflowStage } from '../../types/kanban';
 import { kanbanService } from '../../services/kanban-service';
+import { agents } from '../../config/agents';
 
 interface CreateTaskDialogProps {
   initialStatus: WorkflowStage;
@@ -18,7 +19,15 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   const [description, setDescription] = useState('');
   const [type, setType] = useState<Task['type']>('task');
   const [priority, setPriority] = useState<Task['priority']>('medium');
-  const [assignee, setAssignee] = useState('');
+  const [assignee, setAssignee] = useState('LabRats');
+  
+  // Get available assignees (all agents except Switchy, plus LabRats user)
+  const availableAssignees = [
+    { id: 'LabRats', name: 'LabRats (User)' },
+    ...agents
+      .filter(agent => agent.id !== 'switchy')
+      .map(agent => ({ id: agent.name, name: agent.name }))
+  ];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +38,7 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
       description,
       type,
       priority,
-      assignee: assignee || 'Unassigned',
+      assignee,
       status: initialStatus,
     };
     
@@ -115,13 +124,18 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
               <label className="block text-sm font-medium text-gray-300 mb-1">
                 Assignee
               </label>
-              <input
-                type="text"
+              <select
                 value={assignee}
                 onChange={(e) => setAssignee(e.target.value)}
-                placeholder="Enter assignee name"
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
-              />
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
+                required
+              >
+                {availableAssignees.map(option => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           

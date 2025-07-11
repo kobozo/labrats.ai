@@ -40,7 +40,7 @@ class KanbanService {
       id,
       title,
       description: '',
-      assignee: '',
+      assignee: 'LabRats',
       priority: 'medium',
       type: 'task',
       status: 'backlog',

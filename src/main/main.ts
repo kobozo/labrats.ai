@@ -5,6 +5,13 @@ import * as os from 'os';
 import Store from 'electron-store';
 import { ConfigManager } from './config';
 import { GitService } from './gitService';
+import { TerminalService } from './terminalService';
+import { LABRATS_CONFIG_DIR } from './constants';
+import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
+import { getAIProviderManager } from '../services/ai-provider-manager';
+import { chatHistoryManager } from './chat-history-manager';
+
+app.name = 'LabRats.AI';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -29,25 +36,76 @@ interface WindowState {
 // write any files into it. While `electron-store` will also create the
 // directory lazily, doing it explicitly keeps our behaviour clear and
 // avoids relying on implementation details.
-const labratsConfigDir = path.join(os.homedir(), '.labrats');
-if (!fs.existsSync(labratsConfigDir)) {
-  fs.mkdirSync(labratsConfigDir, { recursive: true });
+if (!fs.existsSync(LABRATS_CONFIG_DIR)) {
+  fs.mkdirSync(LABRATS_CONFIG_DIR, { recursive: true });
 }
 
-const store: any = new Store({
-  cwd: labratsConfigDir,
-  name: 'projects',
-  defaults: {
-    recentProjects: [] as RecentProject[],
-    windowStates: [] as WindowState[],
-    lastActiveWindows: [] as string[]
+/**
+ * Safely initialize electron-store with automatic backup and recovery
+ * for corrupted JSON files
+ */
+function createSafeStore(): any {
+  const storeConfig = {
+    cwd: LABRATS_CONFIG_DIR,
+    name: 'projects',
+    defaults: {
+      recentProjects: [] as RecentProject[],
+      windowStates: [] as WindowState[],
+      lastActiveWindows: [] as string[],
+      projectStates: {} as { [key: string]: any }
+    }
+  };
+
+  try {
+    return new Store(storeConfig);
+  } catch (error) {
+    console.error('Failed to load projects.json, attempting recovery:', error);
+    
+    const projectsJsonPath = path.join(LABRATS_CONFIG_DIR, 'projects.json');
+    
+    // Check if the file exists and is corrupted
+    if (fs.existsSync(projectsJsonPath)) {
+      try {
+        // Create backup with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupPath = path.join(LABRATS_CONFIG_DIR, `projects.backup.${timestamp}.json`);
+        
+        console.log(`Backing up corrupted projects.json to: ${backupPath}`);
+        fs.copyFileSync(projectsJsonPath, backupPath);
+        
+        // Remove corrupted file
+        fs.unlinkSync(projectsJsonPath);
+        console.log('Removed corrupted projects.json file');
+        
+        // Create fresh store
+        console.log('Creating fresh projects.json with default values');
+        return new Store(storeConfig);
+        
+      } catch (backupError) {
+        console.error('Failed to backup corrupted file:', backupError);
+        // Even if backup fails, try to remove the corrupted file and start fresh
+        try {
+          fs.unlinkSync(projectsJsonPath);
+          return new Store(storeConfig);
+        } catch (removeError) {
+          console.error('Failed to remove corrupted file:', removeError);
+          throw new Error('Could not recover from corrupted projects.json file');
+        }
+      }
+    } else {
+      // File doesn't exist, which is fine - electron-store will create it
+      return new Store(storeConfig);
+    }
   }
-});
+}
+
+const store: any = createSafeStore();
 
 const windows = new Map<number, BrowserWindow>();
 const windowProjects = new Map<number, string>();
 const configManager = new ConfigManager();
 const gitServices = new Map<number, GitService>();
+const terminalService = TerminalService.getInstance();
 
 function createWindow(projectPath?: string, windowState?: WindowState): BrowserWindow {
   const defaultBounds = {
@@ -82,14 +140,7 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
     updateRecentProjects(projectPath);
     
     // Initialize git service for this window
-    const gitService = new GitService();
-    gitService.initializeRepo(projectPath).then(success => {
-      console.log(`Git initialization for ${projectPath}: ${success}`);
-      if (success) {
-        console.log(`Git repo root: ${gitService.getCurrentRepo()}`);
-      }
-    });
-    gitServices.set(window.id, gitService);
+    initializeGitServiceForWindow(window.id, projectPath);
   }
 
   if (isDev) {
@@ -125,6 +176,38 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
   });
 
   return window;
+}
+
+// Initialize git service for a window
+async function initializeGitServiceForWindow(windowId: number, projectPath: string): Promise<void> {
+  console.log(`Initializing git service for window ${windowId} with path: ${projectPath}`);
+  const gitService = new GitService();
+  
+  // Store the service immediately so it's available for IPC calls
+  gitServices.set(windowId, gitService);
+  
+  try {
+    const success = await gitService.initializeRepo(projectPath);
+    console.log(`Git initialization for ${projectPath}: ${success}`);
+    if (success) {
+      console.log(`Git repo root: ${gitService.getCurrentRepo()}`);
+      
+      // Test if git is actually working
+      const status = await gitService.getStatus();
+      console.log(`Git test - status result:`, status ? 'Got status' : 'No status');
+      if (status) {
+        console.log(`Git test - files count: ${status.files.length}, branch: ${status.current}`);
+      }
+    } else {
+      console.log(`Git initialization failed for ${projectPath} - not a git repository or git not found`);
+      // Remove the service if initialization failed
+      gitServices.delete(windowId);
+    }
+  } catch (error) {
+    console.error(`Git initialization error for ${projectPath}:`, error);
+    // Remove the service if initialization failed
+    gitServices.delete(windowId);
+  }
 }
 
 function updateRecentProjects(projectPath: string): void {
@@ -198,6 +281,10 @@ function createMenu(window?: BrowserWindow): void {
               const projectPath = result.filePaths[0];
               targetWindow.webContents.send('folder-opened', projectPath);
               windowProjects.set(targetWindow.id, projectPath);
+              
+              // Initialize or update git service for this window
+              initializeGitServiceForWindow(targetWindow.id, projectPath);
+              
               updateRecentProjects(projectPath);
               saveOpenWindows();
             }
@@ -323,6 +410,10 @@ function updateRecentProjectsMenu(): void {
           if (focusedWindow) {
             focusedWindow.webContents.send('folder-opened', project.path);
             windowProjects.set(focusedWindow.id, project.path);
+            
+            // Initialize or update git service for this window
+            initializeGitServiceForWindow(focusedWindow.id, project.path);
+            
             updateRecentProjects(project.path);
             saveOpenWindows();
           } else {
@@ -360,6 +451,9 @@ ipcMain.handle('open-folder', async (event) => {
     if (requestingWindow) {
       requestingWindow.webContents.send('folder-opened', projectPath);
       windowProjects.set(requestingWindow.id, projectPath);
+      
+      // Initialize or update git service for this window
+      initializeGitServiceForWindow(requestingWindow.id, projectPath);
     }
 
     updateRecentProjects(projectPath);
@@ -379,6 +473,28 @@ ipcMain.handle('remove-recent-project', async (event, projectPath: string) => {
   store.set('recentProjects', filtered);
   updateRecentProjectsMenu();
   return filtered;
+});
+
+// Project state management handlers
+ipcMain.handle('get-project-state', async (event, key: string) => {
+  const projectStates = store.get('projectStates', {}) as { [key: string]: any };
+  return projectStates[key] || null;
+});
+
+ipcMain.handle('set-project-state', async (event, key: string, value: any) => {
+  const projectStates = store.get('projectStates', {}) as { [key: string]: any };
+  if (value === null) {
+    delete projectStates[key];
+  } else {
+    projectStates[key] = value;
+  }
+  store.set('projectStates', projectStates);
+  return true;
+});
+
+ipcMain.handle('get-all-project-states', async () => {
+  const projectStates = store.get('projectStates', {}) as { [key: string]: any };
+  return Object.values(projectStates);
 });
 
 ipcMain.handle('read-directory', async (event, dirPath: string) => {
@@ -465,6 +581,61 @@ ipcMain.handle('get-env', async (event, key: string) => {
   return process.env[key];
 });
 
+// System API handlers
+ipcMain.handle('open-external', async (event, url: string) => {
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to open external URL:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// File search handler
+ipcMain.handle('search-files', async (event, rootPath: string, query: string, limit: number = 20) => {
+  const results: Array<{ name: string; path: string; type: 'file' | 'directory' }> = [];
+
+  const searchRecursive = async (dir: string) => {
+    try {
+      const items = await fs.promises.readdir(dir, { withFileTypes: true });
+      
+      for (const item of items) {
+        if (results.length >= limit) break;
+        
+        // Skip hidden files and common ignore patterns
+        if (item.name.startsWith('.') || 
+            item.name === 'node_modules' || 
+            item.name === 'dist' || 
+            item.name === '.git') {
+          continue;
+        }
+        
+        const fullPath = path.join(dir, item.name);
+        
+        // Check if name matches query (case-insensitive) or show all if query is empty
+        if (!query || item.name.toLowerCase().includes(query.toLowerCase())) {
+          results.push({
+            name: item.name,
+            path: fullPath,
+            type: item.isDirectory() ? 'directory' : 'file'
+          });
+        }
+        
+        // Recursively search directories
+        if (item.isDirectory() && results.length < limit) {
+          await searchRecursive(fullPath);
+        }
+      }
+    } catch (error) {
+      console.error('Error searching directory:', dir, error);
+    }
+  };
+  
+  await searchRecursive(rootPath);
+  return results;
+});
+
 // Config IPC handlers
 ipcMain.handle('get-config', async (event, key?: string, property?: string) => {
   if (key && property) {
@@ -492,43 +663,189 @@ ipcMain.handle('get-config-path', async () => {
   return configManager.getConfigPath();
 });
 
-// Git IPC handlers
-ipcMain.handle('git-get-status', async (event) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return null;
-  
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return null;
-  
-  return await gitService.getStatus();
+ipcMain.handle('get-config-dir', async () => {
+  return LABRATS_CONFIG_DIR;
 });
 
-ipcMain.handle('git-get-diff', async (event, filePath: string, staged: boolean = false) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return null;
+// Prompt file handlers
+ipcMain.handle('prompt-read', async (event, agentId: string) => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    const promptPath = path.join(promptsDir, `${agentId}.prompt`);
+    
+    if (fs.existsSync(promptPath)) {
+      return fs.readFileSync(promptPath, 'utf-8');
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`Failed to read prompt for ${agentId}:`, error);
+    return null;
+  }
+});
+
+ipcMain.handle('prompt-write', async (event, agentId: string, content: string) => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    
+    // Ensure prompts directory exists
+    if (!fs.existsSync(promptsDir)) {
+      fs.mkdirSync(promptsDir, { recursive: true });
+    }
+    
+    const promptPath = path.join(promptsDir, `${agentId}.prompt`);
+    fs.writeFileSync(promptPath, content, 'utf-8');
+    
+    return true;
+  } catch (error) {
+    console.error(`Failed to write prompt for ${agentId}:`, error);
+    return false;
+  }
+});
+
+ipcMain.handle('prompt-delete', async (event, agentId: string) => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    const promptPath = path.join(promptsDir, `${agentId}.prompt`);
+    
+    if (fs.existsSync(promptPath)) {
+      fs.unlinkSync(promptPath);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error(`Failed to delete prompt for ${agentId}:`, error);
+    return false;
+  }
+});
+
+ipcMain.handle('prompt-exists', async (event, agentId: string) => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    const promptPath = path.join(promptsDir, `${agentId}.prompt`);
+    
+    return fs.existsSync(promptPath);
+  } catch (error) {
+    console.error(`Failed to check prompt existence for ${agentId}:`, error);
+    return false;
+  }
+});
+
+ipcMain.handle('prompt-list-custom', async () => {
+  try {
+    const promptsDir = path.join(LABRATS_CONFIG_DIR, 'prompts');
+    
+    if (!fs.existsSync(promptsDir)) {
+      return [];
+    }
+    
+    const files = fs.readdirSync(promptsDir);
+    return files
+      .filter(file => file.endsWith('.prompt'))
+      .map(file => file.replace('.prompt', ''));
+  } catch (error) {
+    console.error('Failed to list custom prompts:', error);
+    return [];
+  }
+});
+
+// Simple git service cache based on folder path
+const gitServicesByPath = new Map<string, GitService>();
+
+async function getOrCreateGitService(folderPath: string): Promise<GitService | null> {
+  // Check if we already have a service for this path
+  let gitService = gitServicesByPath.get(folderPath);
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return null;
+  if (!gitService) {
+    console.log(`Creating new git service for path: ${folderPath}`);
+    gitService = new GitService();
+    gitServicesByPath.set(folderPath, gitService);
+    
+    const success = await gitService.initializeRepo(folderPath);
+    if (!success) {
+      console.log(`Git initialization failed for ${folderPath}`);
+      gitServicesByPath.delete(folderPath);
+      return null;
+    }
+  }
   
+  return gitService;
+}
+
+// Helper to get folder path and git service for IPC handlers
+async function getGitServiceForRequest(event: Electron.IpcMainInvokeEvent, folderPath?: string): Promise<{ gitService: GitService | null; folderPath: string | null }> {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
+  
+  if (!folderPath) {
+    return { gitService: null, folderPath: null };
+  }
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  return { gitService, folderPath };
+}
+
+// Git IPC handlers
+ipcMain.handle('git-get-status', async (event, folderPath?: string) => {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
+  
+  if (!folderPath) {
+    console.log('Git get-status: No folder path provided or found');
+    return null;
+  }
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) {
+    return null;
+  }
+  
+  console.log(`Git get-status: Getting status for ${folderPath}`);
+  const result = await gitService.getStatus();
+  console.log('Git get-status: Result:', result === null ? 'null' : 'data received');
+  return result;
+});
+
+ipcMain.handle('git-get-diff', async (event, filePath: string, staged: boolean = false, folderPath?: string) => {
+  const { gitService, folderPath: resolvedPath } = await getGitServiceForRequest(event, folderPath);
+  
+  if (!gitService || !resolvedPath) {
+    console.log('Git get-diff: No folder path or git service available');
+    return null;
+  }
+  
+  console.log(`Git get-diff: Getting diff for ${filePath} in ${resolvedPath}`);
   return await gitService.getDiff(filePath, staged);
 });
 
-ipcMain.handle('git-stage-file', async (event, filePath: string) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return false;
+ipcMain.handle('git-stage-file', async (event, filePath: string, folderPath?: string) => {
+  const { gitService } = await getGitServiceForRequest(event, folderPath);
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return false;
+  if (!gitService) {
+    console.log('Git stage-file: No git service available');
+    return false;
+  }
   
   return await gitService.stageFile(filePath);
 });
 
-ipcMain.handle('git-unstage-file', async (event, filePath: string) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return false;
+ipcMain.handle('git-unstage-file', async (event, filePath: string, folderPath?: string) => {
+  const { gitService } = await getGitServiceForRequest(event, folderPath);
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return false;
+  if (!gitService) {
+    console.log('Git unstage-file: No git service available');
+    return false;
+  }
   
   return await gitService.unstageFile(filePath);
 });
@@ -543,12 +860,18 @@ ipcMain.handle('git-discard-changes', async (event, filePath: string) => {
   return await gitService.discardChanges(filePath);
 });
 
-ipcMain.handle('git-commit', async (event, message: string) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) return false;
+ipcMain.handle('git-commit', async (event, message: string, folderPath?: string) => {
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
   
-  const gitService = gitServices.get(window.id);
-  if (!gitService || !gitService.isInitialized()) return false;
+  if (!folderPath) return false;
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) return false;
   
   return await gitService.commit(message);
 });
@@ -565,6 +888,349 @@ ipcMain.handle('git-initialize', async (event, repoPath: string) => {
   }
   
   return success;
+});
+
+ipcMain.handle('git-revert-file', async (event, filePath: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.revertFile(filePath);
+});
+
+ipcMain.handle('git-stash-push', async (event, message?: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.stashPush(message);
+});
+
+ipcMain.handle('git-stash-pop', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.stashPop();
+});
+
+ipcMain.handle('git-stash-list', async (event, folderPath?: string) => {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
+  
+  if (!folderPath) {
+    console.log('Git stash-list: No folder path provided or found');
+    return [];
+  }
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) {
+    return [];
+  }
+  
+  return await gitService.stashList();
+});
+
+ipcMain.handle('git-reset-soft', async (event, commitHash?: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.resetSoft(commitHash);
+});
+
+ipcMain.handle('git-reset-hard', async (event, commitHash?: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.resetHard(commitHash);
+});
+
+ipcMain.handle('git-reset-mixed', async (event, commitHash?: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.resetMixed(commitHash);
+});
+
+ipcMain.handle('git-stage-all', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.stageAllFiles();
+});
+
+ipcMain.handle('git-unstage-all', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.unstageAllFiles();
+});
+
+ipcMain.handle('git-discard-all', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.discardAllChanges();
+});
+
+ipcMain.handle('git-get-branches', async (event, folderPath?: string) => {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
+  
+  if (!folderPath) {
+    console.log('Git get-branches: No folder path provided or found');
+    return { current: '', all: [] };
+  }
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) {
+    return { current: '', all: [] };
+  }
+  
+  console.log(`Git get-branches: Getting branches for ${folderPath}`);
+  const result = await gitService.getBranches();
+  console.log('Git get-branches: Result:', result);
+  return result;
+});
+
+ipcMain.handle('git-create-branch', async (event, branchName: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.createBranch(branchName);
+});
+
+ipcMain.handle('git-switch-branch', async (event, branchName: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.switchBranch(branchName);
+});
+
+ipcMain.handle('git-delete-branch', async (event, branchName: string) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.deleteBranch(branchName);
+});
+
+ipcMain.handle('git-get-commit-history', async (event, count?: number, folderPath?: string) => {
+  // Try to get folder path from parameter or window
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
+  
+  if (!folderPath) {
+    console.log('Git get-commit-history: No folder path provided or found');
+    return [];
+  }
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) {
+    return [];
+  }
+  
+  console.log(`Git get-commit-history: Getting history for ${folderPath}`);
+  const result = await gitService.getCommitHistory(count);
+  console.log('Git get-commit-history: Result count:', result.length);
+  return result;
+});
+
+ipcMain.handle('git-clean-untracked', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return false;
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return false;
+  
+  return await gitService.cleanUntrackedFiles();
+});
+
+ipcMain.handle('git-pull', async (event, folderPath?: string) => {
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
+  
+  if (!folderPath) return { success: false, message: 'No folder path provided' };
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) return { success: false, message: 'Git not initialized' };
+  
+  return await gitService.pull();
+});
+
+ipcMain.handle('git-push', async (event, folderPath?: string) => {
+  if (!folderPath) {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      folderPath = windowProjects.get(window.id);
+    }
+  }
+  
+  if (!folderPath) return { success: false, message: 'No folder path provided' };
+  
+  const gitService = await getOrCreateGitService(folderPath);
+  if (!gitService) return { success: false, message: 'Git not initialized' };
+  
+  return await gitService.push();
+});
+
+ipcMain.handle('git-fetch', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return { success: false, message: 'Window not found' };
+  
+  const gitService = gitServices.get(window.id);
+  if (!gitService || !gitService.isInitialized()) return { success: false, message: 'Git not initialized' };
+  
+  return await gitService.fetch();
+});
+
+// Set up terminal event forwarding (once, globally)
+terminalService.on('terminal-data', (pid: number, data: string) => {
+  // Send to all renderer processes
+  BrowserWindow.getAllWindows().forEach(window => {
+    if (!window.isDestroyed()) {
+      window.webContents.send('terminal-data', pid, data);
+    }
+  });
+});
+
+terminalService.on('terminal-exit', (pid: number, exitCode: number) => {
+  // Send to all renderer processes
+  BrowserWindow.getAllWindows().forEach(window => {
+    if (!window.isDestroyed()) {
+      window.webContents.send('terminal-exit', pid, exitCode);
+    }
+  });
+});
+
+// Terminal IPC handlers
+ipcMain.handle('terminal-create', async (event, options: { cwd: string; cols: number; rows: number }) => {
+  try {
+    const terminalProcess = await terminalService.createTerminal(options);
+    return terminalProcess;
+  } catch (error) {
+    console.error('Failed to create terminal:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('terminal-write', async (event, pid: number, data: string) => {
+  try {
+    terminalService.writeToTerminal(pid, data);
+  } catch (error) {
+    console.error('Failed to write to terminal:', error);
+  }
+});
+
+ipcMain.handle('terminal-resize', async (event, pid: number, cols: number, rows: number) => {
+  try {
+    terminalService.resizeTerminal(pid, cols, rows);
+  } catch (error) {
+    console.error('Failed to resize terminal:', error);
+  }
+});
+
+ipcMain.handle('terminal-kill', async (event, pid: number) => {
+  try {
+    terminalService.killTerminal(pid);
+  } catch (error) {
+    console.error('Failed to kill terminal:', error);
+  }
+});
+
+ipcMain.handle('terminal-check-iterm', async (event) => {
+  try {
+    return await terminalService.checkItermAvailability();
+  } catch (error) {
+    console.error('Failed to check iTerm availability:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('terminal-open-iterm', async (event, cwd: string) => {
+  try {
+    return await terminalService.openInIterm(cwd);
+  } catch (error) {
+    console.error('Failed to open iTerm:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('terminal-change-cwd', async (event, pid: number, newCwd: string) => {
+  try {
+    return await terminalService.changeWorkingDirectory(pid, newCwd);
+  } catch (error) {
+    console.error('Failed to change working directory:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('terminal-get-title', async (event, pid: number) => {
+  try {
+    return await terminalService.getTerminalTitle(pid);
+  } catch (error) {
+    console.error('Failed to get terminal title:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('terminal-set-title', async (event, pid: number, title: string) => {
+  try {
+    return await terminalService.setTerminalTitle(pid, title);
+  } catch (error) {
+    console.error('Failed to set terminal title:', error);
+    return false;
+  }
 });
 
 function formatFileSize(bytes: number): string {
@@ -607,4 +1273,205 @@ app.on('window-all-closed', function () {
 
 app.on('before-quit', () => {
   saveOpenWindows();
+});
+
+// AI Configuration IPC handlers
+import { AIConfigService } from './aiConfigService';
+
+const aiConfigService = AIConfigService.getInstance();
+
+// Set up AI config event listeners - use ConfigManager
+aiConfigService.on('api-key-store', (serviceId: string, encryptedKey: string) => {
+  const currentServices = configManager.get('ai', 'services') || {};
+  currentServices[serviceId] = {
+    ...currentServices[serviceId],
+    encryptedApiKey: encryptedKey
+  };
+  configManager.set('ai', 'services', currentServices);
+});
+
+aiConfigService.on('api-key-remove', (serviceId: string) => {
+  const currentServices = configManager.get('ai', 'services') || {};
+  if (currentServices[serviceId]) {
+    delete currentServices[serviceId].encryptedApiKey;
+    configManager.set('ai', 'services', currentServices);
+  }
+});
+
+aiConfigService.on('service-enabled', (serviceId: string, enabled: boolean) => {
+  const currentServices = configManager.get('ai', 'services') || {};
+  currentServices[serviceId] = {
+    ...currentServices[serviceId],
+    enabled: enabled
+  };
+  configManager.set('ai', 'services', currentServices);
+});
+
+aiConfigService.on('configuration-reset', () => {
+  configManager.set('ai', 'services', {});
+});
+
+// AI Configuration IPC handlers
+ipcMain.handle('ai-is-master-key-setup', async () => {
+  return await aiConfigService.isMasterKeySetup();
+});
+
+ipcMain.handle('ai-setup-master-key', async (event, masterKey: string) => {
+  try {
+    await aiConfigService.setupMasterKey(masterKey);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-generate-master-key', async () => {
+  return aiConfigService.generateMasterKey();
+});
+
+ipcMain.handle('ai-get-supported-services', async () => {
+  return aiConfigService.getSupportedServices();
+});
+
+ipcMain.handle('ai-get-service-config', async (event, serviceId: string) => {
+  const services = configManager.get('ai', 'services') || {};
+  const serviceConfig = services[serviceId] || {};
+  
+  return {
+    id: serviceId,
+    enabled: serviceConfig.enabled || false,
+    hasApiKey: !!serviceConfig.encryptedApiKey
+  };
+});
+
+ipcMain.handle('ai-store-api-key', async (event, serviceId: string, apiKey: string) => {
+  try {
+    await aiConfigService.storeAPIKey(serviceId, apiKey);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-get-api-key', async (event, serviceId: string) => {
+  try {
+    const services = configManager.get('ai', 'services') || {};
+    const serviceConfig = services[serviceId] || {};
+    const encryptedKey = serviceConfig.encryptedApiKey;
+    
+    if (!encryptedKey) {
+      return { success: false, error: 'No API key stored for this service' };
+    }
+    const apiKey = await aiConfigService.getAPIKey(serviceId, encryptedKey);
+    return { success: true, apiKey };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-remove-api-key', async (event, serviceId: string) => {
+  try {
+    await aiConfigService.removeAPIKey(serviceId);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-set-service-enabled', async (event, serviceId: string, enabled: boolean) => {
+  try {
+    await aiConfigService.setServiceEnabled(serviceId, enabled);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ai-validate-api-key', async (event, serviceId: string, apiKey: string) => {
+  return aiConfigService.validateAPIKey(serviceId, apiKey);
+});
+
+ipcMain.handle('ai-test-api-key', async (event, serviceId: string, apiKey: string) => {
+  return await aiConfigService.testAPIKey(serviceId, apiKey);
+});
+
+ipcMain.handle('ai-reset-configuration', async () => {
+  return aiConfigService.resetConfiguration();
+});
+
+ipcMain.handle('ai-get-providers', async (): Promise<AIProviderConfig[]> => {
+  const providerManager = getAIProviderManager();
+  // Return only the serializable config objects for each provider
+  return providerManager.getProviders().map((p) => p.config);
+});
+
+ipcMain.handle('ai-get-models', async (event, providerId: string): Promise<AIModel[]> => {
+  const providerManager = getAIProviderManager();
+  const provider = providerManager.getProvider(providerId);
+  if (provider) {
+    return provider.getModels();
+  }
+  return [];
+});
+
+// Claude CLI detection and execution handlers removed
+
+ipcMain.handle('ai-get-available-providers', async (): Promise<AIProviderConfig[]> => {
+  const providerManager = getAIProviderManager();
+  const availableProviders = await providerManager.getAvailableProviders();
+  return availableProviders.map((p) => p.config);
+});
+
+// Window management IPC handlers
+ipcMain.on('focus-window', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window) {
+    // Focus the window and bring it to front
+    if (window.isMinimized()) {
+      window.restore();
+    }
+    window.focus();
+    window.show();
+  }
+});
+
+// Chat History IPC handlers
+ipcMain.handle('chat-history-save', async (event, projectPath: string, messages: any[]) => {
+  try {
+    await chatHistoryManager.saveChatHistory(projectPath, messages);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to save chat history:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('chat-history-load', async (event, projectPath: string) => {
+  try {
+    const messages = await chatHistoryManager.loadChatHistory(projectPath);
+    return { success: true, messages };
+  } catch (error) {
+    console.error('Failed to load chat history:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error', messages: [] };
+  }
+});
+
+ipcMain.handle('chat-history-clear', async (event, projectPath: string) => {
+  try {
+    await chatHistoryManager.clearChatHistory(projectPath);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to clear chat history:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('chat-history-cleanup', async (event, projectPath: string, maxAge?: number) => {
+  try {
+    await chatHistoryManager.cleanupOldHistories(projectPath, maxAge);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to cleanup chat history:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
 });

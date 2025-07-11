@@ -10,11 +10,15 @@
     "build": "webpack --config webpack.config.js --mode production",
     "build:electron": "electron-builder",
     "start": "npm run build && electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint src --ext .ts,.tsx --fix",
+    "lint:check": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit"
   },
   "build": {
     "appId": "com.labrats.ai-ide",
-    "productName": "LabRats AI IDE",
+    "productName": "LabRats.AI",
+    "copyright": "Copyright © 2025",
     "directories": {
       "output": "release"
     },
@@ -47,12 +51,18 @@
   },
   "homepage": "https://github.com/kobozo/labrats.ai#readme",
   "devDependencies": {
+    "@electron/rebuild": "^4.0.1",
     "@types/node": "^24.0.10",
+    "@typescript-eslint/eslint-plugin": "^8.36.0",
+    "@typescript-eslint/parser": "^8.36.0",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.0",
     "css-loader": "^7.1.2",
     "electron": "^37.2.0",
     "electron-builder": "^26.0.12",
+    "eslint": "^9.30.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "html-webpack-plugin": "^5.6.3",
     "lucide-react": "^0.525.0",
     "postcss": "^8.5.6",
@@ -68,16 +78,35 @@
     "webpack-dev-server": "^5.2.2"
   },
   "dependencies": {
+    "@langchain/anthropic": "^0.3.24",
+    "@langchain/core": "^0.3.62",
+    "@langchain/openai": "^0.5.18",
     "@monaco-editor/react": "^4.7.0",
+    "@tiptap/extension-code-block-lowlight": "^2.26.0",
+    "@tiptap/extension-link": "^2.26.0",
+    "@tiptap/extension-mention": "^2.26.0",
+    "@tiptap/extension-placeholder": "^2.26.0",
+    "@tiptap/react": "^2.26.0",
+    "@tiptap/starter-kit": "^2.26.0",
+    "@types/dompurify": "^3.0.5",
     "@types/js-yaml": "^4.0.9",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vscode/codicons": "^0.0.36",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "dompurify": "^3.2.6",
     "electron-store": "^10.1.0",
     "js-yaml": "^4.1.0",
+    "langchain": "^0.3.29",
+    "lowlight": "^3.3.0",
+    "marked": "^16.0.0",
     "monaco-editor": "^0.52.2",
+    "node-pty": "^1.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "simple-git": "^3.28.0"
+    "simple-git": "^3.28.0",
+    "zod": "^3.25.76"
   }
 }

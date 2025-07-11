@@ -1,0 +1,42 @@
+services:
+  labrats-backend:
+    image: ollama/ollama:latest
+    container_name: labrats-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=http://localhost:*,https://localhost:*
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Helper service to pull the Mistral model
+  model-setup:
+    image: curlimages/curl:latest
+    container_name: labrats-model-setup
+    depends_on:
+      labrats-backend:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        echo 'Waiting for Ollama to be ready...'
+        sleep 5
+        echo 'Pulling Mistral model...'
+        curl -X POST http://labrats-ollama:11434/api/pull \
+          -H 'Content-Type: application/json' \
+          -d '{"name": "mistral:latest"}'
+        echo 'Model setup complete!'
+    restart: "no"
+
+volumes:
+  ollama_data:
+    driver: local

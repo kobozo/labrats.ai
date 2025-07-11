@@ -1,0 +1,56 @@
+{
+  "providers": {
+    "anthropic": {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "description": "Anthropic's Claude models for code assistance and development",
+      "endpoints": {
+        "models": "https://api.anthropic.com/v1/models",
+        "chat": "https://api.anthropic.com/v1/messages",
+        "completion": "https://api.anthropic.com/v1/complete"
+      },
+      "authentication": {
+        "type": "bearer",
+        "header": "x-api-key"
+      },
+      "defaultModel": "claude-sonnet-4-20250514",
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": true,
+        "maxTokens": 200000,
+        "contextWindow": 200000
+      },
+      "rateLimit": {
+        "requestsPerMinute": 60,
+        "tokensPerMinute": 40000
+      }
+    },
+    "openai": {
+      "id": "openai",
+      "name": "OpenAI",
+      "description": "OpenAI GPT models for code generation and assistance",
+      "endpoints": {
+        "models": "https://api.openai.com/v1/models",
+        "chat": "https://api.openai.com/v1/chat/completions",
+        "completion": "https://api.openai.com/v1/completions"
+      },
+      "authentication": {
+        "type": "bearer",
+        "header": "Authorization"
+      },
+      "defaultModel": "gpt-4-turbo-preview",
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": false,
+        "maxTokens": 128000,
+        "contextWindow": 128000
+      },
+      "rateLimit": {
+        "requestsPerMinute": 500,
+        "tokensPerMinute": 160000
+      }
+    }
+  }
+}

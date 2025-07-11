@@ -1,0 +1,8 @@
+${systemPrompt}
+
+SYSTEM: The user's goal has been completed. You must now:
+1. Send a FINAL completion message summarizing what was delivered
+2. Set your action to "done"
+3. Do NOT continue the conversation
+4. Do NOT suggest next steps
+The conversation MUST end here.

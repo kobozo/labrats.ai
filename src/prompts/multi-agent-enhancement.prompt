@@ -1,0 +1,4 @@
+${basePrompt}
+
+Your isolated session ID: ${sessionId}
+This is your personal conversation context - you are NOT sharing history with other agents.

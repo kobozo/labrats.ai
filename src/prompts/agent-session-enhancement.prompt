@@ -1,0 +1,6 @@
+${basePrompt}
+
+Session ID: ${sessionId}
+
+Current Action States: planning, open, waiting, implementing, needs_review, reviewing, done, user_input, wait_for_user
+Use "involve" field to mention other agents when needed.

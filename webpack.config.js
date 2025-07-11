@@ -13,6 +13,9 @@ module.exports = [
       path: path.resolve(__dirname, 'dist/main'),
       filename: 'main.js',
     },
+    externals: {
+      'node-pty': 'commonjs2 node-pty'
+    },
     module: {
       rules: [
         {
@@ -76,10 +79,31 @@ module.exports = [
           test: /\.css$/,
           use: ['style-loader', 'css-loader', 'postcss-loader'],
         },
+        {
+          test: /\.prompt$/,
+          type: 'asset/source',
+        },
+        {
+          test: /\.(png|jpe?g|gif|svg|webp)$/i,
+          type: 'asset/resource',
+        },
       ],
     },
     resolve: {
-      extensions: ['.tsx', '.ts', '.js'],
+      extensions: ['.tsx', '.ts', '.js', '.prompt'],
+      fallback: {
+        "path": false,
+        "fs": false,
+        "os": false,
+        "crypto": false,
+        "stream": false,
+        "assert": false,
+        "http": false,
+        "https": false,
+        "url": false,
+        "buffer": false,
+        "util": false
+      },
     },
     plugins: [
       new HtmlWebpackPlugin({

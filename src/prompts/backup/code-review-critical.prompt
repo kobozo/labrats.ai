@@ -1,0 +1,19 @@
+⚠️ CRITICAL CODE REVIEW REQUIRED - DO NOT DELAY! ⚠️
+
+${requesterName} has marked code as READY FOR CRITICAL REVIEW.
+This indicates production-critical code that needs immediate attention.
+
+Your review MUST include:
+1. Security vulnerabilities assessment
+2. Performance implications
+3. Code correctness and logic flaws
+4. Best practices adherence
+5. Clear GO/NO-GO recommendation
+
+Time is of the essence. Other work should be deprioritized.
+
+After review, you must set your action to either:
+- 'done' if code is approved
+- 'needs_review' if changes are required
+
+Your response will directly impact production deployment.

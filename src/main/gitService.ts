@@ -1,5 +1,6 @@
 import { simpleGit, SimpleGit, StatusResult, DiffResult } from 'simple-git';
 import * as path from 'path';
+import * as fs from 'fs';
 
 export interface GitFileStatus {
   path: string;
@@ -47,46 +48,86 @@ export interface GitLine {
 export class GitService {
   private git: SimpleGit | null = null;
   private currentRepo: string | null = null;
+  private initialized: boolean = false;
+  private initPromise: Promise<boolean> | null = null;
 
   async initializeRepo(repoPath: string): Promise<boolean> {
+    // If already initializing, return the existing promise
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    
+    // Create initialization promise
+    this.initPromise = this.doInitialize(repoPath);
+    const result = await this.initPromise;
+    this.initialized = result;
+    return result;
+  }
+  
+  private async doInitialize(repoPath: string): Promise<boolean> {
     try {
+      console.log(`GitService: Initializing repo at path: ${repoPath}`);
+      console.log(`GitService: Current working directory: ${process.cwd()}`);
+      
+      // Ensure the path exists
+      if (!fs.existsSync(repoPath)) {
+        console.error(`GitService: Path does not exist: ${repoPath}`);
+        this.git = null;
+        this.currentRepo = null;
+        return false;
+      }
+      
       this.git = simpleGit(repoPath);
       
       // Check if it's a valid git repository or find the root
+      console.log(`GitService: Checking if ${repoPath} is a git repo...`);
       const isRepo = await this.git.checkIsRepo();
+      console.log(`GitService: Is repo check result: ${isRepo}`);
       
       if (isRepo) {
         // Get the actual repository root
         try {
+          console.log(`GitService: Getting repo root...`);
           const repoRoot = await this.git.revparse(['--show-toplevel']);
           this.currentRepo = repoRoot.trim();
+          console.log(`GitService: Found repo root: ${this.currentRepo}`);
           // Re-initialize with the actual repo root
           this.git = simpleGit(this.currentRepo);
+          console.log(`GitService: Successfully initialized git service`);
           return true;
         } catch (rootError) {
+          console.warn(`GitService: Could not get repo root, using provided path:`, rootError);
           // If we can't get the root, use the provided path
           this.currentRepo = repoPath;
+          console.log(`GitService: Using provided path as repo root: ${this.currentRepo}`);
           return true;
         }
       } else {
         // Try to find git repo in parent directories
+        console.log(`GitService: Path ${repoPath} is not a git repo, searching parent directories...`);
         let currentPath = repoPath;
         const maxDepth = 10; // Prevent infinite loops
         
         for (let i = 0; i < maxDepth; i++) {
           const parentPath = path.dirname(currentPath);
-          if (parentPath === currentPath) break; // Reached root
+          if (parentPath === currentPath) {
+            console.log(`GitService: Reached filesystem root, no git repo found`);
+            break; // Reached root
+          }
           
           try {
+            console.log(`GitService: Checking parent path: ${parentPath}`);
             const parentGit = simpleGit(parentPath);
             const isParentRepo = await parentGit.checkIsRepo();
             
             if (isParentRepo) {
+              console.log(`GitService: Found git repo in parent: ${parentPath}`);
               this.git = parentGit;
               this.currentRepo = parentPath;
               return true;
             }
           } catch (e) {
+            console.log(`GitService: Error checking parent ${parentPath}:`, e);
             // Continue searching
           }
           
@@ -94,6 +135,7 @@ export class GitService {
         }
         
         // No git repository found
+        console.log(`GitService: No git repository found in ${repoPath} or its parents`);
         this.git = null;
         this.currentRepo = null;
         return false;
@@ -248,6 +290,198 @@ export class GitService {
     }
   }
 
+  async revertFile(filePath: string): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.checkout(['HEAD', '--', filePath]);
+      return true;
+    } catch (error) {
+      console.error('Error reverting file:', error);
+      return false;
+    }
+  }
+
+  async stashPush(message?: string): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      const args = ['push'];
+      if (message) {
+        args.push('-m', message);
+      }
+      await this.git.stash(args);
+      return true;
+    } catch (error) {
+      console.error('Error stashing changes:', error);
+      return false;
+    }
+  }
+
+  async stashPop(): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.stash(['pop']);
+      return true;
+    } catch (error) {
+      console.error('Error popping stash:', error);
+      return false;
+    }
+  }
+
+  async stashList(): Promise<string[]> {
+    if (!this.git) return [];
+
+    try {
+      const result = await this.git.stashList();
+      return result.all.map(stash => `${stash.hash}: ${stash.message}`);
+    } catch (error) {
+      console.error('Error getting stash list:', error);
+      return [];
+    }
+  }
+
+  async resetSoft(commitHash?: string): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.reset(['--soft', commitHash || 'HEAD~1']);
+      return true;
+    } catch (error) {
+      console.error('Error soft resetting:', error);
+      return false;
+    }
+  }
+
+  async resetHard(commitHash?: string): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.reset(['--hard', commitHash || 'HEAD~1']);
+      return true;
+    } catch (error) {
+      console.error('Error hard resetting:', error);
+      return false;
+    }
+  }
+
+  async resetMixed(commitHash?: string): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.reset(['--mixed', commitHash || 'HEAD~1']);
+      return true;
+    } catch (error) {
+      console.error('Error mixed resetting:', error);
+      return false;
+    }
+  }
+
+  async stageAllFiles(): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.add('.');
+      return true;
+    } catch (error) {
+      console.error('Error staging all files:', error);
+      return false;
+    }
+  }
+
+  async unstageAllFiles(): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.reset(['HEAD']);
+      return true;
+    } catch (error) {
+      console.error('Error unstaging all files:', error);
+      return false;
+    }
+  }
+
+  async discardAllChanges(): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.checkout(['.']);
+      return true;
+    } catch (error) {
+      console.error('Error discarding all changes:', error);
+      return false;
+    }
+  }
+
+  async getBranches(): Promise<{ current: string; all: string[] }> {
+    if (!this.git) return { current: '', all: [] };
+
+    try {
+      const branches = await this.git.branchLocal();
+      return {
+        current: branches.current,
+        all: branches.all
+      };
+    } catch (error) {
+      console.error('Error getting branches:', error);
+      return { current: '', all: [] };
+    }
+  }
+
+  async createBranch(branchName: string): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.checkoutLocalBranch(branchName);
+      return true;
+    } catch (error) {
+      console.error('Error creating branch:', error);
+      return false;
+    }
+  }
+
+  async switchBranch(branchName: string): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.checkout(branchName);
+      return true;
+    } catch (error) {
+      console.error('Error switching branch:', error);
+      return false;
+    }
+  }
+
+  async deleteBranch(branchName: string): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.deleteLocalBranch(branchName);
+      return true;
+    } catch (error) {
+      console.error('Error deleting branch:', error);
+      return false;
+    }
+  }
+
+  async getCommitHistory(count: number = 10): Promise<Array<{ hash: string; message: string; author: string; date: string }>> {
+    if (!this.git) return [];
+
+    try {
+      const log = await this.git.log({ maxCount: count });
+      return log.all.map(commit => ({
+        hash: commit.hash,
+        message: commit.message,
+        author: commit.author_name,
+        date: commit.date
+      }));
+    } catch (error) {
+      console.error('Error getting commit history:', error);
+      return [];
+    }
+  }
+
   private getFileStatus(file: string, status: StatusResult): string {
     if (status.created.includes(file)) return 'A';
     if (status.deleted.includes(file)) return 'D';
@@ -349,10 +583,83 @@ export class GitService {
   }
 
   isInitialized(): boolean {
-    return this.git !== null;
+    return this.initialized && this.git !== null;
+  }
+  
+  async waitForInitialization(): Promise<boolean> {
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    return this.initialized;
   }
 
   getCurrentRepo(): string | null {
     return this.currentRepo;
+  }
+
+  async cleanUntrackedFiles(): Promise<boolean> {
+    if (!this.git) return false;
+
+    try {
+      await this.git.clean('f', ['-d']);
+      return true;
+    } catch (error) {
+      console.error('Error cleaning untracked files:', error);
+      return false;
+    }
+  }
+
+  async pull(): Promise<{ success: boolean; message: string }> {
+    if (!this.git) return { success: false, message: 'Git not initialized' };
+
+    try {
+      const result = await this.git.pull();
+      return { 
+        success: true, 
+        message: `Pull completed. ${result.summary.changes} files changed, ${result.summary.insertions} insertions, ${result.summary.deletions} deletions.`
+      };
+    } catch (error) {
+      console.error('Error pulling:', error);
+      return { 
+        success: false, 
+        message: `Pull failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  async push(): Promise<{ success: boolean; message: string }> {
+    if (!this.git) return { success: false, message: 'Git not initialized' };
+
+    try {
+      const result = await this.git.push();
+      return { 
+        success: true, 
+        message: 'Push completed successfully.'
+      };
+    } catch (error) {
+      console.error('Error pushing:', error);
+      return { 
+        success: false, 
+        message: `Push failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  async fetch(): Promise<{ success: boolean; message: string }> {
+    if (!this.git) return { success: false, message: 'Git not initialized' };
+
+    try {
+      await this.git.fetch();
+      return { 
+        success: true, 
+        message: 'Fetch completed successfully.'
+      };
+    } catch (error) {
+      console.error('Error fetching:', error);
+      return { 
+        success: false, 
+        message: `Fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
   }
 }

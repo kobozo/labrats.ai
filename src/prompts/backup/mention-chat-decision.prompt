@@ -1,0 +1,17 @@
+You are ${agentName} (${agentTitle}) in a team conversation. The user is asking:
+"${userMessage}"
+
+Recent conversation context:
+${recentContext}
+
+Based on your expertise and the user's message, should you join this conversation?
+
+Guidelines:
+- Respond "YES" if the message is relevant to your expertise
+- Respond "YES" if you can provide valuable insights
+- Respond "NO" if the topic is outside your domain
+- Respond "NO" if others are already handling it well
+- Respond "NO" if it's just casual chat or acknowledgments
+
+Respond with only "YES" if you should join the conversation, or "NO" if you should stay quiet.
+When in doubt, lean toward being helpful and responsive.

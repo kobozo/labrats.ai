@@ -1,36 +1,31 @@
 import React, { useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import { Task, WorkflowStage } from '../../types/kanban';
-import { kanbanService } from '../../services/kanban-service';
+import { RichTextInput, RichTextInputRef } from './RichTextInput';
 import { agents } from '../../config/agents';
 import { workflowStages } from '../../config/workflow-stages';
-import { RichTextInput, RichTextInputRef } from './RichTextInput';
 
-interface CreateTaskDialogProps {
-  initialStatus: WorkflowStage;
+interface EditTaskDialogProps {
+  task: Task;
   onClose: () => void;
-  onTaskCreated: (task: Task) => void;
+  onSave: (updatedTask: Task) => void;
 }
 
-export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ 
-  initialStatus, 
+export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({ 
+  task, 
   onClose, 
-  onTaskCreated 
+  onSave 
 }) => {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [type, setType] = useState<Task['type']>('task');
-  const [priority, setPriority] = useState<Task['priority']>('medium');
-  const [assignee, setAssignee] = useState('LabRats');
-  const [status, setStatus] = useState<WorkflowStage>(
-    initialStatus === 'backlog' || initialStatus === 'definition-of-ready' 
-      ? initialStatus 
-      : 'backlog'
-  );
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description || '');
+  const [type, setType] = useState<Task['type']>(task.type);
+  const [priority, setPriority] = useState<Task['priority']>(task.priority);
+  const [assignee, setAssignee] = useState(task.assignee);
+  const [status, setStatus] = useState<WorkflowStage>(task.status);
   
   const richTextRef = useRef<RichTextInputRef>(null);
   
-  // Get available assignees based on selected status
+  // Get available assignees based on current status
   const currentStage = workflowStages.find(stage => stage.id === status);
   const availableAssignees = currentStage?.primaryRats.map(ratName => {
     if (ratName === 'LabRats') {
@@ -39,29 +34,40 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
     const agent = agents.find(a => a.name === ratName);
     return agent ? { id: agent.name, name: agent.name } : null;
   }).filter(Boolean) as Array<{ id: string; name: string }> || [];
+  
+  // Add current assignee if not in available list
+  const currentAssigneeInList = availableAssignees.some(a => a.id === assignee);
+  if (!currentAssigneeInList && assignee) {
+    const currentAgent = agents.find(a => a.name === assignee);
+    if (currentAgent) {
+      availableAssignees.push({ id: currentAgent.name, name: currentAgent.name });
+    } else if (assignee === 'LabRats') {
+      availableAssignees.push({ id: 'LabRats', name: 'LabRats (User)' });
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const newTask = kanbanService.createTask(title);
-    const fullTask: Task = {
-      ...newTask,
+    const updatedTask: Task = {
+      ...task,
+      title,
       description: richTextRef.current?.getMarkdown() || description,
       type,
       priority,
       assignee,
       status,
+      updatedAt: new Date().toISOString(),
     };
     
-    onTaskCreated(fullTask);
-    onClose();
+    onSave(updatedTask);
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-bold text-white">Create New Task</h2>
+          <h2 className="text-xl font-bold text-white">Edit Task</h2>
           <button
             onClick={onClose}
             className="p-1 hover:bg-gray-700 rounded transition-colors"
@@ -83,7 +89,6 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
                 required
-                autoFocus
               />
             </div>
             
@@ -97,9 +102,9 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                   ref={richTextRef}
                   value={description}
                   onChange={setDescription}
-                  onSubmit={() => {}} // Disable submit on enter for dialog
+                  onSubmit={() => {}} // Disable submit on enter for edit dialog
                   placeholder="Enter task description..."
-                  className="min-h-[200px] max-h-[200px]"
+                  className="min-h-[200px]"
                 />
               </div>
             </div>
@@ -110,27 +115,19 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Initial Status
+                    Status
                   </label>
                   <select
                     value={status}
-                    onChange={(e) => {
-                      const newStatus = e.target.value as WorkflowStage;
-                      setStatus(newStatus);
-                      // Reset assignee if not available in new status
-                      const newStage = workflowStages.find(s => s.id === newStatus);
-                      if (newStage && !newStage.primaryRats.includes(assignee)) {
-                        setAssignee('LabRats');
-                      }
-                    }}
+                    onChange={(e) => setStatus(e.target.value as WorkflowStage)}
                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
                   >
-                    <option value="backlog">Backlog & Discovery</option>
-                    <option value="definition-of-ready">Definition of Ready</option>
+                    {workflowStages.map(stage => (
+                      <option key={stage.id} value={stage.id}>
+                        {stage.title}
+                      </option>
+                    ))}
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">
-                    New tickets can only be created in these stages
-                  </p>
                 </div>
                 
                 <div>
@@ -183,6 +180,31 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                       </option>
                     ))}
                   </select>
+                  {status !== task.status && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Assignees limited to {currentStage?.title} stage participants
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Task metadata */}
+            <div className="grid grid-cols-3 gap-4 text-sm pt-4 border-t border-gray-700">
+              <div>
+                <div className="text-gray-400">Task ID</div>
+                <div className="text-gray-300 font-mono">{task.id}</div>
+              </div>
+              <div>
+                <div className="text-gray-400">Created</div>
+                <div className="text-gray-300">
+                  {new Date(task.createdAt).toLocaleDateString()}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-400">Last Updated</div>
+                <div className="text-gray-300">
+                  {new Date(task.updatedAt).toLocaleDateString()}
                 </div>
               </div>
             </div>
@@ -193,7 +215,7 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
               type="submit"
               className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
             >
-              Create Task
+              Save Changes
             </button>
             <button
               type="button"

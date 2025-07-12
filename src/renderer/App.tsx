@@ -500,7 +500,7 @@ function App() {
             </div>
             
             <div style={{ display: activeView === 'kanban' ? 'block' : 'none', height: '100%' }}>
-              <KanbanBoard />
+              <KanbanBoard currentFolder={currentFolder} />
             </div>
             
             <div style={{ display: activeView === 'docs' ? 'block' : 'none', height: '100%' }}>

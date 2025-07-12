@@ -126,14 +126,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Kanban API
   kanban: {
-    getBoard: (boardId: string) => ipcRenderer.invoke('kanban:getBoard', boardId),
-    saveBoard: (board: any) => ipcRenderer.invoke('kanban:saveBoard', board),
-    getTasks: (boardId: string) => ipcRenderer.invoke('kanban:getTasks', boardId),
-    updateTask: (boardId: string, task: any) => ipcRenderer.invoke('kanban:updateTask', { boardId, task }),
-    deleteTask: (boardId: string, taskId: string) => ipcRenderer.invoke('kanban:deleteTask', { boardId, taskId }),
-    getEpics: (boardId: string) => ipcRenderer.invoke('kanban:getEpics', boardId),
-    updateEpic: (boardId: string, epic: any) => ipcRenderer.invoke('kanban:updateEpic', { boardId, epic }),
-    checkBranches: () => ipcRenderer.invoke('kanban:checkBranches'),
+    getBoard: (projectPath: string, boardId: string) => ipcRenderer.invoke('kanban:getBoard', projectPath, boardId),
+    saveBoard: (projectPath: string, board: any) => ipcRenderer.invoke('kanban:saveBoard', projectPath, board),
+    getTasks: (projectPath: string, boardId: string) => ipcRenderer.invoke('kanban:getTasks', projectPath, boardId),
+    updateTask: (projectPath: string, boardId: string, task: any) => ipcRenderer.invoke('kanban:updateTask', projectPath, boardId, task),
+    deleteTask: (projectPath: string, boardId: string, taskId: string) => ipcRenderer.invoke('kanban:deleteTask', projectPath, boardId, taskId),
+    getEpics: (projectPath: string, boardId: string) => ipcRenderer.invoke('kanban:getEpics', projectPath, boardId),
+    updateEpic: (projectPath: string, boardId: string, epic: any) => ipcRenderer.invoke('kanban:updateEpic', projectPath, boardId, epic),
+    checkBranches: (projectPath: string) => ipcRenderer.invoke('kanban:checkBranches', projectPath),
   },
 
   // System API

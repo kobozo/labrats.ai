@@ -10,7 +10,6 @@ import { LABRATS_CONFIG_DIR } from './constants';
 import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
 import { getAIProviderManager } from '../services/ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager';
-import { setupKanbanHandlers } from './kanban-ipc-handlers';
 
 app.name = 'LabRats.AI';
 
@@ -142,9 +141,6 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
     
     // Initialize git service for this window
     initializeGitServiceForWindow(window.id, projectPath);
-    
-    // Setup kanban handlers for this project
-    setupKanbanHandlers(projectPath);
   }
 
   if (isDev) {
@@ -1436,6 +1432,122 @@ ipcMain.on('focus-window', (event) => {
     }
     window.focus();
     window.show();
+  }
+});
+
+// Kanban IPC handlers
+import { KanbanStorageService } from './kanban-storage-service';
+
+ipcMain.handle('kanban:getBoard', async (event, projectPath: string, boardId: string) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    return await storage.getBoard(boardId);
+  } catch (error) {
+    console.error('[IPC] kanban:getBoard error:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('kanban:saveBoard', async (event, projectPath: string, board: any) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    await storage.saveBoard(board);
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] kanban:saveBoard error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('kanban:getTasks', async (event, projectPath: string, boardId: string) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    const tasks = await storage.getTasks(boardId);
+  
+  // Check for branches for each task
+  for (const task of tasks) {
+    if (task.id && projectPath) {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      try {
+        const { stdout } = await execAsync('git branch -a', { cwd: projectPath });
+        const branches = stdout.split('\n').map((b: string) => b.trim());
+        task.hasBranch = branches.some((branch: string) => branch.includes(task.id));
+      } catch {
+        task.hasBranch = false;
+      }
+    }
+  }
+  
+  return tasks;
+  } catch (error) {
+    console.error('[IPC] kanban:getTasks error:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('kanban:updateTask', async (event, projectPath: string, boardId: string, task: any) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    await storage.updateTask(boardId, task);
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] kanban:updateTask error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('kanban:deleteTask', async (event, projectPath: string, boardId: string, taskId: string) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    await storage.deleteTask(boardId, taskId);
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] kanban:deleteTask error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('kanban:getEpics', async (event, projectPath: string, boardId: string) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    return await storage.getEpics(boardId);
+  } catch (error) {
+    console.error('[IPC] kanban:getEpics error:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('kanban:updateEpic', async (event, projectPath: string, boardId: string, epic: any) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    await storage.updateEpic(boardId, epic);
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] kanban:updateEpic error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('kanban:checkBranches', async (event, projectPath: string) => {
+  if (!projectPath) {
+    console.error('[IPC] kanban:checkBranches - no project path provided');
+    return [];
+  }
+  
+  const { exec } = require('child_process');
+  const { promisify } = require('util');
+  const execAsync = promisify(exec);
+  
+  try {
+    const { stdout } = await execAsync('git branch -a', { cwd: projectPath });
+    return stdout.split('\n')
+      .map((b: string) => b.trim())
+      .filter((b: string) => b.length > 0);
+  } catch {
+    return [];
   }
 });
 

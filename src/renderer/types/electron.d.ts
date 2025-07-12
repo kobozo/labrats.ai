@@ -186,14 +186,14 @@ export interface ChatHistoryAPI {
 }
 
 export interface KanbanAPI {
-  getBoard: (boardId: string) => Promise<any>;
-  saveBoard: (board: any) => Promise<void>;
-  getTasks: (boardId: string) => Promise<any[]>;
-  updateTask: (boardId: string, task: any) => Promise<void>;
-  deleteTask: (boardId: string, taskId: string) => Promise<void>;
-  getEpics: (boardId: string) => Promise<any[]>;
-  updateEpic: (boardId: string, epic: any) => Promise<void>;
-  checkBranches: () => Promise<string[]>;
+  getBoard: (projectPath: string, boardId: string) => Promise<any>;
+  saveBoard: (projectPath: string, board: any) => Promise<{ success: boolean; error?: string }>;
+  getTasks: (projectPath: string, boardId: string) => Promise<any[]>;
+  updateTask: (projectPath: string, boardId: string, task: any) => Promise<{ success: boolean; error?: string }>;
+  deleteTask: (projectPath: string, boardId: string, taskId: string) => Promise<{ success: boolean; error?: string }>;
+  getEpics: (projectPath: string, boardId: string) => Promise<any[]>;
+  updateEpic: (projectPath: string, boardId: string, epic: any) => Promise<{ success: boolean; error?: string }>;
+  checkBranches: (projectPath: string) => Promise<string[]>;
 }
 
 export interface ProjectStateAPI {

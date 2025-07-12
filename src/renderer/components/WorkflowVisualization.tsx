@@ -11,6 +11,9 @@ import ReactFlow, {
   MarkerType,
   ConnectionLineType,
   Handle,
+  BaseEdge,
+  EdgeProps,
+  getSmoothStepPath,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import './WorkflowVisualization.css';
@@ -22,9 +25,52 @@ interface WorkflowVisualizationProps {
 }
 
 const nodeWidth = 200;
-const nodeHeight = 120;
-const horizontalSpacing = 250;
-const verticalSpacing = 180;
+const nodeHeight = 100;
+const horizontalSpacing = 280;
+const verticalSpacing = 150;
+
+// Custom edge that routes below nodes
+const CustomReturnEdge = ({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  markerEnd,
+  style,
+  label,
+  labelStyle,
+  labelBgStyle,
+  data,
+}: EdgeProps) => {
+  const offset = data?.offset || 30;
+  
+  // Create a path that goes below the nodes
+  const [edgePath] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition: Position.Bottom,
+    targetX,
+    targetY,
+    targetPosition: Position.Bottom,
+    borderRadius: 20,
+    offset,
+  });
+
+  return (
+    <>
+      <BaseEdge 
+        id={id}
+        path={edgePath} 
+        markerEnd={markerEnd} 
+        style={style}
+        label={label}
+        labelStyle={labelStyle}
+        labelBgStyle={labelBgStyle}
+      />
+    </>
+  );
+};
 
 // Custom node component
 const WorkflowNode = ({ data }: { data: any }) => {
@@ -41,7 +87,13 @@ const WorkflowNode = ({ data }: { data: any }) => {
         type="target" 
         position={Position.Left} 
         style={{ background: '#6b7280', left: -8 }} 
-        id="target"
+        id="left"
+      />
+      <Handle 
+        type="target" 
+        position={Position.Bottom} 
+        style={{ background: '#ef4444', bottom: -8, left: '30%' }} 
+        id="bottom"
       />
       <div className="workflow-node-title">{data.title}</div>
       <div className="workflow-node-rats">{data.rats}</div>
@@ -52,7 +104,13 @@ const WorkflowNode = ({ data }: { data: any }) => {
         type="source" 
         position={Position.Right} 
         style={{ background: '#6b7280', right: -8 }} 
-        id="source"
+        id="right"
+      />
+      <Handle 
+        type="source" 
+        position={Position.Bottom} 
+        style={{ background: '#ef4444', bottom: -8, right: '30%' }} 
+        id="bottom-out"
       />
     </div>
   );
@@ -62,34 +120,19 @@ const nodeTypes = {
   workflow: WorkflowNode,
 };
 
+const edgeTypes = {
+  'custom-return': CustomReturnEdge,
+};
+
 export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ onClose }) => {
   const nodes = useMemo<Node[]>(() => {
-    // Create a 4-row layout for better spacing
+    // Create a horizontal layout
     return workflowStages.map((stage, index) => {
       const colors = getStageColors(stage.color);
       
-      // Arrange in 4 rows with 3-2-3-2 pattern
-      let row, col;
-      if (index < 3) {
-        // First row: stages 0-2
-        row = 0;
-        col = index;
-      } else if (index < 5) {
-        // Second row: stages 3-4 (centered)
-        row = 1;
-        col = index - 3 + 0.5; // Offset by 0.5 to center
-      } else if (index < 8) {
-        // Third row: stages 5-7
-        row = 2;
-        col = index - 5;
-      } else {
-        // Fourth row: stages 8-9 (centered)
-        row = 3;
-        col = index - 8 + 0.5; // Offset by 0.5 to center
-      }
-      
-      const x = col * horizontalSpacing;
-      const y = row * verticalSpacing;
+      // Place all nodes in a single horizontal line
+      const x = index * horizontalSpacing + 50;
+      const y = 200;
       
       return {
         id: stage.id,
@@ -110,13 +153,15 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
   const edges = useMemo<Edge[]>(() => {
     const edges: Edge[] = [];
     
-    // Forward progression edges
+    // Forward progression edges (straight lines between adjacent nodes)
     for (let i = 0; i < workflowStages.length - 1; i++) {
       edges.push({
         id: `forward-${i}`,
         source: workflowStages[i].id,
         target: workflowStages[i + 1].id,
-        type: 'smoothstep',
+        sourceHandle: 'right',
+        targetHandle: 'left',
+        type: 'straight',
         animated: true,
         style: {
           stroke: '#10b981',
@@ -129,7 +174,7 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
           width: 20,
           height: 20,
         },
-        label: 'Cortex →',
+        label: i === 0 ? 'Cortex' : undefined, // Only show label on first edge
         labelStyle: {
           fontSize: '12px',
           fontWeight: 'bold',
@@ -143,17 +188,26 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
       });
     }
     
-    // Return authority edges
-    workflowStages.forEach((stage, index) => {
+    // Return authority edges (curved paths below nodes)
+    let returnOffset = 40;
+    workflowStages.forEach((stage, stageIndex) => {
       if (stage.returnAuthority) {
-        stage.returnAuthority.targetStages.forEach((targetStage) => {
+        stage.returnAuthority.targetStages.forEach((targetStage, idx) => {
           const targetIndex = workflowStages.findIndex(s => s.id === targetStage);
-          if (targetIndex !== -1 && targetIndex < index) {
+          if (targetIndex !== -1 && targetIndex < stageIndex) {
+            const distance = stageIndex - targetIndex;
+            const currentOffset = returnOffset + (idx * 25); // Stagger multiple returns
+            
             edges.push({
-              id: `return-${stage.id}-${targetStage}`,
+              id: `return-${stage.id}-${targetStage}-${idx}`,
               source: stage.id,
               target: targetStage,
-              type: 'smoothstep',
+              sourceHandle: 'bottom-out',
+              targetHandle: 'bottom',
+              type: 'custom-return',
+              data: {
+                offset: currentOffset + (distance * 10), // More offset for longer returns
+              },
               animated: false,
               style: {
                 stroke: '#ef4444',
@@ -164,10 +218,10 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
               markerEnd: {
                 type: MarkerType.ArrowClosed,
                 color: '#ef4444',
-                width: 20,
-                height: 20,
+                width: 18,
+                height: 18,
               },
-              label: `⟲ ${stage.returnAuthority?.rats.join(', ') || ''}`,
+              label: stage.returnAuthority?.rats.join(', ') || '',
               labelStyle: {
                 fontSize: '11px',
                 fill: '#ef4444',
@@ -181,6 +235,7 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
             });
           }
         });
+        returnOffset += 30; // Increment base offset for next stage's returns
       }
     });
     
@@ -196,11 +251,12 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
 
   return (
     <div className="fixed inset-0 bg-gray-900/95 z-50 flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b border-gray-700">
+      <div className="flex items-center justify-between p-4 border-b border-gray-700 relative z-10">
         <h2 className="text-xl font-bold text-white">LabRats Workflow Pipeline</h2>
         <button
           onClick={onClose}
           className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+          type="button"
         >
           <X className="w-5 h-5 text-gray-400" />
         </button>
@@ -214,6 +270,7 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
           onEdgesChange={onEdgesChange}
           connectionLineType={ConnectionLineType.SmoothStep}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           attributionPosition="bottom-left"
           proOptions={{ hideAttribution: true }}
@@ -222,8 +279,8 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({ on
           elementsSelectable={false}
           panOnScroll={true}
           preventScrolling={false}
-          defaultViewport={{ x: 50, y: 50, zoom: 0.7 }}
-          fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+          defaultViewport={{ x: 0, y: 0, zoom: 0.6 }}
+          fitViewOptions={{ padding: 0.2, maxZoom: 0.8 }}
         >
           <Background color="#374151" gap={20} />
           <Controls className="bg-gray-800 border-gray-700" />

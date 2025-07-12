@@ -5,10 +5,17 @@ import { workflowStages, getStageConfig } from '../../config/workflow-stages';
 import { kanbanService } from '../../services/kanban-service';
 import { WorkflowVisualization } from './WorkflowVisualization';
 import { CreateTaskDialog } from './CreateTaskDialog';
+import { AssignTaskDialog } from './AssignTaskDialog';
+import { ViewTaskDialog } from './ViewTaskDialog';
+import { EditTaskDialog } from './EditTaskDialog';
 
 
 
-export const KanbanBoard: React.FC = () => {
+interface KanbanBoardProps {
+  currentFolder: string | null;
+}
+
+export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showWorkflow, setShowWorkflow] = useState(false);
@@ -16,12 +23,27 @@ export const KanbanBoard: React.FC = () => {
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createTaskStatus, setCreateTaskStatus] = useState<WorkflowStage>('backlog');
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [assignDialogData, setAssignDialogData] = useState<{ task: Task; targetStage: WorkflowStage } | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [showViewDialog, setShowViewDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const boardId = 'main-board'; // For now, using a single board
-
-  // Load tasks on component mount
+  
+  // Set the current project in kanban service
   useEffect(() => {
-    loadTasks();
-  }, []);
+    kanbanService.setCurrentProject(currentFolder);
+  }, [currentFolder]);
+
+  // Load tasks on component mount and when currentFolder changes
+  useEffect(() => {
+    if (currentFolder) {
+      loadTasks();
+    } else {
+      setTasks([]);
+      setIsLoading(false);
+    }
+  }, [currentFolder]);
 
   const loadTasks = async () => {
     try {
@@ -61,6 +83,17 @@ export const KanbanBoard: React.FC = () => {
       default: return <CheckCircle className="w-4 h-4 text-gray-400" />;
     }
   };
+
+  if (!currentFolder) {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-900">
+        <div className="text-center text-gray-400">
+          <p className="text-lg">No project folder is currently open</p>
+          <p className="text-sm mt-2">Please open a project folder to use the kanban board</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 bg-gray-900 p-6 overflow-y-auto">
@@ -103,17 +136,9 @@ export const KanbanBoard: React.FC = () => {
             onDrop={(e) => {
               e.preventDefault();
               if (draggedTask && draggedTask.status !== stage.id) {
-                const updatedTasks = tasks.map(task => 
-                  task.id === draggedTask.id 
-                    ? { ...task, status: stage.id }
-                    : task
-                );
-                setTasks(updatedTasks);
-                // Save to backend
-                kanbanService.updateTask(boardId, {
-                  ...draggedTask,
-                  status: stage.id
-                });
+                // Show assignment dialog
+                setAssignDialogData({ task: draggedTask, targetStage: stage.id });
+                setShowAssignDialog(true);
               }
               setDraggedTask(null);
               setDragOverColumn(null);
@@ -141,6 +166,10 @@ export const KanbanBoard: React.FC = () => {
                   onDragEnd={() => {
                     setDraggedTask(null);
                     setDragOverColumn(null);
+                  }}
+                  onClick={() => {
+                    setSelectedTask(task);
+                    setShowViewDialog(true);
                   }}
                 >
                   <div className="flex items-start justify-between mb-2">
@@ -223,6 +252,10 @@ export const KanbanBoard: React.FC = () => {
                   setDraggedTask(null);
                   setDragOverColumn(null);
                 }}
+                onClick={() => {
+                  setSelectedTask(task);
+                  setShowViewDialog(true);
+                }}
               >
                 <div className="flex items-start justify-between mb-2">
                   <h4 className="text-white font-medium text-sm leading-tight flex-1">
@@ -283,8 +316,85 @@ export const KanbanBoard: React.FC = () => {
           initialStatus={createTaskStatus}
           onClose={() => setShowCreateDialog(false)}
           onTaskCreated={async (newTask) => {
-            setTasks([...tasks, newTask]);
-            await kanbanService.updateTask(boardId, newTask);
+            try {
+              setTasks([...tasks, newTask]);
+              await kanbanService.updateTask(boardId, newTask);
+              // Reload tasks to ensure we have the latest data from storage
+              await loadTasks();
+            } catch (error) {
+              console.error('Error saving task:', error);
+            }
+          }}
+        />
+      )}
+      
+      {showAssignDialog && assignDialogData && (
+        <AssignTaskDialog
+          taskTitle={assignDialogData.task.title}
+          targetStage={assignDialogData.targetStage}
+          onConfirm={(assignees) => {
+            // Update task with new assignees and status
+            const updatedTask = {
+              ...assignDialogData.task,
+              status: assignDialogData.targetStage,
+              assignee: assignees.join(', '), // Join multiple assignees
+              updatedAt: new Date().toISOString()
+            };
+            
+            // Update local state
+            const updatedTasks = tasks.map(task => 
+              task.id === updatedTask.id ? updatedTask : task
+            );
+            setTasks(updatedTasks);
+            
+            // Save to backend (don't await to avoid blocking dialog close)
+            kanbanService.updateTask(boardId, updatedTask).catch(console.error);
+            
+            // Close dialog immediately
+            setShowAssignDialog(false);
+            setAssignDialogData(null);
+          }}
+          onCancel={() => {
+            setShowAssignDialog(false);
+            setAssignDialogData(null);
+          }}
+        />
+      )}
+      
+      {showViewDialog && selectedTask && (
+        <ViewTaskDialog
+          task={selectedTask}
+          onClose={() => {
+            setShowViewDialog(false);
+            setSelectedTask(null);
+          }}
+          onEdit={() => {
+            setShowViewDialog(false);
+            setShowEditDialog(true);
+          }}
+        />
+      )}
+      
+      {showEditDialog && selectedTask && (
+        <EditTaskDialog
+          task={selectedTask}
+          onClose={() => {
+            setShowEditDialog(false);
+            setSelectedTask(null);
+          }}
+          onSave={async (updatedTask) => {
+            // Update local state
+            const updatedTasks = tasks.map(task => 
+              task.id === updatedTask.id ? updatedTask : task
+            );
+            setTasks(updatedTasks);
+            
+            // Save to backend
+            await kanbanService.updateTask(boardId, updatedTask);
+            
+            // Close dialog
+            setShowEditDialog(false);
+            setSelectedTask(null);
           }}
         />
       )}

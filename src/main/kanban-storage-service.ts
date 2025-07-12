@@ -1,5 +1,5 @@
-import { promises as fs } from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Board, Task, Epic } from '../types/kanban';
 
 export class KanbanStorageService {
@@ -9,17 +9,24 @@ export class KanbanStorageService {
     this.boardsPath = path.join(projectPath, '.labrats', 'boards');
   }
 
-  async ensureDirectories(): Promise<void> {
-    await fs.mkdir(this.boardsPath, { recursive: true });
-    await fs.mkdir(path.join(this.boardsPath, 'tasks'), { recursive: true });
+  private ensureDirectories(): void {
+    const tasksPath = path.join(this.boardsPath, 'tasks');
+    
+    if (!fs.existsSync(this.boardsPath)) {
+      fs.mkdirSync(this.boardsPath, { recursive: true });
+    }
+    
+    if (!fs.existsSync(tasksPath)) {
+      fs.mkdirSync(tasksPath, { recursive: true });
+    }
   }
 
   // Board operations
   async getBoard(boardId: string): Promise<Board | null> {
-    await this.ensureDirectories();
+    this.ensureDirectories();
     try {
       const boardPath = path.join(this.boardsPath, 'boards.json');
-      const data = await fs.readFile(boardPath, 'utf8');
+      const data = await fs.promises.readFile(boardPath, 'utf8');
       const boards = JSON.parse(data);
       return boards[boardId] || null;
     } catch (error) {
@@ -31,32 +38,32 @@ export class KanbanStorageService {
   }
 
   async saveBoard(board: Board): Promise<void> {
-    await this.ensureDirectories();
+    this.ensureDirectories();
     
     // Save board metadata
     const boardsPath = path.join(this.boardsPath, 'boards.json');
     let boards: Record<string, Board> = {};
     
     try {
-      const data = await fs.readFile(boardsPath, 'utf8');
+      const data = await fs.promises.readFile(boardsPath, 'utf8');
       boards = JSON.parse(data);
     } catch {
       // File doesn't exist yet
     }
     
     boards[board.boardId] = board;
-    await fs.writeFile(boardsPath, JSON.stringify(boards, null, 2));
+    await fs.promises.writeFile(boardsPath, JSON.stringify(boards, null, 2));
     
     // Save tasks separately for better performance on large boards
     const tasksPath = path.join(this.boardsPath, 'tasks', `${board.boardId}.json`);
-    await fs.writeFile(tasksPath, JSON.stringify(board.tasks, null, 2));
+    await fs.promises.writeFile(tasksPath, JSON.stringify(board.tasks, null, 2));
   }
 
   async getTasks(boardId: string): Promise<Task[]> {
-    await this.ensureDirectories();
+    this.ensureDirectories();
     try {
       const tasksPath = path.join(this.boardsPath, 'tasks', `${boardId}.json`);
-      const data = await fs.readFile(tasksPath, 'utf8');
+      const data = await fs.promises.readFile(tasksPath, 'utf8');
       return JSON.parse(data);
     } catch {
       return [];
@@ -64,6 +71,7 @@ export class KanbanStorageService {
   }
 
   async updateTask(boardId: string, task: Task): Promise<void> {
+    this.ensureDirectories();
     const tasks = await this.getTasks(boardId);
     const index = tasks.findIndex(t => t.id === task.id);
     
@@ -74,7 +82,7 @@ export class KanbanStorageService {
     }
     
     const tasksPath = path.join(this.boardsPath, 'tasks', `${boardId}.json`);
-    await fs.writeFile(tasksPath, JSON.stringify(tasks, null, 2));
+    await fs.promises.writeFile(tasksPath, JSON.stringify(tasks, null, 2));
   }
 
   async deleteTask(boardId: string, taskId: string): Promise<void> {
@@ -82,7 +90,7 @@ export class KanbanStorageService {
     const filteredTasks = tasks.filter(t => t.id !== taskId);
     
     const tasksPath = path.join(this.boardsPath, 'tasks', `${boardId}.json`);
-    await fs.writeFile(tasksPath, JSON.stringify(filteredTasks, null, 2));
+    await fs.promises.writeFile(tasksPath, JSON.stringify(filteredTasks, null, 2));
   }
 
   // Epic operations

@@ -55,12 +55,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       const loadedTasks = await kanbanService.getTasks(boardId);
       setTasks(loadedTasks || []);
       
-      // Index all tasks for search on load
-      if (loadedTasks && loadedTasks.length > 0) {
-        kanbanTaskIndexing.indexTasks(loadedTasks).catch(error => {
-          console.error('Error indexing tasks:', error);
-        });
-      }
+      // TODO: Replace with Dexy vectorization
+      // The old kanban task indexing is disabled as we're migrating to Dexy
+      // if (loadedTasks && loadedTasks.length > 0) {
+      //   kanbanTaskIndexing.indexTasks(loadedTasks).catch(error => {
+      //     console.error('Error indexing tasks:', error);
+      //   });
+      // }
     } catch (error) {
       console.error('Error loading tasks:', error);
       setTasks([]);
@@ -344,8 +345,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
               setTasks([...tasks, newTask]);
               await kanbanService.updateTask(boardId, newTask);
               
-              // Index the new task for search
-              await kanbanTaskIndexing.indexTask(newTask);
+              // TODO: Replace with Dexy vectorization
+              // await kanbanTaskIndexing.indexTask(newTask);
               
               // Reload tasks to ensure we have the latest data from storage
               await loadTasks();
@@ -377,7 +378,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             
             // Save to backend and index (don't await to avoid blocking dialog close)
             kanbanService.updateTask(boardId, updatedTask)
-              .then(() => kanbanTaskIndexing.indexTask(updatedTask))
+              // TODO: Replace with Dexy vectorization
+              // .then(() => kanbanTaskIndexing.indexTask(updatedTask))
               .catch(console.error);
             
             // Close dialog immediately
@@ -419,9 +421,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             );
             setTasks(updatedTasks);
             
-            // Save to backend and index
+            // Save to backend
             await kanbanService.updateTask(boardId, updatedTask);
-            await kanbanTaskIndexing.indexTask(updatedTask);
+            // TODO: Replace with Dexy vectorization
+            // await kanbanTaskIndexing.indexTask(updatedTask);
             
             // Close dialog
             setShowEditDialog(false);

@@ -43,8 +43,10 @@ export const TaskSearchDialog: React.FC<TaskSearchDialogProps> = ({
     
     setIsSearching(true);
     try {
-      const duplicates = await kanbanTaskIndexing.findDuplicates(currentTask);
-      setResults(duplicates);
+      // TODO: Replace with Dexy vectorization
+      // const duplicates = await kanbanTaskIndexing.findDuplicates(currentTask);
+      // setResults(duplicates);
+      setResults([]); // Temporarily return empty results
     } catch (error) {
       console.error('Error finding duplicates:', error);
       setResults([]);
@@ -61,11 +63,13 @@ export const TaskSearchDialog: React.FC<TaskSearchDialogProps> = ({
     
     setIsSearching(true);
     try {
-      const searchResults = await kanbanTaskIndexing.searchTasks(searchQuery, {
-        topK: 20,
-        threshold: 0.5
-      });
-      setResults(searchResults);
+      // TODO: Replace with Dexy vectorization
+      // const searchResults = await kanbanTaskIndexing.searchTasks(searchQuery, {
+      //   topK: 20,
+      //   threshold: 0.5
+      // });
+      // setResults(searchResults);
+      setResults([]); // Temporarily return empty results
     } catch (error) {
       console.error('Error searching tasks:', error);
       setResults([]);

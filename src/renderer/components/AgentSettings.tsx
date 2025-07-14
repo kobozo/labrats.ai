@@ -77,6 +77,34 @@ export const AgentSettings: React.FC = () => {
       loadDefaultModelsForProvider(defaultProvider);
     }
   }, [defaultProvider]);
+  
+  // Load models from providers on mount
+  useEffect(() => {
+    const loadModelsFromProviders = async () => {
+      try {
+        const providerManager = getAIProviderManager();
+        const providers = await providerManager.getAvailableProviders();
+        
+        // Clear any existing cached models
+        window.labRatsProviderModels = {};
+        
+        // Load models for each provider
+        for (const provider of providers) {
+          try {
+            const models = await provider.getModels();
+            window.labRatsProviderModels = window.labRatsProviderModels || {};
+            window.labRatsProviderModels[provider.id] = models;
+          } catch (error) {
+            console.error(`Error loading models for ${provider.id}:`, error);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load models from providers:', error);
+      }
+    };
+    
+    loadModelsFromProviders();
+  }, []);
 
   // Helper to persist overrides
   const persistOverrides = async (overrides: { [key: string]: AgentConfig }) => {
@@ -121,12 +149,32 @@ export const AgentSettings: React.FC = () => {
     setLoadingModels(true);
     try {
       let models: AIModel[] = [];
-      // First try to get from cached models
-      if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
+      
+      // Try to get models from the provider directly
+      const providerManager = getAIProviderManager();
+      const provider = providerManager.getProvider(providerId);
+      
+      if (provider) {
+        try {
+          models = await provider.getModels();
+          // Cache the models
+          window.labRatsProviderModels = window.labRatsProviderModels || {};
+          window.labRatsProviderModels[providerId] = models;
+        } catch (error) {
+          console.error(`Error fetching models from provider ${providerId}:`, error);
+          // Try cached models as fallback
+          if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
+            models = window.labRatsProviderModels[providerId];
+          }
+        }
+      } else if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
+        // Use cached models if provider not available
         models = window.labRatsProviderModels[providerId];
       } else if (window.electronAPI?.ai) {
+        // Last resort - try electron API
         models = await window.electronAPI.ai.getModels(providerId);
       }
+      
       // Filter to only show reasoning models (or models without a type specified)
       const reasoningModels = models.filter(model => !model.type || model.type === 'reasoning');
       setAvailableModels(reasoningModels);
@@ -154,12 +202,32 @@ export const AgentSettings: React.FC = () => {
     setLoadingDefaultModels(true);
     try {
       let models: AIModel[] = [];
-      // First try to get from cached models
-      if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
+      
+      // Try to get models from the provider directly
+      const providerManager = getAIProviderManager();
+      const provider = providerManager.getProvider(providerId);
+      
+      if (provider) {
+        try {
+          models = await provider.getModels();
+          // Cache the models
+          window.labRatsProviderModels = window.labRatsProviderModels || {};
+          window.labRatsProviderModels[providerId] = models;
+        } catch (error) {
+          console.error(`Error fetching models from provider ${providerId}:`, error);
+          // Try cached models as fallback
+          if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
+            models = window.labRatsProviderModels[providerId];
+          }
+        }
+      } else if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
+        // Use cached models if provider not available
         models = window.labRatsProviderModels[providerId];
       } else if (window.electronAPI?.ai) {
+        // Last resort - try electron API
         models = await window.electronAPI.ai.getModels(providerId);
       }
+      
       // Filter to only show reasoning models (or models without a type specified)
       const reasoningModels = models.filter(model => !model.type || model.type === 'reasoning');
       setDefaultAvailableModels(reasoningModels);

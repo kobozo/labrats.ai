@@ -434,36 +434,16 @@ export class DexyVectorizationService {
     }
 
     try {
-      const path = require('path');
-      const fs = require('fs');
-      const yaml = require('js-yaml');
-      const os = require('os');
+      const { CentralizedAPIKeyService } = require('./centralized-api-key-service');
+      const centralizedService = CentralizedAPIKeyService.getInstance();
       
-      // Read the encrypted API key from ~/.labrats/config.yaml
-      const configPath = path.join(os.homedir(), '.labrats', 'config.yaml');
-      console.log('[DEXY] Looking for API key in:', configPath);
+      console.log('[DEXY] Getting API key from centralized service for provider:', this.config.providerId);
+      const apiKey = await centralizedService.getAPIKey(this.config.providerId);
+      console.log('[DEXY] Successfully retrieved API key from centralized service');
       
-      if (fs.existsSync(configPath)) {
-        const configContent = fs.readFileSync(configPath, 'utf8');
-        const configData = yaml.load(configContent);
-        const serviceConfig = configData?.ai?.services?.[this.config.providerId];
-        
-        console.log('[DEXY] Service config found:', !!serviceConfig);
-        console.log('[DEXY] Has encrypted API key:', !!serviceConfig?.encryptedApiKey);
-        
-        if (serviceConfig?.encryptedApiKey) {
-          // Decrypt the API key using the AIConfigService
-          const { AIConfigService } = require('../main/aiConfigService');
-          const aiConfigService = AIConfigService.getInstance();
-          const decryptedKey = await aiConfigService.getAPIKey(this.config.providerId, serviceConfig.encryptedApiKey);
-          console.log('[DEXY] Successfully decrypted API key');
-          return decryptedKey;
-        }
-      }
-      
-      throw new Error(`No API key found for ${this.config.providerId}`);
+      return apiKey;
     } catch (error) {
-      console.error('[DEXY] Failed to get API key:', error);
+      console.error('[DEXY] Failed to get API key from centralized service:', error);
       throw error;
     }
   }

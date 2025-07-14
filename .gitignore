@@ -174,3 +174,4 @@ bundle-analyzer-report.html
 
 # LabRats chat history and local data
 .labrats/
+!.labrats/boards/tasks

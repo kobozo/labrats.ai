@@ -1345,19 +1345,25 @@ ipcMain.handle('ai-get-supported-services', async () => {
 });
 
 ipcMain.handle('ai-get-service-config', async (event, serviceId: string) => {
-  const services = configManager.get('ai', 'services') || {};
-  const serviceConfig = services[serviceId] || {};
+  const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+  const centralizedService = CentralizedAPIKeyService.getInstance();
+  
+  const providerConfig = centralizedService.getProviderConfig(serviceId);
+  const hasApiKey = await centralizedService.isProviderConfigured(serviceId);
   
   return {
     id: serviceId,
-    enabled: serviceConfig.enabled || false,
-    hasApiKey: !!serviceConfig.encryptedApiKey
+    enabled: providerConfig?.enabled || false,
+    hasApiKey
   };
 });
 
 ipcMain.handle('ai-store-api-key', async (event, serviceId: string, apiKey: string) => {
   try {
-    await aiConfigService.storeAPIKey(serviceId, apiKey);
+    const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+    const centralizedService = CentralizedAPIKeyService.getInstance();
+    
+    await centralizedService.setAPIKey(serviceId, apiKey);
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -1366,14 +1372,10 @@ ipcMain.handle('ai-store-api-key', async (event, serviceId: string, apiKey: stri
 
 ipcMain.handle('ai-get-api-key', async (event, serviceId: string) => {
   try {
-    const services = configManager.get('ai', 'services') || {};
-    const serviceConfig = services[serviceId] || {};
-    const encryptedKey = serviceConfig.encryptedApiKey;
+    const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+    const centralizedService = CentralizedAPIKeyService.getInstance();
     
-    if (!encryptedKey) {
-      return { success: false, error: 'No API key stored for this service' };
-    }
-    const apiKey = await aiConfigService.getAPIKey(serviceId, encryptedKey);
+    const apiKey = await centralizedService.getAPIKey(serviceId);
     return { success: true, apiKey };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -1382,7 +1384,10 @@ ipcMain.handle('ai-get-api-key', async (event, serviceId: string) => {
 
 ipcMain.handle('ai-remove-api-key', async (event, serviceId: string) => {
   try {
-    await aiConfigService.removeAPIKey(serviceId);
+    const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+    const centralizedService = CentralizedAPIKeyService.getInstance();
+    
+    await centralizedService.removeAPIKey(serviceId);
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -1399,11 +1404,17 @@ ipcMain.handle('ai-set-service-enabled', async (event, serviceId: string, enable
 });
 
 ipcMain.handle('ai-validate-api-key', async (event, serviceId: string, apiKey: string) => {
-  return aiConfigService.validateAPIKey(serviceId, apiKey);
+  const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+  const centralizedService = CentralizedAPIKeyService.getInstance();
+  
+  return centralizedService.validateAPIKey(serviceId, apiKey);
 });
 
 ipcMain.handle('ai-test-api-key', async (event, serviceId: string, apiKey: string) => {
-  return await aiConfigService.testAPIKey(serviceId, apiKey);
+  const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+  const centralizedService = CentralizedAPIKeyService.getInstance();
+  
+  return await centralizedService.testConnection(serviceId);
 });
 
 ipcMain.handle('ai-reset-configuration', async () => {

@@ -25,11 +25,14 @@ export class DexyVectorizationService {
   }
 
   async initialize(projectPath: string): Promise<void> {
+    console.log('[DEXY] Initializing for project:', projectPath);
     this.projectPath = projectPath;
     this.vectorStorage = new VectorStorageService(projectPath);
     
     // Load Dexy configuration
     await this.loadDexyConfig();
+    
+    console.log('[DEXY] Config after loading:', this.config);
     
     if (this.config && this.config.providerId && this.config.modelId) {
       // Initialize the embedding provider
@@ -63,23 +66,33 @@ export class DexyVectorizationService {
 
   private async loadDexyConfig(): Promise<void> {
     try {
-      // Load Dexy agent configuration from the main process config
-      const { app } = require('electron');
       const path = require('path');
       const fs = require('fs');
+      const yaml = require('js-yaml');
+      const os = require('os');
       
-      const configPath = path.join(app.getPath('userData'), 'config.json');
+      // Load from ~/.labrats/config.yaml
+      const configPath = path.join(os.homedir(), '.labrats', 'config.yaml');
+      console.log('[DEXY] Loading config from:', configPath);
+      
       if (fs.existsSync(configPath)) {
-        const configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        const agentOverrides = configData?.agents?.overrides;
-        const dexyConfig = agentOverrides?.dexy;
+        const configContent = fs.readFileSync(configPath, 'utf8');
+        const configData = yaml.load(configContent);
+        
+        // Check for agent overrides in the YAML structure
+        const dexyConfig = configData?.agents?.overrides?.dexy;
         
         if (dexyConfig && dexyConfig.provider !== 'inherit' && dexyConfig.model !== 'inherit') {
           this.config = {
             providerId: dexyConfig.provider,
             modelId: dexyConfig.model
           };
+          console.log('[DEXY] Loaded configuration from YAML:', this.config);
+        } else {
+          console.log('[DEXY] Dexy config in YAML is inherit or missing:', dexyConfig);
         }
+      } else {
+        console.warn('[DEXY] Config file not found at:', configPath);
       }
     } catch (error) {
       console.error('[DEXY] Failed to load configuration:', error);

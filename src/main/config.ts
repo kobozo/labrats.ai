@@ -36,8 +36,6 @@ export interface LabRatsConfig {
   
   // AI settings
   ai: {
-    defaultProvider: string;
-    defaultModel: string;
     temperature: number;
     maxTokens: number;
     streamResponses: boolean;
@@ -70,9 +68,18 @@ export interface LabRatsConfig {
 
   // Agent settings
   agents: {
+    defaultProvider: string;
+    defaultModel: string;
     autoActivate: boolean;
     maxActive: number;
     responseDelay: number;
+    overrides?: {
+      [agentId: string]: {
+        provider: string;
+        model: string;
+        colorAccent?: string;
+      };
+    };
   };
 
   // Data & Storage settings
@@ -141,8 +148,6 @@ const DEFAULT_CONFIG: LabRatsConfig = {
   },
   
   ai: {
-    defaultProvider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-20250514',
     temperature: 0.7,
     maxTokens: 4096,
     streamResponses: true,
@@ -167,9 +172,12 @@ const DEFAULT_CONFIG: LabRatsConfig = {
   },
 
   agents: {
+    defaultProvider: 'anthropic',
+    defaultModel: 'claude-sonnet-4-20250514',
     autoActivate: true,
     maxActive: 6,
     responseDelay: 1000,
+    overrides: {},
   },
 
   data: {

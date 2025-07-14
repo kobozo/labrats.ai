@@ -136,10 +136,7 @@ export const Settings: React.FC = () => {
   // AI Provider and Model Selection state
   const [availableProviders, setAvailableProviders] = useState<AIProvider[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
-  const [defaultProvider, setDefaultProvider] = useState<string>('');
-  const [defaultModel, setDefaultModel] = useState<string>('');
   const [providerModels, setProviderModels] = useState<{[key: string]: AIModel[]}>({});
-  const [selectedModels, setSelectedModels] = useState<{[key: string]: string}>({});
   
   // LabRats Backend state
   const [labRatsBackendStatus, setLabRatsBackendStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
@@ -332,17 +329,6 @@ export const Settings: React.FC = () => {
       }
       setProviderModels(modelsMap);
       
-      // Load current default
-      const defaultConfig = await providerManager.getDefault();
-      if (defaultConfig) {
-        setDefaultProvider(defaultConfig.providerId);
-        setDefaultModel(defaultConfig.modelId);
-        // Set the selected model for the default provider
-        setSelectedModels(prev => ({
-          ...prev,
-          [defaultConfig.providerId]: defaultConfig.modelId
-        }));
-      }
     } catch (error) {
       console.error('Error loading AI providers:', error);
     } finally {
@@ -350,32 +336,6 @@ export const Settings: React.FC = () => {
     }
   };
 
-  const handleModelSelection = (providerId: string, modelId: string) => {
-    setSelectedModels(prev => ({
-      ...prev,
-      [providerId]: modelId
-    }));
-  };
-
-  const makeDefault = async (providerId: string, modelId: string) => {
-    try {
-      setLoading(true);
-      const providerManager = getAIProviderManager();
-      await providerManager.setDefault(providerId, modelId);
-      setDefaultProvider(providerId);
-      setDefaultModel(modelId);
-      // Update selected model for this provider
-      setSelectedModels(prev => ({
-        ...prev,
-        [providerId]: modelId
-      }));
-    } catch (error) {
-      console.error('Error setting default:', error);
-      alert('Failed to set as default');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadLabRatsBackendSettings = async () => {
     try {
@@ -1030,100 +990,25 @@ export const Settings: React.FC = () => {
                         <div className="border-t border-gray-600 pt-4">
                           <h5 className="text-white font-medium mb-3">Model Selection</h5>
                           
-                          {/* Model Dropdown */}
+                          {/* Available Models */}
                           <div className="mb-4">
-                            <label className="text-sm text-gray-300 block mb-2">Select Model:</label>
-                            <div className="relative">
-                              <select
-                                value={selectedModels[service.id] || ''}
-                                onChange={(e) => handleModelSelection(service.id, e.target.value)}
-                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-10"
-                              >
-                                <option value="">Select a model...</option>
-                                {providerModels[service.id].map(model => (
-                                  <option key={model.id} value={model.id}>
-                                    {model.name}
-                                    {defaultProvider === service.id && defaultModel === model.id ? ' (Default)' : ''}
-                                  </option>
-                                ))}
-                              </select>
-                              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            </div>
-                          </div>
-
-                          {/* Selected Model Details */}
-                          {selectedModels[service.id] && (() => {
-                            const selectedModel = providerModels[service.id].find(m => m.id === selectedModels[service.id]);
-                            if (!selectedModel) return null;
-                            const isDefault = defaultProvider === service.id && defaultModel === selectedModel.id;
-                            
-                            return (
-                              <div className="p-4 bg-gray-700 rounded-lg">
-                                <div className="flex items-center justify-between mb-3">
-                                  <div className="flex items-center space-x-2">
-                                    <h6 className="text-white font-medium">{selectedModel.name}</h6>
-                                    {isDefault && (
-                                      <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">
-                                        Default
-                                      </span>
+                            <label className="text-sm text-gray-300 block mb-2">Available Models:</label>
+                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                              {providerModels[service.id].map(model => (
+                                <div key={model.id} className="p-3 bg-gray-700 rounded-lg">
+                                  <h6 className="text-white font-medium">{model.name}</h6>
+                                  <p className="text-gray-400 text-xs">{model.description}</p>
+                                  <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500">
+                                    <span>Context: {model.contextWindow.toLocaleString()}</span>
+                                    <span>Max: {model.maxTokens.toLocaleString()}</span>
+                                    {model.inputCost && (
+                                      <span>${model.inputCost}/${model.outputCost} per 1K</span>
                                     )}
                                   </div>
-                                  {!isDefault && (
-                                    <button
-                                      onClick={() => makeDefault(service.id, selectedModel.id)}
-                                      disabled={loading}
-                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 text-white text-sm rounded-md font-medium"
-                                    >
-                                      {loading ? 'Setting...' : 'Make Default'}
-                                    </button>
-                                  )}
                                 </div>
-                                
-                                <p className="text-gray-400 text-sm mb-3">{selectedModel.description}</p>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-gray-400 mb-3">
-                                  <div className="flex items-center space-x-1">
-                                    <span className="text-gray-300 font-medium">Context:</span>
-                                    <span>{selectedModel.contextWindow.toLocaleString()} tokens</span>
-                                  </div>
-                                  <div className="flex items-center space-x-1">
-                                    <span className="text-gray-300 font-medium">Max Tokens:</span>
-                                    <span>{selectedModel.maxTokens.toLocaleString()}</span>
-                                  </div>
-                                  {selectedModel.inputCost && (
-                                    <div className="flex items-center space-x-1">
-                                      <span className="text-gray-300 font-medium">Cost:</span>
-                                      <span>${selectedModel.inputCost}/${selectedModel.outputCost} per 1K tokens</span>
-                                    </div>
-                                  )}
-                                </div>
-                                
-                                {/* Features */}
-                                <div className="flex flex-wrap gap-2">
-                                  {selectedModel.features.streaming && (
-                                    <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
-                                      Streaming
-                                    </span>
-                                  )}
-                                  {selectedModel.features.functionCalling && (
-                                    <span className="px-2 py-1 bg-green-600 text-white text-xs rounded">
-                                      Function Calling
-                                    </span>
-                                  )}
-                                  {selectedModel.features.vision && (
-                                    <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
-                                      Vision
-                                    </span>
-                                  )}
-                                  {selectedModel.features.codeGeneration && (
-                                    <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
-                                      Code Generation
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>

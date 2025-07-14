@@ -64,8 +64,8 @@ export class AIProviderManagerImpl implements AIProviderManager {
     // Store the default provider and model in the config
     if (typeof window !== 'undefined' && window.electronAPI?.config?.set) {
       try {
-        await window.electronAPI.config.set('ai', 'defaultProvider', providerId);
-        await window.electronAPI.config.set('ai', 'defaultModel', modelId);
+        await window.electronAPI.config.set('agents', 'defaultProvider', providerId);
+        await window.electronAPI.config.set('agents', 'defaultModel', modelId);
       } catch (error) {
         console.error('Error setting default provider/model:', error);
         throw error;
@@ -79,8 +79,8 @@ export class AIProviderManagerImpl implements AIProviderManager {
     // Get the default provider and model from the config
     if (typeof window !== 'undefined' && window.electronAPI?.config?.get) {
       try {
-        const defaultProvider = await window.electronAPI.config.get('ai', 'defaultProvider');
-        const defaultModel = await window.electronAPI.config.get('ai', 'defaultModel');
+        const defaultProvider = await window.electronAPI.config.get('agents', 'defaultProvider');
+        const defaultModel = await window.electronAPI.config.get('agents', 'defaultModel');
 
         if (defaultProvider && defaultModel) {
           return {

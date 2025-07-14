@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { agents as allAgents, Agent } from '../../config/agents';
 import { AIProviderConfig, AIModel } from '../../types/ai-provider';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Bot } from 'lucide-react';
 import { ProviderModelSelector } from './ProviderModelSelector';
 import { ColorPicker } from './ColorPicker';
 
@@ -20,12 +20,18 @@ export const AgentSettings: React.FC = () => {
   
   const [availableProviders, setAvailableProviders] = useState<AIProviderConfig[]>([]);
   const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
+  const [defaultAvailableModels, setDefaultAvailableModels] = useState<AIModel[]>([]);
   
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [loadingDefaultModels, setLoadingDefaultModels] = useState(false);
+  
+  const [defaultProvider, setDefaultProvider] = useState<string>('');
+  const [defaultModel, setDefaultModel] = useState<string>('');
 
   useEffect(() => {
     loadInitialData();
+    loadDefaultSettings();
     if (agents.length > 0) {
       setSelectedAgent(agents[0]);
     }
@@ -58,6 +64,13 @@ export const AgentSettings: React.FC = () => {
     };
     loadConfigs();
   }, []);
+  
+  // Watch for default provider changes to load models
+  useEffect(() => {
+    if (defaultProvider) {
+      loadDefaultModelsForProvider(defaultProvider);
+    }
+  }, [defaultProvider]);
 
   // Helper to persist overrides
   const persistOverrides = async (overrides: { [key: string]: AgentConfig }) => {
@@ -96,6 +109,52 @@ export const AgentSettings: React.FC = () => {
       setAvailableModels([]);
     }
     setLoadingModels(false);
+  };
+  
+  const loadDefaultSettings = async () => {
+    if (window.electronAPI?.config?.get) {
+      try {
+        const provider = await window.electronAPI.config.get('agents', 'defaultProvider');
+        const model = await window.electronAPI.config.get('agents', 'defaultModel');
+        if (provider) setDefaultProvider(provider);
+        if (model) setDefaultModel(model);
+      } catch (error) {
+        console.error('Failed to load default settings', error);
+      }
+    }
+  };
+  
+  const loadDefaultModelsForProvider = async (providerId: string) => {
+    setLoadingDefaultModels(true);
+    try {
+      if (window.electronAPI?.ai) {
+        const models = await window.electronAPI.ai.getModels(providerId);
+        setDefaultAvailableModels(models);
+      }
+    } catch (error) {
+      console.error(`Failed to load models for ${providerId}`, error);
+      setDefaultAvailableModels([]);
+    }
+    setLoadingDefaultModels(false);
+  };
+  
+  const handleDefaultProviderChange = async (providerId: string) => {
+    setDefaultProvider(providerId);
+    setDefaultModel(''); // Reset model when provider changes
+    
+    // Save to config
+    if (window.electronAPI?.config?.set) {
+      await window.electronAPI.config.set('agents', 'defaultProvider', providerId);
+    }
+  };
+  
+  const handleDefaultModelChange = async (modelId: string) => {
+    setDefaultModel(modelId);
+    
+    // Save to config
+    if (window.electronAPI?.config?.set) {
+      await window.electronAPI.config.set('agents', 'defaultModel', modelId);
+    }
   };
 
   const handleAgentClick = (agent: Agent) => {
@@ -177,14 +236,38 @@ export const AgentSettings: React.FC = () => {
   };
 
   return (
-    <div className="flex space-x-4" style={{ height: '70vh' }}>
-      {/* Agent List Column - Independent Scrolling */}
-      <div className="w-1/3 flex flex-col" style={{ height: '70vh' }}>
+    <div className="space-y-6">
+      {/* Default AI Model Selection */}
+      <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+        <div className="flex items-center space-x-3 mb-4">
+          <Bot className="w-6 h-6 text-blue-400" />
+          <h3 className="text-xl font-bold">Default AI Model</h3>
+        </div>
+        <p className="text-sm text-gray-400 mb-4">
+          Select the default AI provider and model that all agents will use unless overridden.
+        </p>
+        <ProviderModelSelector
+          showInherit={false}
+          availableProviders={availableProviders}
+          availableModels={defaultAvailableModels}
+          loadingProviders={loadingProviders}
+          loadingModels={loadingDefaultModels}
+          selectedProvider={defaultProvider}
+          selectedModel={defaultModel}
+          onProviderChange={handleDefaultProviderChange}
+          onModelChange={handleDefaultModelChange}
+        />
+      </div>
+      
+      {/* Agent Configuration */}
+      <div className="flex space-x-4" style={{ height: '60vh' }}>
+        {/* Agent List Column - Independent Scrolling */}
+        <div className="w-1/3 flex flex-col" style={{ height: '60vh' }}>
         <h3 className="text-xl font-bold mb-4 flex-shrink-0">Available Agents</h3>
         <div 
           className="flex-1 overflow-y-auto space-y-2 pr-2 border border-gray-700 rounded-lg bg-gray-800 p-3"
           style={{ 
-            height: 'calc(70vh - 4rem)',
+            height: 'calc(60vh - 4rem)',
             scrollbarWidth: 'thin',
             scrollbarColor: '#4B5563 #1F2937'
           }}
@@ -222,17 +305,17 @@ export const AgentSettings: React.FC = () => {
             </div>
           ))}
         </div>
-      </div>
-      
-      {/* Settings Panel Column - Independent Scrolling */}
-      <div className="w-2/3 flex flex-col" style={{ height: '70vh' }}>
+        </div>
+        
+        {/* Settings Panel Column - Independent Scrolling */}
+        <div className="w-2/3 flex flex-col" style={{ height: '60vh' }}>
         {selectedAgent ? (
           <>
             <h3 className="text-xl font-bold mb-4 flex-shrink-0">Configure {selectedAgent.name}</h3>
             <div 
               className="flex-1 overflow-y-auto border border-gray-700 rounded-lg bg-gray-800"
               style={{ 
-                height: 'calc(70vh - 4rem)',
+                height: 'calc(60vh - 4rem)',
                 scrollbarWidth: 'thin',
                 scrollbarColor: '#4B5563 #1F2937'
               }}
@@ -276,10 +359,11 @@ export const AgentSettings: React.FC = () => {
             </div>
           </>
         ) : (
-          <div className="flex items-center justify-center border border-gray-700 rounded-lg bg-gray-800" style={{ height: 'calc(70vh - 4rem)' }}>
+          <div className="flex items-center justify-center border border-gray-700 rounded-lg bg-gray-800" style={{ height: 'calc(60vh - 4rem)' }}>
             <p className="text-gray-500">Select an agent to configure</p>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

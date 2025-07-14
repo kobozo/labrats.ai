@@ -406,6 +406,111 @@ export class DexyVectorizationService {
   getConfig(): DexyConfig | null {
     return this.config;
   }
+
+  async hasTaskVector(taskId: string): Promise<boolean> {
+    if (!this.vectorStorage || !this.indexId) {
+      return false;
+    }
+
+    try {
+      return await this.vectorStorage.hasDocument(this.indexId, `task_${taskId}`);
+    } catch (error) {
+      console.error('[DEXY] Failed to check task vector:', error);
+      return false;
+    }
+  }
+
+  async getVectorizedTaskIds(): Promise<string[]> {
+    if (!this.vectorStorage || !this.indexId) {
+      return [];
+    }
+
+    try {
+      const documentIds = await this.vectorStorage.getDocumentIds(this.indexId);
+      // Extract task IDs from document IDs (remove 'task_' prefix)
+      return documentIds
+        .filter(id => id.startsWith('task_'))
+        .map(id => id.substring(5));
+    } catch (error) {
+      console.error('[DEXY] Failed to get vectorized task IDs:', error);
+      return [];
+    }
+  }
+
+  async syncTasks(tasks: Task[], boardId: string): Promise<void> {
+    if (!this.isConfigured()) {
+      console.log('[DEXY] Not configured, skipping sync');
+      return;
+    }
+
+    try {
+      console.log('[DEXY] Starting task sync...');
+      
+      // Get all vectorized task IDs
+      const vectorizedTaskIds = await this.getVectorizedTaskIds();
+      const vectorizedSet = new Set(vectorizedTaskIds);
+      
+      // Get current task IDs
+      const currentTaskIds = new Set(tasks.map(t => t.id));
+      
+      // Find tasks to vectorize (new tasks)
+      const tasksToVectorize = tasks.filter(task => !vectorizedSet.has(task.id));
+      
+      // Find tasks to update (check if content changed)
+      const tasksToUpdate: Task[] = [];
+      for (const task of tasks) {
+        if (vectorizedSet.has(task.id)) {
+          // Check if task content has changed
+          const existingDoc = await this.vectorStorage!.getDocument(this.indexId!, `task_${task.id}`);
+          if (existingDoc) {
+            const currentText = this.createTaskText(task);
+            if (existingDoc.content !== currentText) {
+              tasksToUpdate.push(task);
+            }
+          }
+        }
+      }
+      
+      // Find vectors to delete (tasks no longer exist)
+      const vectorsToDelete = vectorizedTaskIds.filter(id => !currentTaskIds.has(id));
+      
+      console.log('[DEXY] Sync summary:', {
+        total: tasks.length,
+        vectorized: vectorizedTaskIds.length,
+        toVectorize: tasksToVectorize.length,
+        toUpdate: tasksToUpdate.length,
+        toDelete: vectorsToDelete.length
+      });
+      
+      // Process new tasks
+      if (tasksToVectorize.length > 0) {
+        console.log('[DEXY] Vectorizing', tasksToVectorize.length, 'new tasks...');
+        for (const task of tasksToVectorize) {
+          await this.vectorizeTask(task, boardId);
+        }
+      }
+      
+      // Process updated tasks
+      if (tasksToUpdate.length > 0) {
+        console.log('[DEXY] Updating', tasksToUpdate.length, 'changed tasks...');
+        for (const task of tasksToUpdate) {
+          await this.updateTaskVector(task, boardId);
+        }
+      }
+      
+      // Delete orphaned vectors
+      if (vectorsToDelete.length > 0) {
+        console.log('[DEXY] Deleting', vectorsToDelete.length, 'orphaned vectors...');
+        for (const taskId of vectorsToDelete) {
+          await this.deleteTaskVector(taskId);
+        }
+      }
+      
+      console.log('[DEXY] Sync completed');
+    } catch (error) {
+      console.error('[DEXY] Sync failed:', error);
+    }
+  }
 }
 
 // Export singleton instance getter

@@ -240,6 +240,47 @@ export class VectorStorageService {
     await this.saveIndex(index);
   }
 
+  async hasDocument(indexId: string, documentId: string): Promise<boolean> {
+    const index = this.indices.get(indexId);
+    if (!index) {
+      return false;
+    }
+    
+    return index.documents.has(documentId);
+  }
+
+  async getDocumentIds(indexId: string): Promise<string[]> {
+    const index = this.indices.get(indexId);
+    if (!index) {
+      return [];
+    }
+    
+    return Array.from(index.documents.keys());
+  }
+
+  async getDocument(indexId: string, documentId: string): Promise<VectorDocument | null> {
+    const index = this.indices.get(indexId);
+    if (!index) {
+      return null;
+    }
+    
+    const doc = index.documents.get(documentId);
+    if (!doc) {
+      return null;
+    }
+    
+    // Load embedding if not already loaded
+    if (!doc.embedding || doc.embedding.length === 0) {
+      const embeddingPath = this.getEmbeddingFilePath(indexId, documentId);
+      if (fs.existsSync(embeddingPath)) {
+        const embedding = JSON.parse(await fs.promises.readFile(embeddingPath, 'utf-8'));
+        doc.embedding = embedding;
+      }
+    }
+    
+    return doc;
+  }
+
   async searchSimilar(
     indexId: string, 
     queryVector: number[], 

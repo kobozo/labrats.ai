@@ -158,6 +158,51 @@ class DexyServiceRenderer {
       return [];
     }
   }
+
+  async syncTasks(tasks: Task[], boardId: string): Promise<void> {
+    if (!this.initialized || typeof window === 'undefined' || !window.electronAPI?.dexy?.syncTasks) {
+      console.warn('[DEXY-RENDERER] Not initialized or API not available');
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.dexy.syncTasks({ tasks, boardId });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to sync tasks');
+      }
+      console.log('[DEXY-RENDERER] Tasks synced successfully');
+    } catch (error) {
+      console.error('[DEXY-RENDERER] Failed to sync tasks:', error);
+    }
+  }
+
+  async hasTaskVector(taskId: string): Promise<boolean> {
+    if (typeof window === 'undefined' || !window.electronAPI?.dexy?.hasTaskVector) {
+      return false;
+    }
+
+    try {
+      const result = await window.electronAPI.dexy.hasTaskVector(taskId);
+      return result.hasVector || false;
+    } catch (error) {
+      console.error('[DEXY-RENDERER] Failed to check task vector:', error);
+      return false;
+    }
+  }
+
+  async getVectorizedTaskIds(): Promise<string[]> {
+    if (typeof window === 'undefined' || !window.electronAPI?.dexy?.getVectorizedTaskIds) {
+      return [];
+    }
+
+    try {
+      const result = await window.electronAPI.dexy.getVectorizedTaskIds();
+      return result.taskIds || [];
+    } catch (error) {
+      console.error('[DEXY-RENDERER] Failed to get vectorized task IDs:', error);
+      return [];
+    }
+  }
 }
 
 // Export singleton instance

@@ -148,6 +148,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteTaskVector: (taskId: string) => ipcRenderer.invoke('dexy:deleteTaskVector', taskId),
     findSimilarTasks: (params: { task: any; options?: any }) => ipcRenderer.invoke('dexy:findSimilarTasks', params),
     getIndices: () => ipcRenderer.invoke('dexy:getIndices'),
+    syncTasks: (params: { tasks: any[]; boardId: string }) => ipcRenderer.invoke('dexy:syncTasks', params),
+    hasTaskVector: (taskId: string) => ipcRenderer.invoke('dexy:hasTaskVector', taskId),
+    getVectorizedTaskIds: () => ipcRenderer.invoke('dexy:getVectorizedTaskIds'),
   },
 
   // System API

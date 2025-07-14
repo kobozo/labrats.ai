@@ -126,4 +126,49 @@ export function registerDexyHandlers() {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error', indices: [] };
     }
   });
+  
+  // Sync tasks
+  ipcMain.handle('dexy:syncTasks', async (_, { tasks, boardId }: { tasks: Task[]; boardId: string }) => {
+    try {
+      if (!dexyService) {
+        throw new Error('Dexy service not initialized');
+      }
+      
+      await dexyService.syncTasks(tasks, boardId);
+      return { success: true };
+    } catch (error) {
+      console.error('[DEXY-IPC] Failed to sync tasks:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+  
+  // Check if task has vector
+  ipcMain.handle('dexy:hasTaskVector', async (_, taskId: string) => {
+    try {
+      if (!dexyService) {
+        throw new Error('Dexy service not initialized');
+      }
+      
+      const hasVector = await dexyService.hasTaskVector(taskId);
+      return { success: true, hasVector };
+    } catch (error) {
+      console.error('[DEXY-IPC] Failed to check task vector:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error', hasVector: false };
+    }
+  });
+  
+  // Get vectorized task IDs
+  ipcMain.handle('dexy:getVectorizedTaskIds', async () => {
+    try {
+      if (!dexyService) {
+        throw new Error('Dexy service not initialized');
+      }
+      
+      const taskIds = await dexyService.getVectorizedTaskIds();
+      return { success: true, taskIds };
+    } catch (error) {
+      console.error('[DEXY-IPC] Failed to get vectorized task IDs:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error', taskIds: [] };
+    }
+  });
 }

@@ -207,6 +207,9 @@ export interface DexyAPI {
   deleteTaskVector: (taskId: string) => Promise<{ success: boolean; error?: string }>;
   findSimilarTasks: (params: { task: any; options?: { topK?: number; threshold?: number; excludeTaskId?: string } }) => Promise<{ success: boolean; error?: string; results: Array<{ task: any; similarity: number }> }>;
   getIndices: () => Promise<{ success: boolean; error?: string; indices: any[] }>;
+  syncTasks: (params: { tasks: any[]; boardId: string }) => Promise<{ success: boolean; error?: string }>;
+  hasTaskVector: (taskId: string) => Promise<{ success: boolean; hasVector: boolean; error?: string }>;
+  getVectorizedTaskIds: () => Promise<{ success: boolean; taskIds: string[]; error?: string }>;
 }
 
 export interface ProjectStateAPI {

@@ -59,18 +59,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       const loadedTasks = await kanbanService.getTasks(boardId);
       setTasks(loadedTasks || []);
       
-      // Vectorize existing tasks with Dexy if ready
-      // This happens only on initial load to ensure all tasks are indexed
-      if (loadedTasks && loadedTasks.length > 0 && dexyReady) {
-        console.log('[KanbanBoard] Vectorizing', loadedTasks.length, 'existing tasks with Dexy');
-        // Vectorize in parallel but don't wait
-        Promise.all(
-          loadedTasks.map(task => 
-            dexyService.vectorizeTask(task, boardId).catch(error => {
-              console.error('Error vectorizing task with Dexy:', error);
-            })
-          )
-        );
+      // Sync tasks with Dexy if ready
+      // This will vectorize new tasks, update changed ones, and clean up orphaned vectors
+      if (loadedTasks && dexyReady) {
+        console.log('[KanbanBoard] Syncing tasks with Dexy');
+        dexyService.syncTasks(loadedTasks, boardId).catch(error => {
+          console.error('Error syncing tasks with Dexy:', error);
+        });
       }
     } catch (error) {
       console.error('Error loading tasks:', error);
@@ -90,6 +85,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       
       if (isReady) {
         console.log('[KanbanBoard] Dexy service initialized and ready');
+        
+        // Sync existing tasks after initialization
+        if (tasks.length > 0) {
+          console.log('[KanbanBoard] Running initial sync after Dexy initialization');
+          await dexyService.syncTasks(tasks, boardId);
+        }
       } else {
         console.warn('[KanbanBoard] Dexy service not ready - check configuration');
       }

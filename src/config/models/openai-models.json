@@ -1,4 +1,5 @@
 {
+  "_comment": "TODO: This data should be moved to a backend API service with proper caching (TTL ~24h) for centralized management and real-time updates",
   "models": [
     {
       "id": "gpt-4-turbo-preview",

@@ -118,6 +118,12 @@ export class OpenAIProvider implements AIProvider {
   }
 
   private getFallbackModels(): AIModel[] {
+    // TODO: Move model definitions to backend API with proper caching
+    // This fallback data should be fetched from a backend service that:
+    // 1. Maintains up-to-date model information
+    // 2. Implements caching with TTL (e.g., 24 hours)
+    // 3. Provides real-time pricing and availability
+    // 4. Allows centralized management across all app instances
     return openaiModels.models.map(model => ({
       ...model,
       type: model.type as AIModelType

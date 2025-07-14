@@ -97,6 +97,12 @@ export class AnthropicProvider implements AIProvider {
         console.warn('Anthropic models API not available, using curated list:', apiError);
       }
 
+      // TODO: Move model definitions to backend API with proper caching
+      // This fallback data should be fetched from a backend service that:
+      // 1. Maintains up-to-date model information
+      // 2. Implements caching with TTL (e.g., 24 hours)
+      // 3. Provides real-time pricing and availability
+      // 4. Allows centralized management across all app instances
       // Fallback to curated list from JSON file
       return anthropicModels.models.map(model => ({
         ...model,

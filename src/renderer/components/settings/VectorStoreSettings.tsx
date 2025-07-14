@@ -77,6 +77,12 @@ export const VectorStoreSettings: React.FC<VectorStoreSettingsProps> = ({
     }
   ];
 
+  // TODO: Move embedding model definitions to backend API with proper caching
+  // This data should be fetched from a backend service that:
+  // 1. Maintains up-to-date embedding model information
+  // 2. Implements caching with TTL (e.g., 24 hours)
+  // 3. Provides model dimensions and capabilities
+  // 4. Allows centralized management of embedding options
   // Embedding providers from JSON configuration
   const embeddingProviders = Object.entries(embeddingModels.models).map(([providerId, models]) => ({
     id: providerId,

@@ -9,6 +9,7 @@ export interface AIService {
   keyPlaceholder: string;
   docs?: string;
   enabled: boolean;
+  isOnline?: boolean; // Track online status
 }
 
 export interface AIServiceConfig {
@@ -190,12 +191,77 @@ export class AIConfigService extends EventEmitter {
   }
 
   /**
+   * Check if a service is online
+   */
+  async checkServiceOnlineStatus(serviceId: string): Promise<boolean> {
+    try {
+      // Use dynamic import to avoid issues with fetch in Node.js
+      const { net } = require('electron');
+      
+      // Simple connectivity check to the service's API endpoint
+      const endpoints: { [key: string]: string } = {
+        'anthropic': 'https://api.anthropic.com',
+        'openai': 'https://api.openai.com',
+        'github-copilot': 'https://api.github.com'
+      };
+      
+      const endpoint = endpoints[serviceId];
+      if (!endpoint) return false;
+      
+      return new Promise<boolean>((resolve) => {
+        const request = net.request({
+          method: 'HEAD',
+          url: endpoint,
+          timeout: 5000
+        });
+        
+        request.on('response', (response: any) => {
+          const isOnline = response.statusCode !== undefined;
+          
+          // Update service status
+          const service = this.supportedServices.find(s => s.id === serviceId);
+          if (service) {
+            service.isOnline = isOnline;
+            this.emit('service-online-status', serviceId, isOnline);
+          }
+          
+          resolve(isOnline);
+        });
+        
+        request.on('error', () => {
+          const service = this.supportedServices.find(s => s.id === serviceId);
+          if (service) {
+            service.isOnline = false;
+            this.emit('service-online-status', serviceId, false);
+          }
+          resolve(false);
+        });
+        
+        request.end();
+      });
+    } catch (error) {
+      return false;
+    }
+  }
+  
+  /**
+   * Check online status for all services
+   */
+  async checkAllServicesOnlineStatus(): Promise<void> {
+    const promises = this.supportedServices.map(service => 
+      this.checkServiceOnlineStatus(service.id)
+    );
+    await Promise.all(promises);
+  }
+
+  /**
    * Reset all AI configuration (remove master key and all API keys)
    */
   async resetConfiguration(): Promise<void> {
     await this.cryptoService.removeMasterKey();
     this.supportedServices.forEach(service => {
       service.enabled = false;
+      service.isOnline = undefined;
     });
     this.emit('configuration-reset');
   }

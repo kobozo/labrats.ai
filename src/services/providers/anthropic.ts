@@ -74,22 +74,24 @@ export class AnthropicProvider implements AIProvider {
             const data = await response.json();
             // Transform Anthropic API response to our model format
             if (data.data && Array.isArray(data.data)) {
-              return data.data.map((model: any) => ({
-                id: model.id,
-                name: model.display_name || model.id,
-                description: this.getModelDescription(model.id),
-                type: 'reasoning' as AIModelType, // All Claude models are reasoning models
-                contextWindow: this.getContextWindow(model.id),
-                maxTokens: this.getMaxTokens(model.id),
-                inputCost: this.getInputCost(model.id),
-                outputCost: this.getOutputCost(model.id),
-                features: {
-                  streaming: this.config.features.streaming,
-                  functionCalling: this.config.features.functionCalling,
-                  vision: this.config.features.vision,
-                  codeGeneration: true
-                }
-              }));
+              return data.data
+                .filter((model: any) => !model.id.includes('embed')) // Filter out embedding models
+                .map((model: any) => ({
+                  id: model.id,
+                  name: model.display_name || model.id,
+                  description: this.getModelDescription(model.id),
+                  type: 'reasoning' as AIModelType,
+                  contextWindow: this.getContextWindow(model.id),
+                  maxTokens: this.getMaxTokens(model.id),
+                  inputCost: this.getInputCost(model.id),
+                  outputCost: this.getOutputCost(model.id),
+                  features: {
+                    streaming: this.config.features.streaming,
+                    functionCalling: this.config.features.functionCalling,
+                    vision: this.config.features.vision,
+                    codeGeneration: true
+                  }
+                }));
             }
           }
         }
@@ -97,17 +99,32 @@ export class AnthropicProvider implements AIProvider {
         console.warn('Anthropic models API not available, using curated list:', apiError);
       }
 
-      // TODO: Move model definitions to backend API with proper caching
-      // This fallback data should be fetched from a backend service that:
-      // 1. Maintains up-to-date model information
-      // 2. Implements caching with TTL (e.g., 24 hours)
-      // 3. Provides real-time pricing and availability
-      // 4. Allows centralized management across all app instances
-      // Fallback to curated list from JSON file
-      return anthropicModels.models.map(model => ({
-        ...model,
-        type: model.type as AIModelType
-      }));
+      // When offline or API unavailable, return only the default configured model
+      const defaultModel = this.config.defaultModel;
+      const modelFromJson = anthropicModels.models.find(m => m.id === defaultModel);
+      
+      if (modelFromJson) {
+        return [{
+          ...modelFromJson,
+          type: modelFromJson.type as AIModelType
+        }];
+      }
+      
+      // Absolute fallback - return minimal model info
+      return [{
+        id: defaultModel,
+        name: defaultModel,
+        description: 'Default Anthropic model (offline mode)',
+        type: 'reasoning' as AIModelType,
+        contextWindow: 200000,
+        maxTokens: 4096,
+        features: {
+          streaming: true,
+          functionCalling: true,
+          vision: true,
+          codeGeneration: true
+        }
+      }];
     } catch (error) {
       console.error('Error fetching Anthropic models:', error);
       // Return a minimal fallback model based on config
@@ -294,6 +311,24 @@ export class AnthropicProvider implements AIProvider {
         success: false, 
         error: error instanceof Error ? error.message : 'An unknown error occurred' 
       };
+    }
+  }
+  
+  async isOnline(): Promise<boolean> {
+    try {
+      // Try to fetch a small resource to check connectivity
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch('https://api.anthropic.com/v1/health', {
+        method: 'HEAD',
+        signal: controller.signal
+      }).catch(() => null);
+      
+      clearTimeout(timeoutId);
+      return response !== null && (response.ok || response.status === 401 || response.status === 403);
+    } catch (error) {
+      return false;
     }
   }
 

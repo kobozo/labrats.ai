@@ -129,6 +129,9 @@ export interface AIProvider {
 
   // Test connection to the provider
   testConnection(): Promise<{ success: boolean; error?: string }>;
+  
+  // Check if provider is online (has network connectivity)
+  isOnline?(): Promise<boolean>;
 }
 
 export interface AIProviderManager {

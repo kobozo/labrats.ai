@@ -175,9 +175,8 @@ export const AgentSettings: React.FC = () => {
         models = await window.electronAPI.ai.getModels(providerId);
       }
       
-      // Filter to only show reasoning models (or models without a type specified)
-      const reasoningModels = models.filter(model => !model.type || model.type === 'reasoning');
-      setAvailableModels(reasoningModels);
+      // Show all models (providers already filter out embedding models)
+      setAvailableModels(models);
     } catch (error) {
       console.error(`Failed to load models for ${providerId}`, error);
       setAvailableModels([]);
@@ -228,9 +227,8 @@ export const AgentSettings: React.FC = () => {
         models = await window.electronAPI.ai.getModels(providerId);
       }
       
-      // Filter to only show reasoning models (or models without a type specified)
-      const reasoningModels = models.filter(model => !model.type || model.type === 'reasoning');
-      setDefaultAvailableModels(reasoningModels);
+      // Show all models (providers already filter out embedding models)
+      setDefaultAvailableModels(models);
     } catch (error) {
       console.error(`Failed to load models for ${providerId}`, error);
       setDefaultAvailableModels([]);

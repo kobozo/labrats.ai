@@ -1399,6 +1399,14 @@ ipcMain.handle('ai-reset-configuration', async () => {
   return aiConfigService.resetConfiguration();
 });
 
+ipcMain.handle('ai-check-service-online', async (event, serviceId: string) => {
+  return aiConfigService.checkServiceOnlineStatus(serviceId);
+});
+
+ipcMain.handle('ai-check-all-services-online', async () => {
+  return aiConfigService.checkAllServicesOnlineStatus();
+});
+
 ipcMain.handle('ai-get-providers', async (): Promise<AIProviderConfig[]> => {
   const providerManager = getAIProviderManager();
   // Return only the serializable config objects for each provider

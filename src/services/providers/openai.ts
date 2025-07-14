@@ -71,63 +71,76 @@ export class OpenAIProvider implements AIProvider {
       const data = await response.json();
       
       if (data.data && Array.isArray(data.data)) {
-        // Map and categorize all models
-        const models = data.data.map((model: any) => {
-          // Determine model type based on ID
-          let modelType: AIModelType = 'reasoning';
-          
-          if (model.id.includes('embedding') || model.id.includes('ada')) {
-            modelType = 'embedding';
-          } else if (model.id.includes('instruct') || model.id.includes('davinci') || model.id.includes('babbage') || model.id.includes('curie')) {
-            modelType = 'completion';
-          } else if (model.id.includes('whisper') || model.id.includes('dall-e') || model.id.includes('tts')) {
-            modelType = 'specialized';
-          } else if (!model.id.includes('gpt')) {
-            // Skip unknown model types
-            return null;
-          }
-          
-          return {
-            id: model.id,
-            name: this.formatModelName(model.id),
-            description: this.getModelDescription(model.id),
-            type: modelType,
-            contextWindow: this.getContextWindow(model.id),
-            maxTokens: this.getMaxTokens(model.id),
-            inputCost: this.getInputCost(model.id),
-            outputCost: this.getOutputCost(model.id),
-            features: {
-              streaming: true,
-              functionCalling: this.supportsFunctionCalling(model.id),
-              vision: this.supportsVision(model.id),
-              codeGeneration: true
+        // Filter out embedding models and map the rest
+        const models = data.data
+          .filter((model: any) => !model.id.includes('embedding') && !model.id.includes('ada'))
+          .map((model: any) => {
+            // Determine model type based on ID
+            let modelType: AIModelType = 'reasoning';
+            
+            if (model.id.includes('instruct') || model.id.includes('davinci') || model.id.includes('babbage') || model.id.includes('curie')) {
+              modelType = 'completion';
+            } else if (model.id.includes('whisper') || model.id.includes('dall-e') || model.id.includes('tts')) {
+              modelType = 'specialized';
             }
-          };
-        }).filter(Boolean); // Remove null entries
+            
+            return {
+              id: model.id,
+              name: this.formatModelName(model.id),
+              description: this.getModelDescription(model.id),
+              type: modelType,
+              contextWindow: this.getContextWindow(model.id),
+              maxTokens: this.getMaxTokens(model.id),
+              inputCost: this.getInputCost(model.id),
+              outputCost: this.getOutputCost(model.id),
+              features: {
+                streaming: true,
+                functionCalling: this.supportsFunctionCalling(model.id),
+                vision: this.supportsVision(model.id),
+                codeGeneration: true
+              }
+            };
+          });
         
         return models;
       }
-
+      
       return [];
     } catch (error) {
       console.error('Error fetching OpenAI models:', error);
       
-      // Fallback to known models
+      // Fallback to default model only
       return this.getFallbackModels();
     }
   }
 
   private getFallbackModels(): AIModel[] {
-    // TODO: Move model definitions to backend API with proper caching
-    // This fallback data should be fetched from a backend service that:
-    // 1. Maintains up-to-date model information
-    // 2. Implements caching with TTL (e.g., 24 hours)
-    // 3. Provides real-time pricing and availability
-    // 4. Allows centralized management across all app instances
-    return openaiModels.models.map(model => ({
-      ...model,
-      type: model.type as AIModelType
-    }));
+    // When offline or API unavailable, return only the default configured model
+    const defaultModel = this.config.defaultModel;
+    const modelFromJson = openaiModels.models.find(m => m.id === defaultModel);
+    
+    if (modelFromJson) {
+      return [{
+        ...modelFromJson,
+        type: modelFromJson.type as AIModelType
+      }];
+    }
+    
+    // Absolute fallback - return minimal model info
+    return [{
+      id: defaultModel,
+      name: defaultModel,
+      description: 'Default OpenAI model (offline mode)',
+      type: 'reasoning' as AIModelType,
+      contextWindow: 8192,
+      maxTokens: 4096,
+      features: {
+        streaming: true,
+        functionCalling: true,
+        vision: false,
+        codeGeneration: true
+      }
+    }];
   }
 
   private formatModelName(modelId: string): string {
@@ -369,6 +382,24 @@ export class OpenAIProvider implements AIProvider {
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
       };
+    }
+  }
+  
+  async isOnline(): Promise<boolean> {
+    try {
+      // Try to fetch a small resource to check connectivity
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch('https://api.openai.com/v1/models', {
+        method: 'HEAD',
+        signal: controller.signal
+      }).catch(() => null);
+      
+      clearTimeout(timeoutId);
+      return response !== null && (response.ok || response.status === 401 || response.status === 403);
+    } catch (error) {
+      return false;
     }
   }
 }

@@ -15,6 +15,7 @@ import {
   Info
 } from 'lucide-react';
 import { ProviderModelSelector } from '../ProviderModelSelector';
+import embeddingModels from '../../../config/models/embedding-models.json';
 
 interface VectorStoreSettingsProps {
   settings: any;
@@ -76,33 +77,12 @@ export const VectorStoreSettings: React.FC<VectorStoreSettingsProps> = ({
     }
   ];
 
-  // Embedding providers from AI providers
-  const embeddingProviders = [
-    {
-      id: 'openai',
-      name: 'OpenAI',
-      models: [
-        { id: 'text-embedding-3-small', name: 'Embedding 3 Small', dimensions: 1536 },
-        { id: 'text-embedding-3-large', name: 'Embedding 3 Large', dimensions: 3072 },
-        { id: 'text-embedding-ada-002', name: 'Ada 002', dimensions: 1536 }
-      ]
-    },
-    {
-      id: 'anthropic',
-      name: 'Anthropic',
-      models: [
-        { id: 'claude-3-embed', name: 'Claude 3 Embed', dimensions: 1024 }
-      ]
-    },
-    {
-      id: 'ollama',
-      name: 'Ollama (Local)',
-      models: [
-        { id: 'nomic-embed-text', name: 'Nomic Embed Text', dimensions: 768 },
-        { id: 'all-minilm', name: 'All-MiniLM', dimensions: 384 }
-      ]
-    }
-  ];
+  // Embedding providers from JSON configuration
+  const embeddingProviders = Object.entries(embeddingModels.models).map(([providerId, models]) => ({
+    id: providerId,
+    name: providerId.charAt(0).toUpperCase() + providerId.slice(1) + (providerId === 'ollama' ? ' (Local)' : ''),
+    models: models as any[]
+  }));
 
   const selectedStoreConfig = vectorStores.find(s => s.id === selectedStore);
   const selectedProviderConfig = embeddingProviders.find(p => p.id === selectedEmbeddingProvider);

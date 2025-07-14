@@ -8,6 +8,7 @@ import {
   StreamingChatResponse,
   ChatMessage
 } from '../../types/ai-provider';
+import anthropicModels from '../../config/models/anthropic-models.json';
 
 export class AnthropicProvider implements AIProvider {
   public readonly id = 'anthropic';
@@ -96,92 +97,11 @@ export class AnthropicProvider implements AIProvider {
         console.warn('Anthropic models API not available, using curated list:', apiError);
       }
 
-      // Fallback to curated list of latest Anthropic models
-      // Updated with latest models as of January 2025
-      const curatedModels: AIModel[] = [
-        {
-          id: 'claude-opus-4-20250514',
-          name: 'Claude Opus 4',
-          description: 'Highest level of intelligence and capability',
-          type: 'reasoning' as AIModelType,
-          contextWindow: 200000,
-          maxTokens: 32000,
-          inputCost: 15.00,
-          outputCost: 75.00,
-          features: {
-            streaming: true,
-            functionCalling: true,
-            vision: true,
-            codeGeneration: true
-          }
-        },
-        {
-          id: 'claude-sonnet-4-20250514',
-          name: 'Claude Sonnet 4',
-          description: 'High intelligence and balanced performance',
-          type: 'reasoning' as AIModelType,
-          contextWindow: 200000,
-          maxTokens: 64000,
-          inputCost: 3.00,
-          outputCost: 15.00,
-          features: {
-            streaming: true,
-            functionCalling: true,
-            vision: true,
-            codeGeneration: true
-          }
-        },
-        {
-          id: 'claude-3-7-sonnet-20250219',
-          name: 'Claude Sonnet 3.7',
-          description: 'High intelligence with toggleable extended thinking',
-          type: 'reasoning' as AIModelType,
-          contextWindow: 200000,
-          maxTokens: 64000,
-          inputCost: 3.00,
-          outputCost: 15.00,
-          features: {
-            streaming: true,
-            functionCalling: true,
-            vision: true,
-            codeGeneration: true
-          }
-        },
-        {
-          id: 'claude-3-5-sonnet-20241022',
-          name: 'Claude 3.5 Sonnet',
-          description: 'High level of intelligence and capability',
-          type: 'reasoning' as AIModelType,
-          contextWindow: 200000,
-          maxTokens: 8192,
-          inputCost: 3.00,
-          outputCost: 15.00,
-          features: {
-            streaming: true,
-            functionCalling: true,
-            vision: true,
-            codeGeneration: true
-          }
-        },
-        {
-          id: 'claude-3-5-haiku-20241022',
-          name: 'Claude 3.5 Haiku',
-          description: 'Intelligence at blazing speeds',
-          type: 'reasoning' as AIModelType,
-          contextWindow: 200000,
-          maxTokens: 8192,
-          inputCost: 0.25,
-          outputCost: 1.25,
-          features: {
-            streaming: true,
-            functionCalling: true,
-            vision: true,
-            codeGeneration: true
-          }
-        }
-      ];
-
-      return curatedModels;
+      // Fallback to curated list from JSON file
+      return anthropicModels.models.map(model => ({
+        ...model,
+        type: model.type as AIModelType
+      }));
     } catch (error) {
       console.error('Error fetching Anthropic models:', error);
       // Return a minimal fallback model based on config
@@ -203,52 +123,28 @@ export class AnthropicProvider implements AIProvider {
   }
 
   private getModelDescription(modelId: string): string {
-    const descriptions: { [key: string]: string } = {
-      'claude-opus-4-20250514': 'Highest level of intelligence and capability',
-      'claude-sonnet-4-20250514': 'High intelligence and balanced performance',
-      'claude-3-7-sonnet-20250219': 'High intelligence with toggleable extended thinking',
-      'claude-3-5-sonnet-20241022': 'High level of intelligence and capability',
-      'claude-3-5-haiku-20241022': 'Intelligence at blazing speeds'
-    };
-    return descriptions[modelId] || `Anthropic ${modelId}`;
+    const model = anthropicModels.models.find(m => m.id === modelId);
+    return model?.description || `Anthropic ${modelId}`;
   }
 
   private getContextWindow(modelId: string): number {
-    // All current Claude models have 200K context window
-    return 200000;
+    const model = anthropicModels.models.find(m => m.id === modelId);
+    return model?.contextWindow || 200000;
   }
 
   private getMaxTokens(modelId: string): number {
-    const maxTokens: { [key: string]: number } = {
-      'claude-opus-4-20250514': 32000,
-      'claude-sonnet-4-20250514': 64000,
-      'claude-3-7-sonnet-20250219': 64000,
-      'claude-3-5-sonnet-20241022': 8192,
-      'claude-3-5-haiku-20241022': 8192
-    };
-    return maxTokens[modelId] || 8192;
+    const model = anthropicModels.models.find(m => m.id === modelId);
+    return model?.maxTokens || 8192;
   }
 
   private getInputCost(modelId: string): number {
-    const costs: { [key: string]: number } = {
-      'claude-opus-4-20250514': 15.00,
-      'claude-sonnet-4-20250514': 3.00,
-      'claude-3-7-sonnet-20250219': 3.00,
-      'claude-3-5-sonnet-20241022': 3.00,
-      'claude-3-5-haiku-20241022': 0.25
-    };
-    return costs[modelId] || 3.00;
+    const model = anthropicModels.models.find(m => m.id === modelId);
+    return model?.inputCost || 3.00;
   }
 
   private getOutputCost(modelId: string): number {
-    const costs: { [key: string]: number } = {
-      'claude-opus-4-20250514': 75.00,
-      'claude-sonnet-4-20250514': 15.00,
-      'claude-3-7-sonnet-20250219': 15.00,
-      'claude-3-5-sonnet-20241022': 15.00,
-      'claude-3-5-haiku-20241022': 1.25
-    };
-    return costs[modelId] || 15.00;
+    const model = anthropicModels.models.find(m => m.id === modelId);
+    return model?.outputCost || 15.00;
   }
 
   private async getApiKey(): Promise<string> {

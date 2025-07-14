@@ -7,6 +7,7 @@ import {
   ChatCompletionResponse,
   StreamingChatResponse
 } from '../../types/ai-provider';
+import openaiModels from '../../config/models/openai-models.json';
 
 export class OpenAIProvider implements AIProvider {
   public readonly id = 'openai';
@@ -117,70 +118,28 @@ export class OpenAIProvider implements AIProvider {
   }
 
   private getFallbackModels(): AIModel[] {
-    return [
-      {
-        id: 'gpt-4-turbo-preview',
-        name: 'GPT-4 Turbo',
-        description: 'Most capable GPT-4 model with improved instructions following',
-        type: 'reasoning' as AIModelType,
-        contextWindow: 128000,
-        maxTokens: 4096,
-        inputCost: 0.01,
-        outputCost: 0.03,
-        features: {
-          streaming: true,
-          functionCalling: true,
-          vision: false,
-          codeGeneration: true
-        }
-      },
-      {
-        id: 'gpt-4',
-        name: 'GPT-4',
-        description: 'More capable than any GPT-3.5 model, able to do more complex tasks',
-        type: 'reasoning' as AIModelType,
-        contextWindow: 8192,
-        maxTokens: 4096,
-        inputCost: 0.03,
-        outputCost: 0.06,
-        features: {
-          streaming: true,
-          functionCalling: true,
-          vision: false,
-          codeGeneration: true
-        }
-      },
-      {
-        id: 'gpt-3.5-turbo',
-        name: 'GPT-3.5 Turbo',
-        description: 'Fast, inexpensive model for simple tasks',
-        type: 'reasoning' as AIModelType,
-        contextWindow: 16385,
-        maxTokens: 4096,
-        inputCost: 0.0015,
-        outputCost: 0.002,
-        features: {
-          streaming: true,
-          functionCalling: true,
-          vision: false,
-          codeGeneration: true
-        }
-      }
-    ];
+    return openaiModels.models.map(model => ({
+      ...model,
+      type: model.type as AIModelType
+    }));
   }
 
   private formatModelName(modelId: string): string {
-    const nameMap: { [key: string]: string } = {
-      'gpt-4-turbo-preview': 'GPT-4 Turbo',
-      'gpt-4': 'GPT-4',
-      'gpt-4-32k': 'GPT-4 32K',
-      'gpt-3.5-turbo': 'GPT-3.5 Turbo',
-      'gpt-3.5-turbo-16k': 'GPT-3.5 Turbo 16K'
-    };
-    return nameMap[modelId] || modelId;
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.name;
+    
+    // For models not in our JSON, format the ID nicely
+    return modelId
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
   }
 
   private getModelDescription(modelId: string): string {
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.description;
+    
+    // Fallback descriptions for models not in our JSON
     if (modelId.includes('gpt-4')) {
       return 'Most capable GPT model, best for complex tasks requiring deep understanding';
     } else if (modelId.includes('gpt-3.5')) {
@@ -190,6 +149,10 @@ export class OpenAIProvider implements AIProvider {
   }
 
   private getContextWindow(modelId: string): number {
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.contextWindow;
+    
+    // Fallback for models not in our JSON
     if (modelId.includes('gpt-4-turbo')) return 128000;
     if (modelId.includes('gpt-4-32k')) return 32768;
     if (modelId.includes('gpt-4')) return 8192;
@@ -199,10 +162,15 @@ export class OpenAIProvider implements AIProvider {
   }
 
   private getMaxTokens(modelId: string): number {
-    return 4096; // Standard max output for OpenAI models
+    const model = openaiModels.models.find(m => m.id === modelId);
+    return model?.maxTokens || 4096; // Standard max output for OpenAI models
   }
 
   private getInputCost(modelId: string): number {
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.inputCost;
+    
+    // Fallback for models not in our JSON
     if (modelId.includes('gpt-4-turbo')) return 0.01;
     if (modelId.includes('gpt-4')) return 0.03;
     if (modelId.includes('gpt-3.5')) return 0.0015;
@@ -210,6 +178,10 @@ export class OpenAIProvider implements AIProvider {
   }
 
   private getOutputCost(modelId: string): number {
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.outputCost;
+    
+    // Fallback for models not in our JSON
     if (modelId.includes('gpt-4-turbo')) return 0.03;
     if (modelId.includes('gpt-4')) return 0.06;
     if (modelId.includes('gpt-3.5')) return 0.002;

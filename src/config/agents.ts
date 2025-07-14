@@ -11,6 +11,7 @@ import nestorAvatar from '../renderer/assets/avatars/nestor.webp';
 import quillAvatar from '../renderer/assets/avatars/quill.webp';
 import switchyAvatar from '../renderer/assets/avatars/switchy.webp';
 import sketchyAvatar from '../renderer/assets/avatars/sketchy.webp';
+import dexyAvatar from '../renderer/assets/avatars/dexy.webp';
 
 export interface Agent {
   id: string;
@@ -153,5 +154,15 @@ export const agents: Agent[] = [
     avatar: sketchyAvatar,
     description: 'The creative visionary who sketches user experiences from the heart and designs with empathy.',
     summary: 'UX designer. Creates intuitive interfaces. Designs with user empathy.',
+  },
+  {
+    id: 'dexy',
+    name: 'Dexy',
+    title: 'Vectorization Agent',
+    icon: '🗄️',
+    colorAccent: '#f6ad55', // amber orange
+    avatar: dexyAvatar,
+    description: 'The nimble index keeper who organizes knowledge into vectors for lightning-fast search.',
+    summary: 'Vector indexer. Curates and embeds knowledge for rapid retrieval.',
   },
 ]; 

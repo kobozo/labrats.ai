@@ -4,6 +4,7 @@ import { Task, WorkflowStage } from '../../types/kanban';
 import { RichTextInput, RichTextInputRef } from './RichTextInput';
 import { agents } from '../../config/agents';
 import { workflowStages } from '../../config/workflow-stages';
+import { SimilarTasksPanel } from './SimilarTasksPanel';
 
 interface EditTaskDialogProps {
   task: Task;
@@ -65,7 +66,7 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-gray-800 rounded-lg w-full max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-white">Edit Task</h2>
           <button
@@ -76,7 +77,8 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
           </button>
         </div>
         
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 flex overflow-hidden">
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
             {/* Title */}
             <div>
@@ -225,7 +227,29 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
               Cancel
             </button>
           </div>
-        </form>
+          </form>
+          
+          {/* Similar Tasks Panel */}
+          <div className="w-96 border-l border-gray-700 overflow-hidden">
+            <SimilarTasksPanel
+              task={{
+                ...task,
+                title,
+                description: richTextRef.current?.getMarkdown() || description,
+                status,
+                priority,
+                assignee,
+                type
+              }}
+              boardId={task.boardId || 'main-board'}
+              excludeTaskId={task.id}
+              onSelectTask={(selectedTask) => {
+                // Optional: View the selected task details
+                console.log('Selected similar task:', selectedTask);
+              }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

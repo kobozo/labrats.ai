@@ -5,6 +5,7 @@ import { kanbanService } from '../../services/kanban-service';
 import { agents } from '../../config/agents';
 import { workflowStages } from '../../config/workflow-stages';
 import { RichTextInput, RichTextInputRef } from './RichTextInput';
+import { SimilarTasksPanel } from './SimilarTasksPanel';
 
 interface CreateTaskDialogProps {
   initialStatus: WorkflowStage;
@@ -59,7 +60,7 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-gray-800 rounded-lg w-full max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-white">Create New Task</h2>
           <button
@@ -70,7 +71,8 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
           </button>
         </div>
         
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 flex overflow-hidden">
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
             {/* Title */}
             <div>
@@ -203,7 +205,30 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
               Cancel
             </button>
           </div>
-        </form>
+          </form>
+          
+          {/* Similar Tasks Panel */}
+          <div className="w-96 border-l border-gray-700 overflow-hidden">
+            <SimilarTasksPanel
+              task={{
+                title,
+                description: richTextRef.current?.getMarkdown() || description,
+                status,
+                priority,
+                assignee,
+                type
+              }}
+              boardId="main-board"
+              onSelectTask={(task) => {
+                // Optional: populate form with selected task data
+                setTitle(task.title + ' (copy)');
+                setDescription(task.description);
+                setType(task.type);
+                setPriority(task.priority);
+              }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

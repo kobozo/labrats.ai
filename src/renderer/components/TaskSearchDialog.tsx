@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, FileText, AlertCircle, Zap, Plus, ChevronRight } from 'lucide-react';
 import { Task } from '../../types/kanban';
-import { kanbanTaskIndexing, TaskSearchResult } from '../../services/kanban-task-indexing';
+import { dexyService } from '../../services/dexy-service-renderer';
+
+interface TaskSearchResult {
+  task: Task;
+  score: number;
+  highlights?: string[];
+}
 
 interface TaskSearchDialogProps {
   isOpen: boolean;
@@ -43,10 +49,21 @@ export const TaskSearchDialog: React.FC<TaskSearchDialogProps> = ({
     
     setIsSearching(true);
     try {
-      // TODO: Replace with Dexy vectorization
-      // const duplicates = await kanbanTaskIndexing.findDuplicates(currentTask);
-      // setResults(duplicates);
-      setResults([]); // Temporarily return empty results
+      // Use Dexy to find similar tasks
+      const similarTasks = await dexyService.findSimilarTasks(currentTask, {
+        topK: 5,
+        threshold: 0.85, // Higher threshold for duplicate detection
+        excludeTaskId: currentTask.id
+      });
+      
+      // Convert to TaskSearchResult format
+      const results: TaskSearchResult[] = similarTasks.map(({ task, similarity }) => ({
+        task,
+        score: similarity,
+        highlights: generateHighlights(currentTask.title + ' ' + currentTask.description, task)
+      }));
+      
+      setResults(results);
     } catch (error) {
       console.error('Error finding duplicates:', error);
       setResults([]);
@@ -63,13 +80,37 @@ export const TaskSearchDialog: React.FC<TaskSearchDialogProps> = ({
     
     setIsSearching(true);
     try {
-      // TODO: Replace with Dexy vectorization
-      // const searchResults = await kanbanTaskIndexing.searchTasks(searchQuery, {
-      //   topK: 20,
-      //   threshold: 0.5
-      // });
-      // setResults(searchResults);
-      setResults([]); // Temporarily return empty results
+      // Create a temporary task object for search
+      const searchTask: Task = {
+        id: 'search-query',
+        title: searchQuery,
+        description: searchQuery,
+        status: 'backlog',
+        priority: 'medium',
+        assignee: 'unassigned',
+        type: 'task',
+        boardId: 'main-board',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: 'user',
+        primaryRats: [],
+        projectPath: ''
+      };
+      
+      // Use Dexy to find similar tasks
+      const similarTasks = await dexyService.findSimilarTasks(searchTask, {
+        topK: 20,
+        threshold: 0.5
+      });
+      
+      // Convert to TaskSearchResult format
+      const results: TaskSearchResult[] = similarTasks.map(({ task, similarity }) => ({
+        task,
+        score: similarity,
+        highlights: generateHighlights(searchQuery, task)
+      }));
+      
+      setResults(results);
     } catch (error) {
       console.error('Error searching tasks:', error);
       setResults([]);
@@ -110,6 +151,32 @@ export const TaskSearchDialog: React.FC<TaskSearchDialogProps> = ({
   
   const formatScore = (score: number): string => {
     return `${Math.round(score * 100)}%`;
+  };
+  
+  const generateHighlights = (query: string, task: Task): string[] => {
+    const highlights: string[] = [];
+    const queryLower = query.toLowerCase();
+    const words = queryLower.split(/\s+/).filter(w => w.length > 2);
+    
+    // Check title
+    const titleLower = task.title.toLowerCase();
+    if (words.some(word => titleLower.includes(word))) {
+      highlights.push(task.title);
+    }
+    
+    // Check description
+    const descLower = task.description.toLowerCase();
+    const sentences = task.description.split(/[.!?]+/).filter(s => s.trim());
+    
+    for (const sentence of sentences) {
+      const sentenceLower = sentence.toLowerCase();
+      if (words.some(word => sentenceLower.includes(word))) {
+        highlights.push(sentence.trim());
+        if (highlights.length >= 3) break;
+      }
+    }
+    
+    return highlights;
   };
   
   if (!isOpen) return null;

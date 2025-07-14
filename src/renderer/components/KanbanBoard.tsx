@@ -9,7 +9,7 @@ import { AssignTaskDialog } from './AssignTaskDialog';
 import { ViewTaskDialog } from './ViewTaskDialog';
 import { EditTaskDialog } from './EditTaskDialog';
 import { TaskSearchDialog } from './TaskSearchDialog';
-import { kanbanTaskIndexing } from '../../services/kanban-task-indexing';
+import { dexyService } from '../../services/dexy-service-renderer';
 
 
 
@@ -28,6 +28,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [assignDialogData, setAssignDialogData] = useState<{ task: Task; targetStage: WorkflowStage } | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [dexyReady, setDexyReady] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showSearchDialog, setShowSearchDialog] = useState(false);
@@ -43,9 +44,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
   useEffect(() => {
     if (currentFolder) {
       loadTasks();
+      initializeDexy();
     } else {
       setTasks([]);
       setIsLoading(false);
+      setDexyReady(false);
     }
   }, [currentFolder]);
 
@@ -55,18 +58,43 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       const loadedTasks = await kanbanService.getTasks(boardId);
       setTasks(loadedTasks || []);
       
-      // TODO: Replace with Dexy vectorization
-      // The old kanban task indexing is disabled as we're migrating to Dexy
-      // if (loadedTasks && loadedTasks.length > 0) {
-      //   kanbanTaskIndexing.indexTasks(loadedTasks).catch(error => {
-      //     console.error('Error indexing tasks:', error);
-      //   });
-      // }
+      // Vectorize existing tasks with Dexy if ready
+      // This happens only on initial load to ensure all tasks are indexed
+      if (loadedTasks && loadedTasks.length > 0 && dexyReady) {
+        console.log('[KanbanBoard] Vectorizing', loadedTasks.length, 'existing tasks with Dexy');
+        // Vectorize in parallel but don't wait
+        Promise.all(
+          loadedTasks.map(task => 
+            dexyService.vectorizeTask(task, boardId).catch(error => {
+              console.error('Error vectorizing task with Dexy:', error);
+            })
+          )
+        );
+      }
     } catch (error) {
       console.error('Error loading tasks:', error);
       setTasks([]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const initializeDexy = async () => {
+    if (!currentFolder) return;
+    
+    try {
+      await dexyService.initialize(currentFolder);
+      const isReady = await dexyService.isReady();
+      setDexyReady(isReady);
+      
+      if (isReady) {
+        console.log('[KanbanBoard] Dexy service initialized and ready');
+      } else {
+        console.warn('[KanbanBoard] Dexy service not ready - check configuration');
+      }
+    } catch (error) {
+      console.error('[KanbanBoard] Failed to initialize Dexy:', error);
+      setDexyReady(false);
     }
   };
 
@@ -345,8 +373,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
               setTasks([...tasks, newTask]);
               await kanbanService.updateTask(boardId, newTask);
               
-              // TODO: Replace with Dexy vectorization
-              // await kanbanTaskIndexing.indexTask(newTask);
+              // Vectorize with Dexy
+              if (dexyReady) {
+                await dexyService.vectorizeTask(newTask, boardId);
+              }
               
               // Reload tasks to ensure we have the latest data from storage
               await loadTasks();
@@ -376,10 +406,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             );
             setTasks(updatedTasks);
             
-            // Save to backend and index (don't await to avoid blocking dialog close)
+            // Save to backend and vectorize (don't await to avoid blocking dialog close)
             kanbanService.updateTask(boardId, updatedTask)
-              // TODO: Replace with Dexy vectorization
-              // .then(() => kanbanTaskIndexing.indexTask(updatedTask))
+              .then(() => {
+                if (dexyReady) {
+                  return dexyService.updateTaskVector(updatedTask, boardId);
+                }
+              })
               .catch(console.error);
             
             // Close dialog immediately
@@ -423,8 +456,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             
             // Save to backend
             await kanbanService.updateTask(boardId, updatedTask);
-            // TODO: Replace with Dexy vectorization
-            // await kanbanTaskIndexing.indexTask(updatedTask);
+            // Vectorize with Dexy
+            if (dexyReady) {
+              await dexyService.updateTaskVector(updatedTask, boardId);
+            }
             
             // Close dialog
             setShowEditDialog(false);

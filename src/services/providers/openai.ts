@@ -2,6 +2,7 @@ import {
   AIProvider,
   AIProviderConfig,
   AIModel,
+  AIModelType,
   ChatCompletionRequest,
   ChatCompletionResponse,
   StreamingChatResponse
@@ -69,28 +70,41 @@ export class OpenAIProvider implements AIProvider {
       const data = await response.json();
       
       if (data.data && Array.isArray(data.data)) {
-        // Filter to only include GPT models suitable for chat
-        const chatModels = data.data.filter((model: any) => 
-          model.id.includes('gpt') && 
-          !model.id.includes('instruct') &&
-          !model.id.includes('edit')
-        );
-
-        return chatModels.map((model: any) => ({
-          id: model.id,
-          name: this.formatModelName(model.id),
-          description: this.getModelDescription(model.id),
-          contextWindow: this.getContextWindow(model.id),
-          maxTokens: this.getMaxTokens(model.id),
-          inputCost: this.getInputCost(model.id),
-          outputCost: this.getOutputCost(model.id),
-          features: {
-            streaming: true,
-            functionCalling: this.supportsFunctionCalling(model.id),
-            vision: this.supportsVision(model.id),
-            codeGeneration: true
+        // Map and categorize all models
+        const models = data.data.map((model: any) => {
+          // Determine model type based on ID
+          let modelType: AIModelType = 'reasoning';
+          
+          if (model.id.includes('embedding') || model.id.includes('ada')) {
+            modelType = 'embedding';
+          } else if (model.id.includes('instruct') || model.id.includes('davinci') || model.id.includes('babbage') || model.id.includes('curie')) {
+            modelType = 'completion';
+          } else if (model.id.includes('whisper') || model.id.includes('dall-e') || model.id.includes('tts')) {
+            modelType = 'specialized';
+          } else if (!model.id.includes('gpt')) {
+            // Skip unknown model types
+            return null;
           }
-        }));
+          
+          return {
+            id: model.id,
+            name: this.formatModelName(model.id),
+            description: this.getModelDescription(model.id),
+            type: modelType,
+            contextWindow: this.getContextWindow(model.id),
+            maxTokens: this.getMaxTokens(model.id),
+            inputCost: this.getInputCost(model.id),
+            outputCost: this.getOutputCost(model.id),
+            features: {
+              streaming: true,
+              functionCalling: this.supportsFunctionCalling(model.id),
+              vision: this.supportsVision(model.id),
+              codeGeneration: true
+            }
+          };
+        }).filter(Boolean); // Remove null entries
+        
+        return models;
       }
 
       return [];
@@ -108,6 +122,7 @@ export class OpenAIProvider implements AIProvider {
         id: 'gpt-4-turbo-preview',
         name: 'GPT-4 Turbo',
         description: 'Most capable GPT-4 model with improved instructions following',
+        type: 'reasoning' as AIModelType,
         contextWindow: 128000,
         maxTokens: 4096,
         inputCost: 0.01,
@@ -123,6 +138,7 @@ export class OpenAIProvider implements AIProvider {
         id: 'gpt-4',
         name: 'GPT-4',
         description: 'More capable than any GPT-3.5 model, able to do more complex tasks',
+        type: 'reasoning' as AIModelType,
         contextWindow: 8192,
         maxTokens: 4096,
         inputCost: 0.03,
@@ -138,6 +154,7 @@ export class OpenAIProvider implements AIProvider {
         id: 'gpt-3.5-turbo',
         name: 'GPT-3.5 Turbo',
         description: 'Fast, inexpensive model for simple tasks',
+        type: 'reasoning' as AIModelType,
         contextWindow: 16385,
         maxTokens: 4096,
         inputCost: 0.0015,

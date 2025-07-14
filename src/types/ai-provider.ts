@@ -1,7 +1,10 @@
+export type AIModelType = 'reasoning' | 'embedding' | 'completion' | 'specialized';
+
 export interface AIModel {
   id: string;
   name: string;
   description?: string;
+  type?: AIModelType; // Model category - defaults to 'reasoning' if not specified
   contextWindow: number;
   maxTokens: number;
   inputCost?: number;  // Cost per 1K tokens

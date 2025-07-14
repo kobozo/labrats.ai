@@ -120,13 +120,16 @@ export const AgentSettings: React.FC = () => {
   const loadModelsForProvider = async (providerId: string) => {
     setLoadingModels(true);
     try {
+      let models: AIModel[] = [];
       // First try to get from cached models
       if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
-        setAvailableModels(window.labRatsProviderModels[providerId]);
+        models = window.labRatsProviderModels[providerId];
       } else if (window.electronAPI?.ai) {
-        const models = await window.electronAPI.ai.getModels(providerId);
-        setAvailableModels(models);
+        models = await window.electronAPI.ai.getModels(providerId);
       }
+      // Filter to only show reasoning models (or models without a type specified)
+      const reasoningModels = models.filter(model => !model.type || model.type === 'reasoning');
+      setAvailableModels(reasoningModels);
     } catch (error) {
       console.error(`Failed to load models for ${providerId}`, error);
       setAvailableModels([]);
@@ -150,13 +153,16 @@ export const AgentSettings: React.FC = () => {
   const loadDefaultModelsForProvider = async (providerId: string) => {
     setLoadingDefaultModels(true);
     try {
+      let models: AIModel[] = [];
       // First try to get from cached models
       if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
-        setDefaultAvailableModels(window.labRatsProviderModels[providerId]);
+        models = window.labRatsProviderModels[providerId];
       } else if (window.electronAPI?.ai) {
-        const models = await window.electronAPI.ai.getModels(providerId);
-        setDefaultAvailableModels(models);
+        models = await window.electronAPI.ai.getModels(providerId);
       }
+      // Filter to only show reasoning models (or models without a type specified)
+      const reasoningModels = models.filter(model => !model.type || model.type === 'reasoning');
+      setDefaultAvailableModels(reasoningModels);
     } catch (error) {
       console.error(`Failed to load models for ${providerId}`, error);
       setDefaultAvailableModels([]);

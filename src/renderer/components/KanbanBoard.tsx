@@ -380,6 +380,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
                 await dexyService.vectorizeTask(newTask, boardId);
               }
               
+              // Dispatch event for Dashboard to update vector stats
+              const taskCreatedEvent = new CustomEvent('task-created', { 
+                detail: { task: newTask, boardId } 
+              });
+              window.dispatchEvent(taskCreatedEvent);
+              
               // Reload tasks to ensure we have the latest data from storage
               await loadTasks();
             } catch (error) {
@@ -414,6 +420,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
                 if (dexyReady) {
                   return dexyService.updateTaskVector(updatedTask, boardId);
                 }
+              })
+              .then(() => {
+                // Dispatch event for Dashboard to update vector stats
+                const taskUpdatedEvent = new CustomEvent('task-updated', { 
+                  detail: { task: updatedTask, boardId } 
+                });
+                window.dispatchEvent(taskUpdatedEvent);
               })
               .catch(console.error);
             
@@ -452,6 +465,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
               // Update local state
               setTasks(tasks.filter(t => t.id !== selectedTask.id));
               
+              // Dispatch event for Dashboard to update vector stats
+              const taskDeletedEvent = new CustomEvent('task-deleted', { 
+                detail: { taskId: selectedTask.id, boardId } 
+              });
+              window.dispatchEvent(taskDeletedEvent);
+              
               // Close dialog
               setShowViewDialog(false);
               setSelectedTask(null);
@@ -482,6 +501,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             if (dexyReady) {
               await dexyService.updateTaskVector(updatedTask, boardId);
             }
+            
+            // Dispatch event for Dashboard to update vector stats
+            const taskUpdatedEvent = new CustomEvent('task-updated', { 
+              detail: { task: updatedTask, boardId } 
+            });
+            window.dispatchEvent(taskUpdatedEvent);
             
             // Close dialog
             setShowEditDialog(false);

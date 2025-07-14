@@ -26,5 +26,19 @@
     "createdAt": "2025-07-14T13:51:01.077Z",
     "updatedAt": "2025-07-14T13:51:01.077Z",
     "projectPath": "/Users/yannick/Kobozo/labrats.ai"
+  },
+  {
+    "id": "TASK-1752501687699",
+    "title": "test task 3",
+    "description": "this is a test task",
+    "assignee": "LabRats",
+    "priority": "medium",
+    "type": "task",
+    "status": "definition-of-ready",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-14T14:01:27.701Z",
+    "updatedAt": "2025-07-14T14:01:27.701Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai"
   }
 ]

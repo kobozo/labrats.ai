@@ -156,6 +156,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
     }
   }, [activeView, currentFolder]);
 
+  // Listen for task updates to refresh vector stats
+  useEffect(() => {
+    const handleTaskUpdate = () => {
+      if (activeView === 'embeddings' && currentFolder) {
+        console.log('[Dashboard] Task update detected, refreshing vector stats');
+        setTimeout(() => loadVectorStats(), 500); // Small delay to ensure sync completes
+      }
+    };
+
+    // Listen for custom events from KanbanBoard
+    window.addEventListener('task-updated', handleTaskUpdate);
+    window.addEventListener('task-created', handleTaskUpdate);
+    window.addEventListener('task-deleted', handleTaskUpdate);
+
+    return () => {
+      window.removeEventListener('task-updated', handleTaskUpdate);
+      window.removeEventListener('task-created', handleTaskUpdate);
+      window.removeEventListener('task-deleted', handleTaskUpdate);
+    };
+  }, [activeView, currentFolder]);
+
   const loadVectorStats = async () => {
     if (!currentFolder) return;
 

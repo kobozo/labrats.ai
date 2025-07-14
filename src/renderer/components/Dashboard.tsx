@@ -548,6 +548,16 @@ export const Dashboard: React.FC = () => {
 
         {activeView === 'embeddings' && (
           <div className="space-y-6">
+            {!currentFolder ? (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div className="text-center py-8">
+                  <Database className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-white mb-2">No Project Loaded</h3>
+                  <p className="text-gray-400">Please open a project folder to view embedding statistics</p>
+                </div>
+              </div>
+            ) : (
+            <>
             {/* Vector Database Overview */}
             <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
               <div className="flex items-center justify-between mb-6">
@@ -732,6 +742,8 @@ export const Dashboard: React.FC = () => {
                 </div>
               </div>
             </div>
+            </>
+            )}
           </div>
         )}
       </div>

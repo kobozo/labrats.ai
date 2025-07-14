@@ -159,6 +159,8 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
   window.webContents.once('did-finish-load', () => {
     if (projectPath) {
       window.webContents.send('folder-opened', projectPath);
+      // Initialize Dexy for this project
+      setDexyProjectPath(projectPath);
     }
   });
 
@@ -284,6 +286,9 @@ function createMenu(window?: BrowserWindow): void {
               
               // Initialize or update git service for this window
               initializeGitServiceForWindow(targetWindow.id, projectPath);
+              
+              // Initialize Dexy for this project
+              setDexyProjectPath(projectPath);
               
               updateRecentProjects(projectPath);
               saveOpenWindows();
@@ -414,6 +419,9 @@ function updateRecentProjectsMenu(): void {
             // Initialize or update git service for this window
             initializeGitServiceForWindow(focusedWindow.id, project.path);
             
+            // Initialize Dexy for this project
+            setDexyProjectPath(project.path);
+            
             updateRecentProjects(project.path);
             saveOpenWindows();
           } else {
@@ -454,6 +462,9 @@ ipcMain.handle('open-folder', async (event) => {
       
       // Initialize or update git service for this window
       initializeGitServiceForWindow(requestingWindow.id, projectPath);
+      
+      // Initialize Dexy for this project
+      setDexyProjectPath(projectPath);
     }
 
     updateRecentProjects(projectPath);

@@ -41,12 +41,20 @@ export function registerDexyHandlers() {
 
   // Check if Dexy is configured and ready
   ipcMain.handle('dexy:isReady', async () => {
-    return dexyService?.isReady() || false;
+    const isReady = dexyService?.isReady() || false;
+    console.log('[DEXY-IPC] isReady check:', {
+      hasDexyService: !!dexyService,
+      isReady,
+      config: dexyService?.getConfig()
+    });
+    return isReady;
   });
 
   // Get Dexy configuration
   ipcMain.handle('dexy:getConfig', async () => {
-    return dexyService?.getConfig() || null;
+    const config = dexyService?.getConfig() || null;
+    console.log('[DEXY-IPC] getConfig:', config);
+    return config;
   });
 
   // Vectorize a task

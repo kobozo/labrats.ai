@@ -1587,6 +1587,12 @@ console.log('[MAIN] Registering Dexy handlers...');
 registerDexyHandlers();
 console.log('[MAIN] Dexy handlers registered successfully');
 
+// TODO Scanning IPC handlers
+import { setupTodoIpcHandlers } from './todo-ipc-handlers';
+console.log('[MAIN] Registering TODO handlers...');
+setupTodoIpcHandlers();
+console.log('[MAIN] TODO handlers registered successfully');
+
 // Chat History IPC handlers
 ipcMain.handle('chat-history-save', async (event, projectPath: string, messages: any[]) => {
   try {

@@ -1,25 +1,91 @@
-import React, { useState } from 'react';
-import { X, GitBranch, AlertCircle, Calendar, User, Tag, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, GitBranch, AlertCircle, Calendar, User, Tag, Trash2, Search, ExternalLink } from 'lucide-react';
 import { Task } from '../../types/kanban';
 import { workflowStages } from '../../config/workflow-stages';
 import { agents } from '../../config/agents';
+import { dexyService } from '../../services/dexy-service-renderer';
 
 interface ViewTaskDialogProps {
   task: Task;
   onClose: () => void;
   onEdit: () => void;
   onDelete?: () => void;
+  onSelectTask?: (task: Task) => void;
+}
+
+interface SimilarTask {
+  task: Task;
+  similarity: number;
+  reason: string;
 }
 
 export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({ 
   task, 
   onClose,
   onEdit,
-  onDelete
+  onDelete,
+  onSelectTask
 }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [similarTasks, setSimilarTasks] = useState<SimilarTask[]>([]);
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
+  const [showSimilarTasks, setShowSimilarTasks] = useState(false);
   const currentStage = workflowStages.find(stage => stage.id === task.status);
   const assigneeAgent = agents.find(agent => agent.name === task.assignee);
+  
+  // Load similar tasks when component mounts
+  useEffect(() => {
+    loadSimilarTasks();
+  }, [task.id]);
+
+  const loadSimilarTasks = async () => {
+    try {
+      setLoadingSimilar(true);
+      
+      // Check if Dexy is ready
+      const isReady = await dexyService.isReady();
+      if (!isReady) {
+        console.log('[ViewTaskDialog] Dexy not ready, skipping similar tasks');
+        return;
+      }
+
+      // TODO: Implement search functionality when available
+      // For now, we'll skip similar tasks
+      console.log('[ViewTaskDialog] Search functionality not available yet');
+      setSimilarTasks([]);
+    } catch (error) {
+      console.error('[ViewTaskDialog] Error loading similar tasks:', error);
+    } finally {
+      setLoadingSimilar(false);
+    }
+  };
+
+  const generateSimilarityReason = (similarTask: Task, currentTask: Task, similarity: number): string => {
+    const reasons: string[] = [];
+    
+    // Check various similarity factors
+    if (similarTask.type === currentTask.type) {
+      reasons.push('same type');
+    }
+    
+    if (similarTask.priority === currentTask.priority) {
+      reasons.push('same priority');
+    }
+    
+    if (similarTask.assignee === currentTask.assignee) {
+      reasons.push('same assignee');
+    }
+    
+    if (similarity > 0.8) {
+      reasons.push('high content similarity');
+    } else if (similarity > 0.6) {
+      reasons.push('medium content similarity');
+    } else {
+      reasons.push('related content');
+    }
+    
+    return reasons.join(', ');
+  };
   
   const getPriorityColor = (priority: Task['priority']) => {
     switch (priority) {
@@ -217,6 +283,71 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
                   <code className="text-green-400">{task.branchName}</code>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Similar Tasks */}
+          {(similarTasks.length > 0 || loadingSimilar) && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-white">Similar Tasks</h3>
+                <button
+                  onClick={() => setShowSimilarTasks(!showSimilarTasks)}
+                  className="flex items-center space-x-2 text-sm text-gray-400 hover:text-white transition-colors"
+                >
+                  <Search className="w-4 h-4" />
+                  <span>{showSimilarTasks ? 'Hide' : 'Show'} ({similarTasks.length})</span>
+                </button>
+              </div>
+              
+              {showSimilarTasks && (
+                <div className="space-y-3">
+                  {loadingSimilar ? (
+                    <div className="text-center py-4">
+                      <div className="text-gray-400">Finding similar tasks...</div>
+                    </div>
+                  ) : similarTasks.length === 0 ? (
+                    <div className="text-center py-4">
+                      <div className="text-gray-400">No similar tasks found</div>
+                    </div>
+                  ) : (
+                    similarTasks.map((similar, index) => (
+                      <div key={similar.task.id} className="bg-gray-900/50 rounded-lg p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <h4 className="text-white font-medium">{similar.task.title}</h4>
+                              <span className={`px-2 py-1 rounded text-xs ${getTypeColor(similar.task.type)}`}>
+                                {similar.task.type}
+                              </span>
+                              <span className={`text-xs font-medium ${getPriorityColor(similar.task.priority)}`}>
+                                {similar.task.priority}
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-400 mb-2">
+                              {similar.task.description && similar.task.description.length > 100
+                                ? `${similar.task.description.substring(0, 100)}...`
+                                : similar.task.description}
+                            </div>
+                            <div className="flex items-center space-x-4 text-xs text-gray-500">
+                              <span>Similarity: {Math.round(similar.similarity * 100)}%</span>
+                              <span>Reason: {similar.reason}</span>
+                              <span>Status: {similar.task.status}</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => onSelectTask?.(similar.task)}
+                            className="ml-4 p-2 hover:bg-gray-800 rounded transition-colors"
+                            title="View this task"
+                          >
+                            <ExternalLink className="w-4 h-4 text-gray-400" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -52,6 +52,7 @@
   "homepage": "https://github.com/kobozo/labrats.ai#readme",
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
+    "@types/glob": "^8.1.0",
     "@types/node": "^24.0.10",
     "@typescript-eslint/eslint-plugin": "^8.36.0",
     "@typescript-eslint/parser": "^8.36.0",

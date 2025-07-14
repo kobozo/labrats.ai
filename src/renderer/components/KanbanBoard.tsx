@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow, Search } from 'lucide-react';
+import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow, Search, Code } from 'lucide-react';
 import { Task, WorkflowStage } from '../../types/kanban';
 import { workflowStages, getStageConfig } from '../../config/workflow-stages';
 import { kanbanService } from '../../services/kanban-service';
@@ -11,6 +11,7 @@ import { ViewTaskDialog } from './ViewTaskDialog';
 import { EditTaskDialog } from './EditTaskDialog';
 import { TaskSearchDialog } from './TaskSearchDialog';
 import { dexyService } from '../../services/dexy-service-renderer';
+import { todoService } from '../../services/todo-service-renderer';
 
 
 
@@ -34,11 +35,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showSearchDialog, setShowSearchDialog] = useState(false);
   const [checkingDuplicates, setCheckingDuplicates] = useState<Task | null>(null);
+  const [isSyncingTodos, setIsSyncingTodos] = useState(false);
   const boardId = 'main-board'; // For now, using a single board
   
   // Set the current project in kanban service
   useEffect(() => {
     kanbanService.setCurrentProject(currentFolder);
+    todoService.setCurrentProject(currentFolder);
   }, [currentFolder]);
 
   // Load tasks on component mount and when currentFolder changes
@@ -100,6 +103,39 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
     }
   };
 
+  const syncTodosWithTasks = async () => {
+    if (!currentFolder || isSyncingTodos) return;
+    
+    console.log('[KanbanBoard] Syncing TODOs with tasks...');
+    setIsSyncingTodos(true);
+    
+    try {
+      const syncResult = await todoService.sync();
+      
+      if (syncResult && syncResult.createdTasks > 0) {
+        console.log('[KanbanBoard] Created', syncResult.createdTasks, 'new tasks from TODOs');
+        
+        // Reload tasks to include the new ones
+        await loadTasks();
+        
+        // Show notification
+        const notification = new Notification('TODO Sync Complete', {
+          body: `Created ${syncResult.createdTasks} new tasks from TODO comments`,
+          icon: '/icon.png'
+        });
+        
+        // Auto-close notification after 5 seconds
+        setTimeout(() => notification.close(), 5000);
+      } else {
+        console.log('[KanbanBoard] No new TODOs found to sync');
+      }
+    } catch (error) {
+      console.error('[KanbanBoard] Error syncing TODOs:', error);
+    } finally {
+      setIsSyncingTodos(false);
+    }
+  };
+
   const backlogTasks = tasks.filter(task => task.status === 'backlog');
   
   const getTasksByStatus = (status: WorkflowStage): Task[] => {
@@ -158,6 +194,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             >
               <Search className="w-4 h-4" />
               <span>Search</span>
+            </button>
+            <button
+              onClick={syncTodosWithTasks}
+              disabled={isSyncingTodos || !currentFolder}
+              className={`flex items-center space-x-2 px-4 py-2 border border-gray-600 rounded-lg transition-colors ${
+                isSyncingTodos || !currentFolder
+                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-800 hover:bg-blue-700 text-white'
+              }`}
+              title="Scan code for TODO comments and create tasks"
+            >
+              <Code className={`w-4 h-4 ${isSyncingTodos ? 'animate-spin' : ''}`} />
+              <span>{isSyncingTodos ? 'Syncing...' : 'Sync TODOs'}</span>
             </button>
             <button
               onClick={() => setShowWorkflow(true)}
@@ -451,6 +500,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
           onEdit={() => {
             setShowViewDialog(false);
             setShowEditDialog(true);
+          }}
+          onSelectTask={(task) => {
+            setSelectedTask(task);
+            // Dialog remains open to show the new task
           }}
           onDelete={async () => {
             try {

@@ -523,7 +523,7 @@ function App() {
             </div>
             
             <div style={{ display: activeView === 'dashboard' ? 'block' : 'none', height: '100%' }}>
-              <Dashboard />
+              <Dashboard currentFolder={currentFolder} />
             </div>
 
             {activeView === 'settings' && (

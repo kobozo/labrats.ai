@@ -129,7 +129,11 @@ interface VectorStats {
   embeddingModel?: string;
 }
 
-export const Dashboard: React.FC = () => {
+interface DashboardProps {
+  currentFolder: string | null;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   const [activeView, setActiveView] = useState<'overview' | 'timeline' | 'compare' | 'embeddings'>('overview');
   const [vectorStats, setVectorStats] = useState<VectorStats>({
     totalTasks: 0,
@@ -139,20 +143,6 @@ export const Dashboard: React.FC = () => {
     isDexyReady: false
   });
   const [isSyncing, setIsSyncing] = useState(false);
-  const [currentFolder, setCurrentFolder] = useState<string | null>(null);
-
-  // Get current folder from Electron API
-  useEffect(() => {
-    const getCurrentFolder = async () => {
-      try {
-        const projectPath = await window.electronAPI.projectState.get('currentProjectPath');
-        setCurrentFolder(projectPath);
-      } catch (error) {
-        console.error('Failed to get current folder:', error);
-      }
-    };
-    getCurrentFolder();
-  }, []);
 
   // Load vector statistics
   useEffect(() => {

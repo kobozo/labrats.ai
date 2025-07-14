@@ -117,6 +117,9 @@ export interface AIProvider {
 
   // Fetch available models from the provider
   getModels(): Promise<AIModel[]>;
+  
+  // Fetch all models including embedding models
+  getAllModels?(includeEmbedding: boolean): Promise<AIModel[]>;
 
   // Chat completion (non-streaming)
   chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse>;

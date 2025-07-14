@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { agents as allAgents, Agent } from '../../config/agents';
-import { AIProviderConfig, AIModel } from '../../types/ai-provider';
+import { AIProviderConfig, AIModel, AIModelType } from '../../types/ai-provider';
 import { getAIProviderManager } from '../../services/ai-provider-manager';
 import { ChevronDown, Bot } from 'lucide-react';
 import { ProviderModelSelector } from './ProviderModelSelector';
@@ -27,10 +27,12 @@ export const AgentSettings: React.FC = () => {
   const [availableProviders, setAvailableProviders] = useState<AIProviderConfig[]>([]);
   const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
   const [defaultAvailableModels, setDefaultAvailableModels] = useState<AIModel[]>([]);
+  const [embeddingModels, setEmbeddingModels] = useState<AIModel[]>([]);
   
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
   const [loadingDefaultModels, setLoadingDefaultModels] = useState(false);
+  const [loadingEmbeddingModels, setLoadingEmbeddingModels] = useState(false);
   
   const [defaultProvider, setDefaultProvider] = useState<string>('');
   const [defaultModel, setDefaultModel] = useState<string>('');
@@ -47,9 +49,15 @@ export const AgentSettings: React.FC = () => {
     if (selectedAgent) {
       const config = agentConfigs[selectedAgent.id] || { provider: 'inherit', model: 'inherit' };
       if (config.provider !== 'inherit') {
-        loadModelsForProvider(config.provider);
+        // For Dexy, load embedding models; for others, load regular models
+        if (selectedAgent.id === 'dexy') {
+          loadEmbeddingModelsForProvider(config.provider);
+        } else {
+          loadModelsForProvider(config.provider);
+        }
       } else {
         setAvailableModels([]);
+        setEmbeddingModels([]);
       }
     }
   }, [selectedAgent, agentConfigs]);
@@ -184,6 +192,76 @@ export const AgentSettings: React.FC = () => {
     setLoadingModels(false);
   };
   
+  const loadEmbeddingModelsForProvider = async (providerId: string) => {
+    setLoadingEmbeddingModels(true);
+    try {
+      let allModels: AIModel[] = [];
+      
+      // Try to get ALL models from the provider directly (including embedding)
+      const providerManager = getAIProviderManager();
+      const provider = providerManager.getProvider(providerId);
+      
+      if (provider) {
+        try {
+          // Use getAllModels if available, otherwise fallback to hardcoded list
+          if (provider.getAllModels) {
+            allModels = await provider.getAllModels(true);
+          } else {
+            // Fallback for providers that don't implement getAllModels
+            if (providerId === 'openai') {
+              // OpenAI embedding models
+              allModels = [
+                { 
+                  id: 'text-embedding-3-small', 
+                  name: 'Text Embedding 3 Small', 
+                  description: 'Most capable embedding model for semantic search and similarity',
+                  type: 'embedding' as AIModelType, 
+                  contextWindow: 8192, 
+                  maxTokens: 0,
+                  inputCost: 0.00002,
+                  outputCost: 0,
+                  features: { streaming: false, functionCalling: false, vision: false, codeGeneration: false } 
+                },
+                { 
+                  id: 'text-embedding-3-large', 
+                  name: 'Text Embedding 3 Large', 
+                  description: 'Large embedding model with higher dimensions for better accuracy',
+                  type: 'embedding' as AIModelType, 
+                  contextWindow: 8192, 
+                  maxTokens: 0,
+                  inputCost: 0.00013,
+                  outputCost: 0,
+                  features: { streaming: false, functionCalling: false, vision: false, codeGeneration: false } 
+                },
+                { 
+                  id: 'text-embedding-ada-002', 
+                  name: 'Text Embedding Ada 002', 
+                  description: 'Previous generation embedding model',
+                  type: 'embedding' as AIModelType, 
+                  contextWindow: 8192, 
+                  maxTokens: 0,
+                  inputCost: 0.00010,
+                  outputCost: 0,
+                  features: { streaming: false, functionCalling: false, vision: false, codeGeneration: false } 
+                }
+              ];
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching embedding models from provider ${providerId}:`, error);
+        }
+      }
+      
+      // Filter to show only embedding models
+      const embeddingModels = allModels.filter(model => model.type === 'embedding');
+      setEmbeddingModels(embeddingModels);
+    } catch (error) {
+      console.error(`Failed to load embedding models for ${providerId}`, error);
+      setEmbeddingModels([]);
+    }
+    setLoadingEmbeddingModels(false);
+  };
+  
   const loadDefaultSettings = async () => {
     if (window.electronAPI?.config?.get) {
       try {
@@ -309,6 +387,39 @@ export const AgentSettings: React.FC = () => {
               Only the color accent can be customized.
             </div>
           </div>
+        </div>
+      );
+    }
+
+    // Special case for Dexy - requires embedding models
+    if (agent.id === 'dexy') {
+      const config = agentConfigs[agent.id] || { provider: 'inherit', model: 'inherit' };
+      
+      return (
+        <div className="space-y-4">
+          <div className="bg-yellow-900/20 border border-yellow-600/50 p-4 rounded-lg mb-4">
+            <h6 className="font-medium text-yellow-400 mb-2">🗄️ Vectorization Agent</h6>
+            <p className="text-sm text-gray-300">
+              Dexy requires an embedding model to create vector representations of your content. 
+              Embedding models are specialized for converting text into numerical vectors for semantic search and similarity matching.
+            </p>
+          </div>
+          <ProviderModelSelector
+            showInherit={false}
+            availableProviders={availableProviders}
+            availableModels={embeddingModels}
+            loadingProviders={loadingProviders}
+            loadingModels={loadingEmbeddingModels}
+            selectedProvider={config.provider === 'inherit' ? '' : config.provider}
+            selectedModel={config.model === 'inherit' ? '' : config.model}
+            onProviderChange={(id) => handleConfigChange(agent.id, 'provider', id)}
+            onModelChange={(id) => handleConfigChange(agent.id, 'model', id)}
+          />
+          {config.provider === 'inherit' && (
+            <div className="text-sm text-red-400 mt-2">
+              ⚠️ No embedding model configured. Dexy cannot function without an embedding model.
+            </div>
+          )}
         </div>
       );
     }
@@ -451,7 +562,12 @@ export const AgentSettings: React.FC = () => {
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-bold truncate">{agent.name}</h4>
+                  <div className="flex items-center space-x-2">
+                    <h4 className="font-bold truncate">{agent.name}</h4>
+                    {agent.id === 'dexy' && (agentConfigs[agent.id]?.provider === 'inherit' || !agentConfigs[agent.id]?.provider) && (
+                      <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" title="No embedding model configured" />
+                    )}
+                  </div>
                   <p className="text-sm text-gray-400 truncate">{agent.title}</p>
                   <p className="text-xs text-gray-500 mt-1 leading-tight line-clamp-2">{agent.description}</p>
                 </div>

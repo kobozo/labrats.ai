@@ -6,13 +6,15 @@ interface MentionAutocompleteProps {
   onSelect: (mention: string) => void;
   onClose: () => void;
   cursorPosition: number;
+  singleAgentMode?: boolean;
 }
 
 export const MentionAutocomplete: React.FC<MentionAutocompleteProps> = ({
   inputValue,
   onSelect,
   onClose,
-  cursorPosition
+  cursorPosition,
+  singleAgentMode = false
 }) => {
   const [filteredAgents, setFilteredAgents] = useState<typeof agents>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -39,11 +41,23 @@ export const MentionAutocomplete: React.FC<MentionAutocompleteProps> = ({
     // Extract the query after @
     const query = textAfterAt.toLowerCase();
     
-    // Filter agents based on query
-    const filtered = agents.filter(agent => 
-      agent.id.toLowerCase().includes(query) || 
-      agent.name.toLowerCase().includes(query)
-    );
+    // Filter agents based on query and mention restrictions
+    const filtered = agents.filter(agent => {
+      // Filter by query
+      const matchesQuery = agent.id.toLowerCase().includes(query) || 
+        agent.name.toLowerCase().includes(query);
+      
+      if (!matchesQuery) return false;
+      
+      // Apply mention restrictions
+      if (singleAgentMode) {
+        // In single mode, only show agents with singleMode: true
+        return agent.singleMode === true;
+      } else {
+        // In multi mode, exclude agents with mentionInChat: false
+        return agent.mentionInChat !== false;
+      }
+    });
 
     if (filtered.length > 0) {
       setMentionTrigger({ start: lastAtIndex, query });

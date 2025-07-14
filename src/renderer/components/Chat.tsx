@@ -1698,6 +1698,7 @@ To debug the message bus, open console and type: debugBus()
                 cursorPosition={cursorPosition}
                 onSelect={handleMentionSelect}
                 onClose={() => setShowMentionAutocomplete(false)}
+                singleAgentMode={singleAgentMode}
               />
             )}
           </div>

@@ -198,6 +198,17 @@ export interface KanbanAPI {
   checkBranches: (projectPath: string) => Promise<string[]>;
 }
 
+export interface DexyAPI {
+  initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  isReady: () => Promise<boolean>;
+  getConfig: () => Promise<{ providerId: string; modelId: string } | null>;
+  vectorizeTask: (params: { task: any; boardId: string }) => Promise<{ success: boolean; error?: string }>;
+  updateTaskVector: (params: { task: any; boardId: string }) => Promise<{ success: boolean; error?: string }>;
+  deleteTaskVector: (taskId: string) => Promise<{ success: boolean; error?: string }>;
+  findSimilarTasks: (params: { task: any; options?: { topK?: number; threshold?: number; excludeTaskId?: string } }) => Promise<{ success: boolean; error?: string; results: Array<{ task: any; similarity: number }> }>;
+  getIndices: () => Promise<{ success: boolean; error?: string; indices: any[] }>;
+}
+
 export interface ProjectStateAPI {
   get: (key: string) => Promise<any>;
   set: (key: string, value: any) => Promise<boolean>;
@@ -225,6 +236,7 @@ export interface ElectronAPI {
   prompt?: PromptAPI;
   chatHistory?: ChatHistoryAPI;
   kanban?: KanbanAPI;
+  dexy?: DexyAPI;
 }
 
 declare global {

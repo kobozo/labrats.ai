@@ -1559,6 +1559,10 @@ ipcMain.handle('kanban:checkBranches', async (event, projectPath: string) => {
   }
 });
 
+// Dexy Vectorization IPC handlers
+import { registerDexyHandlers, setDexyProjectPath } from './dexy-ipc-handlers';
+registerDexyHandlers();
+
 // Chat History IPC handlers
 ipcMain.handle('chat-history-save', async (event, projectPath: string, messages: any[]) => {
   try {

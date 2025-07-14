@@ -54,7 +54,7 @@ export class AnthropicProvider implements AIProvider {
     return this.apiKey.startsWith('sk-ant-api03-');
   }
 
-  async getModels(): Promise<AIModel[]> {
+  async getAllModels(includeEmbedding: boolean = false): Promise<AIModel[]> {
     try {
       // Try to fetch models from Anthropic API
       // Note: Anthropic doesn't have a public models endpoint, so we'll attempt it
@@ -100,11 +100,14 @@ export class AnthropicProvider implements AIProvider {
                 };
               });
               
-              // Filter to only show reasoning and completion models
-              // Note: Anthropic doesn't have completion models, only reasoning
-              return allModels.filter((model: any) => 
-                model.type === 'reasoning' || model.type === 'completion'
-              );
+              // Filter based on includeEmbedding parameter
+              if (includeEmbedding) {
+                return allModels;
+              } else {
+                return allModels.filter((model: any) => 
+                  model.type === 'reasoning' || model.type === 'completion'
+                );
+              }
             }
           }
         }
@@ -112,32 +115,41 @@ export class AnthropicProvider implements AIProvider {
         console.warn('Anthropic models API not available, using curated list:', apiError);
       }
 
-      // When offline or API unavailable, return only the default configured model
-      const defaultModel = this.config.defaultModel;
-      const modelFromJson = anthropicModels.models.find(m => m.id === defaultModel);
-      
-      if (modelFromJson) {
+      // When offline or API unavailable, return models from JSON
+      if (includeEmbedding) {
+        // Return all models from JSON including any future embedding models
+        return anthropicModels.models.map(m => ({
+          ...m,
+          type: m.type as AIModelType
+        }));
+      } else {
+        // Return only the default configured model for regular use
+        const defaultModel = this.config.defaultModel;
+        const modelFromJson = anthropicModels.models.find(m => m.id === defaultModel);
+        
+        if (modelFromJson) {
+          return [{
+            ...modelFromJson,
+            type: modelFromJson.type as AIModelType
+          }];
+        }
+        
+        // Absolute fallback - return minimal model info
         return [{
-          ...modelFromJson,
-          type: modelFromJson.type as AIModelType
+          id: defaultModel,
+          name: defaultModel,
+          description: 'Default Anthropic model (offline mode)',
+          type: 'reasoning' as AIModelType,
+          contextWindow: 200000,
+          maxTokens: 4096,
+          features: {
+            streaming: true,
+            functionCalling: true,
+            vision: true,
+            codeGeneration: true
+          }
         }];
       }
-      
-      // Absolute fallback - return minimal model info
-      return [{
-        id: defaultModel,
-        name: defaultModel,
-        description: 'Default Anthropic model (offline mode)',
-        type: 'reasoning' as AIModelType,
-        contextWindow: 200000,
-        maxTokens: 4096,
-        features: {
-          streaming: true,
-          functionCalling: true,
-          vision: true,
-          codeGeneration: true
-        }
-      }];
     } catch (error) {
       console.error('Error fetching Anthropic models:', error);
       // Return a minimal fallback model based on config
@@ -156,6 +168,11 @@ export class AnthropicProvider implements AIProvider {
         }
       }];
     }
+  }
+
+  async getModels(): Promise<AIModel[]> {
+    // For backward compatibility, getModels returns only reasoning/completion models
+    return this.getAllModels(false);
   }
 
   private getModelDescription(modelId: string): string {

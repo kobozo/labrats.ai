@@ -138,6 +138,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkBranches: (projectPath: string) => ipcRenderer.invoke('kanban:checkBranches', projectPath),
   },
 
+  // Dexy Vectorization API
+  dexy: {
+    initialize: (projectPath: string) => ipcRenderer.invoke('dexy:initialize', projectPath),
+    isReady: () => ipcRenderer.invoke('dexy:isReady'),
+    getConfig: () => ipcRenderer.invoke('dexy:getConfig'),
+    vectorizeTask: (params: { task: any; boardId: string }) => ipcRenderer.invoke('dexy:vectorizeTask', params),
+    updateTaskVector: (params: { task: any; boardId: string }) => ipcRenderer.invoke('dexy:updateTaskVector', params),
+    deleteTaskVector: (taskId: string) => ipcRenderer.invoke('dexy:deleteTaskVector', taskId),
+    findSimilarTasks: (params: { task: any; options?: any }) => ipcRenderer.invoke('dexy:findSimilarTasks', params),
+    getIndices: () => ipcRenderer.invoke('dexy:getIndices'),
+  },
+
   // System API
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   checkCommand: (command: string) => ipcRenderer.invoke('check-command', command),

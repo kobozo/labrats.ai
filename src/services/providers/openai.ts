@@ -49,9 +49,9 @@ export class OpenAIProvider implements AIProvider {
     return this.apiKey.startsWith('sk-');
   }
 
-  async getModels(): Promise<AIModel[]> {
+  async getAllModels(includeEmbedding: boolean = false): Promise<AIModel[]> {
     if (!this.config.endpoints.models) {
-      return this.getFallbackModels();
+      return this.getFallbackModels(includeEmbedding);
     }
     try {
       const apiKey = await this.getApiKey();
@@ -102,12 +102,14 @@ export class OpenAIProvider implements AIProvider {
           };
         });
         
-        // Filter to only show reasoning and completion models
-        const models = allModels.filter((model: any) => 
-          model.type === 'reasoning' || model.type === 'completion'
-        );
-        
-        return models;
+        // Filter based on includeEmbedding parameter
+        if (includeEmbedding) {
+          return allModels;
+        } else {
+          return allModels.filter((model: any) => 
+            model.type === 'reasoning' || model.type === 'completion'
+          );
+        }
       }
       
       return [];
@@ -115,11 +117,83 @@ export class OpenAIProvider implements AIProvider {
       console.error('Error fetching OpenAI models:', error);
       
       // Fallback to default model only
-      return this.getFallbackModels();
+      return this.getFallbackModels(includeEmbedding);
     }
   }
 
-  private getFallbackModels(): AIModel[] {
+  async getModels(): Promise<AIModel[]> {
+    // For backward compatibility, getModels returns only reasoning/completion models
+    return this.getAllModels(false);
+  }
+
+  private getFallbackModels(includeEmbedding: boolean = false): AIModel[] {
+    // If including embedding models and we have known embedding models
+    if (includeEmbedding) {
+      const embeddingModels: AIModel[] = [
+        {
+          id: 'text-embedding-3-small',
+          name: 'Text Embedding 3 Small',
+          description: 'Most capable embedding model for semantic search and similarity',
+          type: 'embedding' as AIModelType,
+          contextWindow: 8192,
+          maxTokens: 0,
+          inputCost: 0.00002,
+          outputCost: 0,
+          features: {
+            streaming: false,
+            functionCalling: false,
+            vision: false,
+            codeGeneration: false
+          }
+        },
+        {
+          id: 'text-embedding-3-large',
+          name: 'Text Embedding 3 Large',
+          description: 'Large embedding model with higher dimensions for better accuracy',
+          type: 'embedding' as AIModelType,
+          contextWindow: 8192,
+          maxTokens: 0,
+          inputCost: 0.00013,
+          outputCost: 0,
+          features: {
+            streaming: false,
+            functionCalling: false,
+            vision: false,
+            codeGeneration: false
+          }
+        },
+        {
+          id: 'text-embedding-ada-002',
+          name: 'Text Embedding Ada 002',
+          description: 'Previous generation embedding model',
+          type: 'embedding' as AIModelType,
+          contextWindow: 8192,
+          maxTokens: 0,
+          inputCost: 0.00010,
+          outputCost: 0,
+          features: {
+            streaming: false,
+            functionCalling: false,
+            vision: false,
+            codeGeneration: false
+          }
+        }
+      ];
+      
+      // Include default model if it exists in JSON
+      const defaultModel = this.config.defaultModel;
+      const modelFromJson = openaiModels.models.find(m => m.id === defaultModel);
+      
+      if (modelFromJson) {
+        return [...embeddingModels, {
+          ...modelFromJson,
+          type: modelFromJson.type as AIModelType
+        }];
+      }
+      
+      return embeddingModels;
+    }
+    
     // When offline or API unavailable, return only the default configured model
     const defaultModel = this.config.defaultModel;
     const modelFromJson = openaiModels.models.find(m => m.id === defaultModel);

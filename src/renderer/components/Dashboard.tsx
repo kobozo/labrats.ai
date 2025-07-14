@@ -159,10 +159,20 @@ export const Dashboard: React.FC = () => {
     loadVectorStats();
   }, [currentFolder]);
 
+  // Reload stats when switching to embeddings view
+  useEffect(() => {
+    if (activeView === 'embeddings' && currentFolder) {
+      loadVectorStats();
+    }
+  }, [activeView, currentFolder]);
+
   const loadVectorStats = async () => {
     if (!currentFolder) return;
 
     try {
+      // Initialize Dexy first if we have a project folder
+      await dexyService.initialize(currentFolder);
+      
       // Check if Dexy is ready
       const isReady = await dexyService.isReady();
       
@@ -574,6 +584,11 @@ export const Dashboard: React.FC = () => {
                 {vectorStats.isDexyReady && vectorStats.embeddingProvider && (
                   <div className="mt-2 text-sm text-gray-400">
                     Using {vectorStats.embeddingProvider} / {vectorStats.embeddingModel}
+                  </div>
+                )}
+                {!vectorStats.isDexyReady && (
+                  <div className="mt-2 text-sm text-gray-400">
+                    Please configure Dexy in the AI Agents settings panel
                   </div>
                 )}
               </div>

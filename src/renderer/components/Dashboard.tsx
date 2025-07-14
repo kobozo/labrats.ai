@@ -289,7 +289,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   };
 
   return (
-    <div className="flex-1 bg-gray-900 overflow-hidden flex flex-col">
+    <div className="flex-1 bg-gray-900 flex flex-col h-full">
       {/* Header */}
       <div className="p-6 border-b border-gray-700 bg-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -324,7 +324,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       </div>
 
       {/* Content */}
-      <div className="p-6 overflow-y-auto flex-1">
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-6">
         {activeView === 'overview' && (
           <div className="space-y-6">
             {/* Metrics Grid */}
@@ -768,6 +769,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

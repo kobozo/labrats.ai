@@ -6,6 +6,12 @@ import { ChevronDown, Bot } from 'lucide-react';
 import { ProviderModelSelector } from './ProviderModelSelector';
 import { ColorPicker } from './ColorPicker';
 
+declare global {
+  interface Window {
+    labRatsProviderModels?: { [providerId: string]: AIModel[] };
+  }
+}
+
 interface AgentConfig {
   provider: string;
   model: string;
@@ -88,8 +94,22 @@ export const AgentSettings: React.FC = () => {
     try {
       const providerManager = getAIProviderManager();
       const providers = await providerManager.getAvailableProviders();
+      
+      // Sort providers and extract configs
       const sorted = providers.map(p => p.config).sort((a,b)=>a.name.localeCompare(b.name));
       setAvailableProviders(sorted);
+      
+      // Load models for each provider
+      for (const provider of providers) {
+        try {
+          const models = await provider.getModels();
+          // Store models by provider ID for later use
+          window.labRatsProviderModels = window.labRatsProviderModels || {};
+          window.labRatsProviderModels[provider.id] = models;
+        } catch (error) {
+          console.error(`Error loading models for ${provider.id}:`, error);
+        }
+      }
     } catch (error) {
       console.error('Failed to load AI providers', error);
     } finally {
@@ -100,7 +120,10 @@ export const AgentSettings: React.FC = () => {
   const loadModelsForProvider = async (providerId: string) => {
     setLoadingModels(true);
     try {
-      if (window.electronAPI?.ai) {
+      // First try to get from cached models
+      if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
+        setAvailableModels(window.labRatsProviderModels[providerId]);
+      } else if (window.electronAPI?.ai) {
         const models = await window.electronAPI.ai.getModels(providerId);
         setAvailableModels(models);
       }
@@ -127,7 +150,10 @@ export const AgentSettings: React.FC = () => {
   const loadDefaultModelsForProvider = async (providerId: string) => {
     setLoadingDefaultModels(true);
     try {
-      if (window.electronAPI?.ai) {
+      // First try to get from cached models
+      if (window.labRatsProviderModels && window.labRatsProviderModels[providerId]) {
+        setDefaultAvailableModels(window.labRatsProviderModels[providerId]);
+      } else if (window.electronAPI?.ai) {
         const models = await window.electronAPI.ai.getModels(providerId);
         setDefaultAvailableModels(models);
       }
@@ -257,6 +283,62 @@ export const AgentSettings: React.FC = () => {
           onProviderChange={handleDefaultProviderChange}
           onModelChange={handleDefaultModelChange}
         />
+        
+        {/* Selected Model Info */}
+        {defaultProvider && defaultModel && (() => {
+          const selectedModelInfo = defaultAvailableModels.find(m => m.id === defaultModel);
+          if (!selectedModelInfo) return null;
+          
+          return (
+            <div className="mt-4 p-4 bg-gray-700 rounded-lg">
+              <h4 className="text-white font-medium mb-2">{selectedModelInfo.name}</h4>
+              {selectedModelInfo.description && (
+                <p className="text-gray-400 text-sm mb-3">{selectedModelInfo.description}</p>
+              )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-gray-400">
+                <div>
+                  <span className="text-gray-300 font-medium">Context Window:</span>
+                  <span className="ml-1">{selectedModelInfo.contextWindow.toLocaleString()} tokens</span>
+                </div>
+                <div>
+                  <span className="text-gray-300 font-medium">Max Tokens:</span>
+                  <span className="ml-1">{selectedModelInfo.maxTokens.toLocaleString()}</span>
+                </div>
+                {selectedModelInfo.inputCost && selectedModelInfo.outputCost && (
+                  <div>
+                    <span className="text-gray-300 font-medium">Cost:</span>
+                    <span className="ml-1">${selectedModelInfo.inputCost}/${selectedModelInfo.outputCost} per 1K</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Features */}
+              <div className="flex flex-wrap gap-2 mt-3">
+                {selectedModelInfo.features.streaming && (
+                  <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded">
+                    Streaming
+                  </span>
+                )}
+                {selectedModelInfo.features.functionCalling && (
+                  <span className="px-2 py-1 bg-green-600 text-white text-xs rounded">
+                    Function Calling
+                  </span>
+                )}
+                {selectedModelInfo.features.vision && (
+                  <span className="px-2 py-1 bg-purple-600 text-white text-xs rounded">
+                    Vision
+                  </span>
+                )}
+                {selectedModelInfo.features.codeGeneration && (
+                  <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded">
+                    Code Generation
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
       
       {/* Agent Configuration */}

@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Bell, Palette, Zap, Users, Code, Save, Bot, Shield, Key, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink, Monitor, FileText, Terminal, Database, ChevronDown } from 'lucide-react';
+import { Settings as SettingsIcon, Bell, Palette, Zap, Users, Code, Save, Bot, Shield, Key, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink, Monitor, FileText, Terminal, Database } from 'lucide-react';
 import { MasterKeySetup } from './MasterKeySetup';
 import { openExternalLink } from '../utils/system';
-import { getAIProviderManager } from '../../services/ai-provider-manager';
-import { AIProvider, AIModel } from '../../types/ai-provider';
 import { AgentSettings } from './AgentSettings';
 
 interface AIService {
@@ -133,10 +131,6 @@ export const Settings: React.FC = () => {
   const [showApiKeys, setShowApiKeys] = useState<{[key: string]: boolean}>({});
   const [loading, setLoading] = useState(false);
 
-  // AI Provider and Model Selection state
-  const [availableProviders, setAvailableProviders] = useState<AIProvider[]>([]);
-  const [loadingProviders, setLoadingProviders] = useState(false);
-  const [providerModels, setProviderModels] = useState<{[key: string]: AIModel[]}>({});
   
   // LabRats Backend state
   const [labRatsBackendStatus, setLabRatsBackendStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
@@ -156,7 +150,6 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     loadAIServices();
     checkMasterKeySetup();
-    loadAIProviders();
     loadLabRatsBackendSettings();
   }, []);
 
@@ -308,33 +301,6 @@ export const Settings: React.FC = () => {
     }
   };
 
-  // AI Provider and Model Management Functions
-  const loadAIProviders = async () => {
-    try {
-      setLoadingProviders(true);
-      const providerManager = getAIProviderManager();
-      const providers = await providerManager.getAvailableProviders();
-      setAvailableProviders(providers);
-      
-      // Load models for each provider
-      const modelsMap: {[key: string]: AIModel[]} = {};
-      for (const provider of providers) {
-        try {
-          const models = await provider.getModels();
-          modelsMap[provider.id] = models;
-        } catch (error) {
-          console.error(`Error loading models for ${provider.id}:`, error);
-          modelsMap[provider.id] = [];
-        }
-      }
-      setProviderModels(modelsMap);
-      
-    } catch (error) {
-      console.error('Error loading AI providers:', error);
-    } finally {
-      setLoadingProviders(false);
-    }
-  };
 
 
   const loadLabRatsBackendSettings = async () => {
@@ -985,32 +951,6 @@ export const Settings: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Model Selection */}
-                      {hasKey && isEnabled && providerModels[service.id] && providerModels[service.id].length > 0 && (
-                        <div className="border-t border-gray-600 pt-4">
-                          <h5 className="text-white font-medium mb-3">Model Selection</h5>
-                          
-                          {/* Available Models */}
-                          <div className="mb-4">
-                            <label className="text-sm text-gray-300 block mb-2">Available Models:</label>
-                            <div className="space-y-2 max-h-64 overflow-y-auto">
-                              {providerModels[service.id].map(model => (
-                                <div key={model.id} className="p-3 bg-gray-700 rounded-lg">
-                                  <h6 className="text-white font-medium">{model.name}</h6>
-                                  <p className="text-gray-400 text-xs">{model.description}</p>
-                                  <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500">
-                                    <span>Context: {model.contextWindow.toLocaleString()}</span>
-                                    <span>Max: {model.maxTokens.toLocaleString()}</span>
-                                    {model.inputCost && (
-                                      <span>${model.inputCost}/${model.outputCost} per 1K</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

@@ -29,6 +29,7 @@ export interface AIProviderFeatures {
   streaming: boolean;
   functionCalling: boolean;
   vision: boolean;
+  embeddings?: boolean;
   maxTokens: number;
   contextWindow: number;
 }
@@ -47,6 +48,7 @@ export interface AIProviderConfig {
   id: string;
   name: string;
   description: string;
+  baseUrl?: string;
   endpoints: AIProviderEndpoints;
   authentication: AIProviderAuthentication;
   defaultModel: string;

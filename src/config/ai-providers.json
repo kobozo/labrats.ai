@@ -18,6 +18,7 @@
         "streaming": true,
         "functionCalling": true,
         "vision": true,
+        "embeddings": false,
         "maxTokens": 200000,
         "contextWindow": 200000
       },

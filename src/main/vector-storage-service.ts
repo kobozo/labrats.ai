@@ -35,11 +35,26 @@ export interface VectorIndex {
 export class VectorStorageService {
   private projectPath: string;
   private indices: Map<string, VectorIndex> = new Map();
+  private initialized: boolean = false;
+  private initPromise: Promise<void> | null = null;
 
   constructor(projectPath: string) {
     this.projectPath = projectPath;
     this.ensureVectorDirectories();
-    this.loadIndices();
+    // Note: loadIndices is async, so it won't complete in constructor
+    // We'll need to ensure it's loaded before use
+  }
+
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = this.loadIndices().then(() => {
+      this.initialized = true;
+      console.log('[VECTOR-STORAGE] Loaded', this.indices.size, 'existing indices');
+    });
+
+    return this.initPromise;
   }
 
   private ensureVectorDirectories(): void {
@@ -370,17 +385,22 @@ export class VectorStorageService {
 
   // Get or create the default kanban tasks index
   async getOrCreateKanbanIndex(embeddingProvider: string, embeddingModel: string, dimensions: number): Promise<VectorIndex> {
+    // Ensure indices are loaded
+    await this.initialize();
+    
     // Look for existing kanban index
     for (const index of this.indices.values()) {
       if (index.name === 'kanban-tasks' && 
           index.metadata.embeddingProvider === embeddingProvider &&
           index.metadata.embeddingModel === embeddingModel &&
           index.dimensions === dimensions) {
+        console.log('[VECTOR-STORAGE] Found existing kanban index:', index.id);
         return index;
       }
     }
 
     // Create new index
+    console.log('[VECTOR-STORAGE] Creating new kanban index');
     return await this.createIndex('kanban-tasks', dimensions, embeddingProvider, embeddingModel);
   }
 }

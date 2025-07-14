@@ -159,24 +159,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   const loadVectorStats = async () => {
     if (!currentFolder) return;
 
+    console.log('[Dashboard] Loading vector stats for folder:', currentFolder);
+
     try {
       // Initialize Dexy first if we have a project folder
       await dexyService.initialize(currentFolder);
       
       // Check if Dexy is ready
       const isReady = await dexyService.isReady();
+      console.log('[Dashboard] Dexy ready:', isReady);
       
       if (isReady) {
         // Get Dexy config
         const config = await dexyService.getConfig();
+        console.log('[Dashboard] Dexy config:', config);
         
         // Get all tasks
         const tasks = await kanbanService.getTasks('main-board');
         const totalTasks = tasks.length;
+        console.log('[Dashboard] Total tasks:', totalTasks);
         
         // Get vectorized task IDs
         const vectorizedIds = await dexyService.getVectorizedTaskIds();
         const vectorizedTasks = vectorizedIds.length;
+        console.log('[Dashboard] Vectorized task IDs:', vectorizedIds);
+        console.log('[Dashboard] Vectorized count:', vectorizedTasks);
         
         setVectorStats({
           totalTasks,
@@ -199,13 +206,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
         });
       }
     } catch (error) {
-      console.error('Failed to load vector stats:', error);
+      console.error('[Dashboard] Failed to load vector stats:', error);
     }
   };
 
   const handleForceResync = async () => {
     if (!currentFolder || isSyncing) return;
 
+    console.log('[Dashboard] Starting force resync...');
     setIsSyncing(true);
     try {
       // Initialize Dexy if needed
@@ -213,12 +221,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       
       // Get all tasks and sync
       const tasks = await kanbanService.getTasks('main-board');
+      console.log('[Dashboard] Found', tasks.length, 'tasks to sync');
+      
       await dexyService.syncTasks(tasks, 'main-board');
+      console.log('[Dashboard] Sync completed');
       
       // Reload stats
       await loadVectorStats();
     } catch (error) {
-      console.error('Failed to resync:', error);
+      console.error('[Dashboard] Failed to resync:', error);
     } finally {
       setIsSyncing(false);
     }

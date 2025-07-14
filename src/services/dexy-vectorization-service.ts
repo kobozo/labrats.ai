@@ -81,15 +81,28 @@ export class DexyVectorizationService {
         
         // Check for agent overrides in the YAML structure
         const dexyConfig = configData?.agents?.overrides?.dexy;
+        const agentsConfig = configData?.agents;
         
-        if (dexyConfig && dexyConfig.provider !== 'inherit' && dexyConfig.model !== 'inherit') {
+        // Handle inheritance - use agent-specific config or fall back to defaults
+        let providerId = dexyConfig?.provider;
+        let modelId = dexyConfig?.model;
+        
+        // If provider or model is 'inherit', use the default values
+        if (providerId === 'inherit' || !providerId) {
+          providerId = agentsConfig?.defaultProvider || configData?.ai?.defaultProvider;
+        }
+        if (modelId === 'inherit' || !modelId) {
+          modelId = agentsConfig?.defaultModel || configData?.ai?.defaultModel;
+        }
+        
+        if (providerId && modelId) {
           this.config = {
-            providerId: dexyConfig.provider,
-            modelId: dexyConfig.model
+            providerId,
+            modelId
           };
           console.log('[DEXY] Loaded configuration from YAML:', this.config);
         } else {
-          console.log('[DEXY] Dexy config in YAML is inherit or missing:', dexyConfig);
+          console.log('[DEXY] Could not determine provider/model from config:', { dexyConfig, providerId, modelId });
         }
       } else {
         console.warn('[DEXY] Config file not found at:', configPath);
@@ -121,6 +134,8 @@ export class DexyVectorizationService {
       console.log('[DEXY] Not configured, skipping vectorization');
       return;
     }
+
+    console.log('[DEXY] Vectorizing task:', task.id);
 
     try {
       // Create text representation of the task
@@ -324,13 +339,18 @@ export class DexyVectorizationService {
 
   private async generateEmbedding(text: string): Promise<number[] | null> {
     if (!this.provider || !this.config) {
+      console.warn('[DEXY] Cannot generate embedding - no provider or config');
       return null;
     }
 
     try {
-      // Call the embedding API
-      // This is a placeholder - actual implementation depends on provider's embedding API
+      console.log('[DEXY] Generating embedding for text of length:', text.length);
       const response = await this.callEmbeddingAPI(text);
+      if (response && response.length > 0) {
+        console.log('[DEXY] Successfully generated embedding with', response.length, 'dimensions');
+      } else {
+        console.warn('[DEXY] Failed to generate embedding - empty response');
+      }
       return response;
     } catch (error) {
       console.error('[DEXY] Failed to generate embedding:', error);
@@ -347,24 +367,56 @@ export class DexyVectorizationService {
       // For OpenAI
       if (this.config.providerId === 'openai') {
         const apiKey = await this.getAPIKey();
-        const response = await fetch('https://api.openai.com/v1/embeddings', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: this.config.modelId,
-            input: text
-          })
+        console.log('[DEXY] Calling OpenAI embeddings API with model:', this.config.modelId);
+        
+        // Use https module for Node.js compatibility
+        const https = require('https');
+        const requestData = JSON.stringify({
+          model: this.config.modelId,
+          input: text
         });
 
-        if (!response.ok) {
-          throw new Error(`OpenAI API error: ${response.status}`);
-        }
+        return new Promise((resolve, reject) => {
+          const options = {
+            hostname: 'api.openai.com',
+            path: '/v1/embeddings',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Length': Buffer.byteLength(requestData)
+            }
+          };
 
-        const data = await response.json();
-        return data.data?.[0]?.embedding || null;
+          const req = https.request(options, (res: any) => {
+            let data = '';
+            res.on('data', (chunk: any) => data += chunk);
+            res.on('end', () => {
+              try {
+                const parsed = JSON.parse(data);
+                if (res.statusCode !== 200) {
+                  console.error('[DEXY] OpenAI API error:', res.statusCode, parsed);
+                  reject(new Error(`OpenAI API error: ${res.statusCode}`));
+                } else {
+                  const embedding = parsed.data?.[0]?.embedding || null;
+                  console.log('[DEXY] Received embedding response, has embedding:', !!embedding);
+                  resolve(embedding);
+                }
+              } catch (e) {
+                console.error('[DEXY] Failed to parse API response:', e);
+                reject(e);
+              }
+            });
+          });
+
+          req.on('error', (error: any) => {
+            console.error('[DEXY] Request error:', error);
+            reject(error);
+          });
+
+          req.write(requestData);
+          req.end();
+        });
       }
 
       // Add support for other providers as needed
@@ -382,22 +434,30 @@ export class DexyVectorizationService {
     }
 
     try {
-      // Get API key from the main process config service
-      const { AIConfigService } = require('../main/aiConfigService');
-      const { app } = require('electron');
       const path = require('path');
       const fs = require('fs');
+      const yaml = require('js-yaml');
+      const os = require('os');
       
-      // Read the encrypted API key from config
-      const configPath = path.join(app.getPath('userData'), 'config.json');
+      // Read the encrypted API key from ~/.labrats/config.yaml
+      const configPath = path.join(os.homedir(), '.labrats', 'config.yaml');
+      console.log('[DEXY] Looking for API key in:', configPath);
+      
       if (fs.existsSync(configPath)) {
-        const configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        const serviceConfig = configData?.aiServices?.[this.config.providerId];
+        const configContent = fs.readFileSync(configPath, 'utf8');
+        const configData = yaml.load(configContent);
+        const serviceConfig = configData?.ai?.services?.[this.config.providerId];
         
-        if (serviceConfig?.apiKey) {
-          // Decrypt the API key
+        console.log('[DEXY] Service config found:', !!serviceConfig);
+        console.log('[DEXY] Has encrypted API key:', !!serviceConfig?.encryptedApiKey);
+        
+        if (serviceConfig?.encryptedApiKey) {
+          // Decrypt the API key using the AIConfigService
+          const { AIConfigService } = require('../main/aiConfigService');
           const aiConfigService = AIConfigService.getInstance();
-          return await aiConfigService.getAPIKey(this.config.providerId, serviceConfig.apiKey);
+          const decryptedKey = await aiConfigService.getAPIKey(this.config.providerId, serviceConfig.encryptedApiKey);
+          console.log('[DEXY] Successfully decrypted API key');
+          return decryptedKey;
         }
       }
       
@@ -435,15 +495,23 @@ export class DexyVectorizationService {
 
   async getVectorizedTaskIds(): Promise<string[]> {
     if (!this.vectorStorage || !this.indexId) {
+      console.warn('[DEXY] Cannot get vectorized task IDs - storage not initialized', {
+        hasVectorStorage: !!this.vectorStorage,
+        hasIndexId: !!this.indexId,
+        indexId: this.indexId
+      });
       return [];
     }
 
     try {
       const documentIds = await this.vectorStorage.getDocumentIds(this.indexId);
+      console.log('[DEXY] Found document IDs:', documentIds);
       // Extract task IDs from document IDs (remove 'task_' prefix)
-      return documentIds
+      const taskIds = documentIds
         .filter(id => id.startsWith('task_'))
         .map(id => id.substring(5));
+      console.log('[DEXY] Extracted task IDs:', taskIds);
+      return taskIds;
     } catch (error) {
       console.error('[DEXY] Failed to get vectorized task IDs:', error);
       return [];
@@ -457,11 +525,19 @@ export class DexyVectorizationService {
     }
 
     try {
-      console.log('[DEXY] Starting task sync...');
+      console.log('[DEXY] Starting task sync with', tasks.length, 'tasks');
+      
+      // Ensure vector storage is initialized
+      if (!this.vectorStorage || !this.indexId) {
+        console.warn('[DEXY] Vector storage not initialized, cannot sync');
+        return;
+      }
       
       // Get all vectorized task IDs
       const vectorizedTaskIds = await this.getVectorizedTaskIds();
       const vectorizedSet = new Set(vectorizedTaskIds);
+      
+      console.log('[DEXY] Currently vectorized task IDs:', vectorizedTaskIds);
       
       // Get current task IDs
       const currentTaskIds = new Set(tasks.map(t => t.id));

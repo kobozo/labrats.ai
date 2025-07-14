@@ -16,12 +16,18 @@ export function setDexyProjectPath(projectPath: string | null) {
 
 async function initializeDexyService(projectPath: string) {
   try {
+    console.log('[DEXY-IPC] Starting initialization for project:', projectPath);
     dexyService = DexyVectorizationService.getInstance();
     await dexyService.initialize(projectPath);
     
     vectorStorage = new VectorStorageService(projectPath);
     
+    const isReady = dexyService.isReady();
+    const config = dexyService.getConfig();
+    
     console.log('[DEXY-IPC] Initialized for project:', projectPath);
+    console.log('[DEXY-IPC] Service ready:', isReady);
+    console.log('[DEXY-IPC] Service config:', config);
   } catch (error) {
     console.error('[DEXY-IPC] Failed to initialize:', error);
   }
@@ -138,11 +144,15 @@ export function registerDexyHandlers() {
   // Sync tasks
   ipcMain.handle('dexy:syncTasks', async (_, { tasks, boardId }: { tasks: Task[]; boardId: string }) => {
     try {
+      console.log('[DEXY-IPC] Received sync request for', tasks.length, 'tasks, boardId:', boardId);
+      
       if (!dexyService) {
+        console.error('[DEXY-IPC] Dexy service not initialized');
         throw new Error('Dexy service not initialized');
       }
       
       await dexyService.syncTasks(tasks, boardId);
+      console.log('[DEXY-IPC] Sync completed successfully');
       return { success: true };
     } catch (error) {
       console.error('[DEXY-IPC] Failed to sync tasks:', error);
@@ -168,11 +178,16 @@ export function registerDexyHandlers() {
   // Get vectorized task IDs
   ipcMain.handle('dexy:getVectorizedTaskIds', async () => {
     try {
+      console.log('[DEXY-IPC] Getting vectorized task IDs...');
+      
       if (!dexyService) {
+        console.warn('[DEXY-IPC] Dexy service not initialized');
         throw new Error('Dexy service not initialized');
       }
       
       const taskIds = await dexyService.getVectorizedTaskIds();
+      console.log('[DEXY-IPC] Retrieved task IDs:', taskIds);
+      
       return { success: true, taskIds };
     } catch (error) {
       console.error('[DEXY-IPC] Failed to get vectorized task IDs:', error);

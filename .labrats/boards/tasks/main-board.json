@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "id": "TASK-1752498902298",
+    "title": "test ticket",
+    "description": "this is a test for vectors",
+    "assignee": "LabRats",
+    "priority": "medium",
+    "type": "task",
+    "status": "definition-of-ready",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-14T13:15:02.299Z",
+    "updatedAt": "2025-07-14T13:15:02.299Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai"
+  }
+]

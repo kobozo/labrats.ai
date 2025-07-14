@@ -166,6 +166,7 @@ class DexyServiceRenderer {
     }
 
     try {
+      console.log('[DEXY-RENDERER] Syncing', tasks.length, 'tasks for board:', boardId);
       const result = await window.electronAPI.dexy.syncTasks({ tasks, boardId });
       if (!result.success) {
         throw new Error(result.error || 'Failed to sync tasks');

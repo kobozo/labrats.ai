@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow } from 'lucide-react';
+import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow, Search } from 'lucide-react';
 import { Task, WorkflowStage } from '../../types/kanban';
 import { workflowStages, getStageConfig } from '../../config/workflow-stages';
 import { kanbanService } from '../../services/kanban-service';
@@ -8,6 +8,8 @@ import { CreateTaskDialog } from './CreateTaskDialog';
 import { AssignTaskDialog } from './AssignTaskDialog';
 import { ViewTaskDialog } from './ViewTaskDialog';
 import { EditTaskDialog } from './EditTaskDialog';
+import { TaskSearchDialog } from './TaskSearchDialog';
+import { kanbanTaskIndexing } from '../../services/kanban-task-indexing';
 
 
 
@@ -28,6 +30,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showSearchDialog, setShowSearchDialog] = useState(false);
+  const [checkingDuplicates, setCheckingDuplicates] = useState<Task | null>(null);
   const boardId = 'main-board'; // For now, using a single board
   
   // Set the current project in kanban service
@@ -50,6 +54,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       setIsLoading(true);
       const loadedTasks = await kanbanService.getTasks(boardId);
       setTasks(loadedTasks || []);
+      
+      // Index all tasks for search on load
+      if (loadedTasks && loadedTasks.length > 0) {
+        kanbanTaskIndexing.indexTasks(loadedTasks).catch(error => {
+          console.error('Error indexing tasks:', error);
+        });
+      }
     } catch (error) {
       console.error('Error loading tasks:', error);
       setTasks([]);
@@ -109,13 +120,22 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             <h1 className="text-2xl font-bold text-white mb-2">LabRats Workflow Board</h1>
             <p className="text-gray-400">9-stage pipeline from idea to retrospective</p>
           </div>
-          <button
-            onClick={() => setShowWorkflow(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg transition-colors"
-          >
-            <Workflow className="w-4 h-4" />
-            <span>View Workflow</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setShowSearchDialog(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg transition-colors"
+            >
+              <Search className="w-4 h-4" />
+              <span>Search</span>
+            </button>
+            <button
+              onClick={() => setShowWorkflow(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg transition-colors"
+            >
+              <Workflow className="w-4 h-4" />
+              <span>View Workflow</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -317,8 +337,16 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
           onClose={() => setShowCreateDialog(false)}
           onTaskCreated={async (newTask) => {
             try {
+              // Check for duplicates before creating
+              setCheckingDuplicates(newTask);
+              setShowSearchDialog(true);
+              
               setTasks([...tasks, newTask]);
               await kanbanService.updateTask(boardId, newTask);
+              
+              // Index the new task for search
+              await kanbanTaskIndexing.indexTask(newTask);
+              
               // Reload tasks to ensure we have the latest data from storage
               await loadTasks();
             } catch (error) {
@@ -347,8 +375,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             );
             setTasks(updatedTasks);
             
-            // Save to backend (don't await to avoid blocking dialog close)
-            kanbanService.updateTask(boardId, updatedTask).catch(console.error);
+            // Save to backend and index (don't await to avoid blocking dialog close)
+            kanbanService.updateTask(boardId, updatedTask)
+              .then(() => kanbanTaskIndexing.indexTask(updatedTask))
+              .catch(console.error);
             
             // Close dialog immediately
             setShowAssignDialog(false);
@@ -389,13 +419,29 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             );
             setTasks(updatedTasks);
             
-            // Save to backend
+            // Save to backend and index
             await kanbanService.updateTask(boardId, updatedTask);
+            await kanbanTaskIndexing.indexTask(updatedTask);
             
             // Close dialog
             setShowEditDialog(false);
             setSelectedTask(null);
           }}
+        />
+      )}
+      
+      {showSearchDialog && (
+        <TaskSearchDialog
+          isOpen={showSearchDialog}
+          onClose={() => {
+            setShowSearchDialog(false);
+            setCheckingDuplicates(null);
+          }}
+          onSelectTask={(task) => {
+            setSelectedTask(task);
+            setShowViewDialog(true);
+          }}
+          currentTask={checkingDuplicates || undefined}
         />
       )}
     </div>

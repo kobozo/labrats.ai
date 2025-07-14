@@ -14,10 +14,24 @@ import {
   VectorStoreConfig
 } from './vector-store';
 
+export interface VectorProviderConfig {
+  [key: string]: any;
+}
+
+export interface VectorProviderCapabilities {
+  maxVectors?: number;
+  maxDimensions?: number;
+  supportsBatch?: boolean;
+  supportsMetadataFiltering?: boolean;
+  supportsHybridSearch?: boolean;
+}
+
 export interface VectorProvider {
   id: string;
   name: string;
   type: 'local' | 'cloud';
+  isInitialized?: boolean;
+  capabilities?: VectorProviderCapabilities;
   
   /**
    * Initialize the provider with configuration
@@ -132,9 +146,14 @@ export abstract class BaseVectorProvider implements VectorProvider {
   abstract id: string;
   abstract name: string;
   abstract type: 'local' | 'cloud';
+  capabilities?: VectorProviderCapabilities;
   
   protected initialized = false;
   protected config?: VectorStoreConfig;
+  
+  get isInitialized(): boolean {
+    return this.initialized;
+  }
   
   async initialize(config: VectorStoreConfig): Promise<void> {
     this.config = config;

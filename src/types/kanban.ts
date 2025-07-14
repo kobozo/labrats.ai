@@ -33,6 +33,8 @@ export interface Task {
   linkedTaskIds?: string[];
   branchName?: string;
   hasBranch?: boolean;
+  boardId?: string;
+  tags?: string[];
   
   // Metadata
   createdAt: string;

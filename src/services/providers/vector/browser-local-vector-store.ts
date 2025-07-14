@@ -1,11 +1,8 @@
 /**
- * Local Vector Store Implementation
- * Uses a simple in-memory approach with file-based persistence
- * For production, this would use HNSWLib or Faiss
+ * Browser-Compatible Local Vector Store Implementation
+ * Uses in-memory storage with potential IndexedDB persistence
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
 import {
   VectorStore,
   VectorDocument,
@@ -27,41 +24,28 @@ interface LocalIndex {
   lastUpdated: Date;
 }
 
-export class LocalVectorStore extends BaseVectorProvider {
+export class BrowserLocalVectorStore extends BaseVectorProvider {
   id = 'local';
   name = 'Local Vector Store';
   type: 'local' | 'cloud' = 'local';
   
   private indices: Map<string, LocalIndex> = new Map();
-  private indexPath: string = '';
   
   async initialize(config: any): Promise<void> {
     await super.initialize(config);
-    this.indexPath = config.indexPath || path.join(process.cwd(), '.labrats', 'vectors');
-    
-    // Ensure directory exists
-    if (!fs.existsSync(this.indexPath)) {
-      fs.mkdirSync(this.indexPath, { recursive: true });
-    }
-    
-    // Load existing indices
-    await this.loadIndices();
+    // Load from localStorage if available
+    this.loadFromStorage();
   }
   
   async testConnection(): Promise<boolean> {
     this.ensureInitialized();
-    // For local store, just check if we can access the directory
-    try {
-      await fs.promises.access(this.indexPath, fs.constants.R_OK | fs.constants.W_OK);
-      return true;
-    } catch {
-      return false;
-    }
+    // For local browser store, always return true
+    return true;
   }
   
   async disconnect(): Promise<void> {
-    // Save all indices before disconnecting
-    await this.saveIndices();
+    // Save to storage before disconnecting
+    this.saveToStorage();
     this.indices.clear();
   }
   
@@ -80,7 +64,7 @@ export class LocalVectorStore extends BaseVectorProvider {
     };
     
     this.indices.set(id, index);
-    await this.saveIndex(index);
+    this.saveToStorage();
     
     return this.indexToVectorIndex(index);
   }
@@ -93,12 +77,7 @@ export class LocalVectorStore extends BaseVectorProvider {
     }
     
     this.indices.delete(indexId);
-    
-    // Delete from disk
-    const indexFile = path.join(this.indexPath, `${indexId}.json`);
-    if (fs.existsSync(indexFile)) {
-      await fs.promises.unlink(indexFile);
-    }
+    this.saveToStorage();
   }
   
   async listIndices(): Promise<VectorIndex[]> {
@@ -136,7 +115,7 @@ export class LocalVectorStore extends BaseVectorProvider {
     }
     
     index.lastUpdated = new Date();
-    await this.saveIndex(index);
+    this.saveToStorage();
     
     return ids;
   }
@@ -154,7 +133,7 @@ export class LocalVectorStore extends BaseVectorProvider {
     }
     
     index.lastUpdated = new Date();
-    await this.saveIndex(index);
+    this.saveToStorage();
   }
   
   async search(indexId: string, query: VectorSearchQuery): Promise<VectorSearchResult[]> {
@@ -235,7 +214,7 @@ export class LocalVectorStore extends BaseVectorProvider {
     
     index.vectors.clear();
     index.lastUpdated = new Date();
-    await this.saveIndex(index);
+    this.saveToStorage();
   }
   
   async exportIndex(indexId: string, format?: 'json' | 'parquet'): Promise<Blob> {
@@ -281,7 +260,7 @@ export class LocalVectorStore extends BaseVectorProvider {
     }
     
     index.lastUpdated = new Date();
-    await this.saveIndex(index);
+    this.saveToStorage();
     
     return count;
   }
@@ -302,7 +281,7 @@ export class LocalVectorStore extends BaseVectorProvider {
       totalVectors,
       totalIndices: this.indices.size,
       memoryUsage: totalSize,
-      diskUsage: await this.calculateDiskUsage()
+      diskUsage: this.calculateStorageUsage()
     };
   }
   
@@ -322,57 +301,45 @@ export class LocalVectorStore extends BaseVectorProvider {
   
   // Helper methods
   
-  private async loadIndices(): Promise<void> {
+  private loadFromStorage(): void {
     try {
-      const files = await fs.promises.readdir(this.indexPath);
-      
-      for (const file of files) {
-        if (file.endsWith('.json')) {
-          const content = await fs.promises.readFile(
-            path.join(this.indexPath, file),
-            'utf8'
-          );
-          const data = JSON.parse(content);
-          
+      const stored = localStorage.getItem('labrats_vector_indices');
+      if (stored) {
+        const data = JSON.parse(stored);
+        for (const indexData of data) {
           const index: LocalIndex = {
-            id: data.id,
-            name: data.name,
-            dimensions: data.dimensions,
-            vectors: new Map(data.vectors.map((v: VectorDocument) => [v.id, v])),
-            metadata: data.metadata,
-            createdAt: new Date(data.createdAt),
-            lastUpdated: new Date(data.lastUpdated)
+            id: indexData.id,
+            name: indexData.name,
+            dimensions: indexData.dimensions,
+            vectors: new Map(indexData.vectors.map((v: VectorDocument) => [v.id, v])),
+            metadata: indexData.metadata,
+            createdAt: new Date(indexData.createdAt),
+            lastUpdated: new Date(indexData.lastUpdated)
           };
-          
           this.indices.set(index.id, index);
         }
       }
     } catch (error) {
-      console.error('Error loading indices:', error);
+      console.error('Error loading vector indices from storage:', error);
     }
   }
   
-  private async saveIndices(): Promise<void> {
-    for (const index of this.indices.values()) {
-      await this.saveIndex(index);
+  private saveToStorage(): void {
+    try {
+      const data = Array.from(this.indices.values()).map(index => ({
+        id: index.id,
+        name: index.name,
+        dimensions: index.dimensions,
+        metadata: index.metadata,
+        createdAt: index.createdAt.toISOString(),
+        lastUpdated: index.lastUpdated.toISOString(),
+        vectors: Array.from(index.vectors.values())
+      }));
+      
+      localStorage.setItem('labrats_vector_indices', JSON.stringify(data));
+    } catch (error) {
+      console.error('Error saving vector indices to storage:', error);
     }
-  }
-  
-  private async saveIndex(index: LocalIndex): Promise<void> {
-    const data = {
-      id: index.id,
-      name: index.name,
-      dimensions: index.dimensions,
-      metadata: index.metadata,
-      createdAt: index.createdAt.toISOString(),
-      lastUpdated: index.lastUpdated.toISOString(),
-      vectors: Array.from(index.vectors.values())
-    };
-    
-    await fs.promises.writeFile(
-      path.join(this.indexPath, `${index.id}.json`),
-      JSON.stringify(data, null, 2)
-    );
   }
   
   private indexToVectorIndex(index: LocalIndex): VectorIndex {
@@ -403,28 +370,23 @@ export class LocalVectorStore extends BaseVectorProvider {
     
     for (const doc of index.vectors.values()) {
       if (doc.metadata.type) {
-        stats[doc.metadata.type as keyof typeof stats]++;
+        const type = doc.metadata.type as keyof typeof stats;
+        if (type in stats && type !== 'total') {
+          stats[type]++;
+        }
       }
     }
     
     return stats;
   }
   
-  private async calculateDiskUsage(): Promise<number> {
-    let total = 0;
-    
+  private calculateStorageUsage(): number {
     try {
-      const files = await fs.promises.readdir(this.indexPath);
-      
-      for (const file of files) {
-        const stats = await fs.promises.stat(path.join(this.indexPath, file));
-        total += stats.size;
-      }
+      const stored = localStorage.getItem('labrats_vector_indices');
+      return stored ? stored.length : 0;
     } catch {
-      // Ignore errors
+      return 0;
     }
-    
-    return total;
   }
   
   private cosineSimilarity(a: number[], b: number[]): number {

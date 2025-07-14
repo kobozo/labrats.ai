@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, GitBranch, AlertCircle, Calendar, User, Tag } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, GitBranch, AlertCircle, Calendar, User, Tag, Trash2 } from 'lucide-react';
 import { Task } from '../../types/kanban';
 import { workflowStages } from '../../config/workflow-stages';
 import { agents } from '../../config/agents';
@@ -8,13 +8,16 @@ interface ViewTaskDialogProps {
   task: Task;
   onClose: () => void;
   onEdit: () => void;
+  onDelete?: () => void;
 }
 
 export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({ 
   task, 
   onClose,
-  onEdit
+  onEdit,
+  onDelete
 }) => {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const currentStage = workflowStages.find(stage => stage.id === task.status);
   const assigneeAgent = agents.find(agent => agent.name === task.assignee);
   
@@ -57,6 +60,15 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
             >
               Edit
             </button>
+            {onDelete && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors flex items-center space-x-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete</span>
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-2 hover:bg-gray-700 rounded transition-colors"
@@ -209,6 +221,36 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
           )}
         </div>
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-white mb-4">Delete Task</h3>
+            <p className="text-gray-300 mb-6">
+              Are you sure you want to delete "{task.title}"? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onDelete?.();
+                  setShowDeleteConfirm(false);
+                  onClose();
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

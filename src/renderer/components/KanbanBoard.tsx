@@ -3,6 +3,7 @@ import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow, 
 import { Task, WorkflowStage } from '../../types/kanban';
 import { workflowStages, getStageConfig } from '../../config/workflow-stages';
 import { kanbanService } from '../../services/kanban-service';
+import { kanbanManager } from '../../services/kanban-manager-renderer';
 import { WorkflowVisualization } from './WorkflowVisualization';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { AssignTaskDialog } from './AssignTaskDialog';
@@ -436,6 +437,26 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
           onEdit={() => {
             setShowViewDialog(false);
             setShowEditDialog(true);
+          }}
+          onDelete={async () => {
+            try {
+              // Delete from backend
+              await kanbanManager.deleteTask(boardId, selectedTask.id);
+              
+              // Delete vector if Dexy is ready
+              if (dexyReady) {
+                await dexyService.deleteTaskVector(selectedTask.id);
+              }
+              
+              // Update local state
+              setTasks(tasks.filter(t => t.id !== selectedTask.id));
+              
+              // Close dialog
+              setShowViewDialog(false);
+              setSelectedTask(null);
+            } catch (error) {
+              console.error('Error deleting task:', error);
+            }
           }}
         />
       )}

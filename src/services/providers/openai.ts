@@ -71,36 +71,41 @@ export class OpenAIProvider implements AIProvider {
       const data = await response.json();
       
       if (data.data && Array.isArray(data.data)) {
-        // Filter out embedding models and map the rest
-        const models = data.data
-          .filter((model: any) => !model.id.includes('embedding') && !model.id.includes('ada'))
-          .map((model: any) => {
-            // Determine model type based on ID
-            let modelType: AIModelType = 'reasoning';
-            
-            if (model.id.includes('instruct') || model.id.includes('davinci') || model.id.includes('babbage') || model.id.includes('curie')) {
-              modelType = 'completion';
-            } else if (model.id.includes('whisper') || model.id.includes('dall-e') || model.id.includes('tts')) {
-              modelType = 'specialized';
+        // Map all models and determine their types
+        const allModels = data.data.map((model: any) => {
+          // Determine model type based on ID
+          let modelType: AIModelType = 'reasoning';
+          
+          if (model.id.includes('embedding') || model.id.includes('ada')) {
+            modelType = 'embedding';
+          } else if (model.id.includes('instruct') || model.id.includes('davinci') || model.id.includes('babbage') || model.id.includes('curie')) {
+            modelType = 'completion';
+          } else if (model.id.includes('whisper') || model.id.includes('dall-e') || model.id.includes('tts')) {
+            modelType = 'specialized';
+          }
+          
+          return {
+            id: model.id,
+            name: this.formatModelName(model.id),
+            description: this.getModelDescription(model.id),
+            type: modelType,
+            contextWindow: this.getContextWindow(model.id),
+            maxTokens: this.getMaxTokens(model.id),
+            inputCost: this.getInputCost(model.id),
+            outputCost: this.getOutputCost(model.id),
+            features: {
+              streaming: true,
+              functionCalling: this.supportsFunctionCalling(model.id),
+              vision: this.supportsVision(model.id),
+              codeGeneration: true
             }
-            
-            return {
-              id: model.id,
-              name: this.formatModelName(model.id),
-              description: this.getModelDescription(model.id),
-              type: modelType,
-              contextWindow: this.getContextWindow(model.id),
-              maxTokens: this.getMaxTokens(model.id),
-              inputCost: this.getInputCost(model.id),
-              outputCost: this.getOutputCost(model.id),
-              features: {
-                streaming: true,
-                functionCalling: this.supportsFunctionCalling(model.id),
-                vision: this.supportsVision(model.id),
-                codeGeneration: true
-              }
-            };
-          });
+          };
+        });
+        
+        // Filter to only show reasoning and completion models
+        const models = allModels.filter((model: any) => 
+          model.type === 'reasoning' || model.type === 'completion'
+        );
         
         return models;
       }

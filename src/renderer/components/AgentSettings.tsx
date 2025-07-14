@@ -175,7 +175,7 @@ export const AgentSettings: React.FC = () => {
         models = await window.electronAPI.ai.getModels(providerId);
       }
       
-      // Show all models (providers already filter out embedding models)
+      // Show all models (providers already filter to show only reasoning and completion models)
       setAvailableModels(models);
     } catch (error) {
       console.error(`Failed to load models for ${providerId}`, error);
@@ -227,7 +227,7 @@ export const AgentSettings: React.FC = () => {
         models = await window.electronAPI.ai.getModels(providerId);
       }
       
-      // Show all models (providers already filter out embedding models)
+      // Show all models (providers already filter to show only reasoning and completion models)
       setDefaultAvailableModels(models);
     } catch (error) {
       console.error(`Failed to load models for ${providerId}`, error);

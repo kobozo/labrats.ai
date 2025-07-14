@@ -74,13 +74,19 @@ export class AnthropicProvider implements AIProvider {
             const data = await response.json();
             // Transform Anthropic API response to our model format
             if (data.data && Array.isArray(data.data)) {
-              return data.data
-                .filter((model: any) => !model.id.includes('embed')) // Filter out embedding models
-                .map((model: any) => ({
+              // Map all models first
+              const allModels = data.data.map((model: any) => {
+                // Determine model type - Anthropic models are either reasoning or embedding
+                let modelType: AIModelType = 'reasoning';
+                if (model.id.includes('embed')) {
+                  modelType = 'embedding';
+                }
+                
+                return {
                   id: model.id,
                   name: model.display_name || model.id,
                   description: this.getModelDescription(model.id),
-                  type: 'reasoning' as AIModelType,
+                  type: modelType,
                   contextWindow: this.getContextWindow(model.id),
                   maxTokens: this.getMaxTokens(model.id),
                   inputCost: this.getInputCost(model.id),
@@ -91,7 +97,14 @@ export class AnthropicProvider implements AIProvider {
                     vision: this.config.features.vision,
                     codeGeneration: true
                   }
-                }));
+                };
+              });
+              
+              // Filter to only show reasoning and completion models
+              // Note: Anthropic doesn't have completion models, only reasoning
+              return allModels.filter((model: any) => 
+                model.type === 'reasoning' || model.type === 'completion'
+              );
             }
           }
         }

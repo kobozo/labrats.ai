@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow, Search, Code } from 'lucide-react';
+import { Plus, User, Clock, CheckCircle, AlertCircle, Zap, GitBranch, Workflow, Search, Code, FileCode } from 'lucide-react';
 import { Task, WorkflowStage } from '../../types/kanban';
 import { workflowStages, getStageConfig } from '../../config/workflow-stages';
 import { kanbanService } from '../../services/kanban-service';
@@ -280,6 +280,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
                     </h4>
                     <div className="flex items-center space-x-1">
                       {task.hasBranch && <GitBranch className="w-4 h-4 text-green-400" />}
+                      {task.fileReferences && task.fileReferences.length > 0 && (
+                        <div title={`${task.fileReferences.length} file reference${task.fileReferences.length > 1 ? 's' : ''}`}>
+                          <FileCode className="w-4 h-4 text-purple-400" />
+                        </div>
+                      )}
                       {getTypeIcon(task.type)}
                     </div>
                   </div>

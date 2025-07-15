@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, GitBranch, AlertCircle, Calendar, User, Tag, Trash2, Search, ExternalLink } from 'lucide-react';
+import { X, GitBranch, AlertCircle, Calendar, User, Tag, Trash2, Search, ExternalLink, FileCode, Code } from 'lucide-react';
 import { Task } from '../../types/kanban';
 import { workflowStages } from '../../config/workflow-stages';
 import { agents } from '../../config/agents';
@@ -37,6 +37,16 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
   useEffect(() => {
     loadSimilarTasks();
   }, [task.id]);
+
+  const handleFileClick = (filePath: string, lineNumber?: number) => {
+    // Dispatch event to navigate to file in FileExplorer
+    const event = new CustomEvent('navigate-to-file', {
+      detail: { filePath, lineNumber }
+    });
+    window.dispatchEvent(event);
+    // Close this dialog
+    onClose();
+  };
 
   const loadSimilarTasks = async () => {
     try {
@@ -282,6 +292,38 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
                   <GitBranch className="w-4 h-4 text-green-400" />
                   <code className="text-green-400">{task.branchName}</code>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* File References */}
+          {task.fileReferences && task.fileReferences.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-white mb-3">File References</h3>
+              <div className="space-y-2">
+                {task.fileReferences.map((ref, index) => (
+                  <div 
+                    key={index}
+                    onClick={() => handleFileClick(ref.filePath, ref.lineNumber)}
+                    className="bg-gray-900/50 rounded-lg p-3 hover:bg-gray-900/70 cursor-pointer transition-colors group"
+                  >
+                    <div className="flex items-start space-x-3">
+                      <FileCode className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-gray-300 font-mono truncate">
+                          {ref.filePath}
+                          {ref.lineNumber && <span className="text-gray-500">:{ref.lineNumber}</span>}
+                        </div>
+                        {ref.content && (
+                          <div className="mt-1 text-xs text-gray-400 truncate">
+                            {ref.content}
+                          </div>
+                        )}
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition-colors flex-shrink-0" />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

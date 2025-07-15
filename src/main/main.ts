@@ -587,6 +587,21 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
   }
 });
 
+ipcMain.handle('get-file-stats', async (event, filePath: string) => {
+  try {
+    const stats = await fs.promises.stat(filePath);
+    return {
+      size: `${(stats.size / 1024).toFixed(2)} KB`,
+      modifiedTime: stats.mtime.toISOString(),
+      isDirectory: stats.isDirectory(),
+      isFile: stats.isFile()
+    };
+  } catch (error) {
+    console.error('Error getting file stats:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('get-env', async (event, key: string) => {
   return process.env[key];
 });

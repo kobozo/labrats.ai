@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: () => ipcRenderer.invoke('open-folder'),
   readDirectory: (dirPath: string) => ipcRenderer.invoke('read-directory', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+  getFileStats: (filePath: string) => ipcRenderer.invoke('get-file-stats', filePath),
   onFolderOpened: (callback: (folderPath: string) => void) => 
     ipcRenderer.on('folder-opened', (_event, folderPath) => callback(folderPath)),
   getRecentProjects: () => ipcRenderer.invoke('get-recent-projects'),

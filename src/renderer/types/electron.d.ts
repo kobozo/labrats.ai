@@ -238,6 +238,7 @@ export interface ElectronAPI {
   openFolder: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   readDirectory: (dirPath: string) => Promise<FileNode[]>;
   readFile: (filePath: string) => Promise<string>;
+  getFileStats: (filePath: string) => Promise<{ size: string; modifiedTime: string; isDirectory: boolean; isFile: boolean }>;
   onFolderOpened: (callback: (folderPath: string) => void) => void;
   getRecentProjects: () => Promise<RecentProject[]>;
   removeRecentProject: (path: string) => Promise<RecentProject[]>;

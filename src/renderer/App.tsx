@@ -51,6 +51,7 @@ function App() {
   const [showBranchMenu, setShowBranchMenu] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<{ promptTokens: number; completionTokens: number; totalTokens: number }>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
   const [labRatsBackendOnline, setLabRatsBackendOnline] = useState<boolean>(false);
+  const [navigateToFile, setNavigateToFile] = useState<{ filePath: string; lineNumber?: number } | null>(null);
 
   // Set initial view based on whether a folder is loaded
   useEffect(() => {
@@ -104,6 +105,20 @@ function App() {
       stateManager.setPreviousView(previousView);
     }
   }, [previousView, currentFolder]);
+
+  // Listen for file navigation events
+  useEffect(() => {
+    const handleNavigateToFile = (event: CustomEvent) => {
+      const { filePath, lineNumber } = event.detail;
+      setNavigateToFile({ filePath, lineNumber });
+      setActiveView('files'); // Switch to file explorer
+    };
+
+    window.addEventListener('navigate-to-file', handleNavigateToFile as EventListener);
+    return () => {
+      window.removeEventListener('navigate-to-file', handleNavigateToFile as EventListener);
+    };
+  }, []);
 
   const showNotification = (type: 'success' | 'info' | 'warning', message: string) => {
     setNotification({ type, message });
@@ -509,7 +524,12 @@ function App() {
             </div>
             
             <div style={{ display: activeView === 'files' ? 'block' : 'none', height: '100%' }}>
-              <FileExplorer currentFolder={currentFolder} isVisible={activeView === 'files'} />
+              <FileExplorer 
+                currentFolder={currentFolder} 
+                isVisible={activeView === 'files'} 
+                navigateToFile={navigateToFile}
+                onNavigationComplete={() => setNavigateToFile(null)}
+              />
             </div>
             
             <div style={{ display: activeView === 'git' ? 'block' : 'none', height: '100%' }}>

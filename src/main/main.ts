@@ -11,6 +11,7 @@ import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
 import { getAIProviderManager } from '../services/ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager';
 import { setupMcpIpcHandlers } from './mcp/mcp-ipc-handlers';
+import { getProjectPathService } from '../services/project-path-service';
 
 app.name = 'LabRats.AI';
 
@@ -137,10 +138,18 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
   }
 
   windows.set(window.id, window);
+  console.log(`[MAIN] Created window ${window.id}`);
   
   if (projectPath) {
     windowProjects.set(window.id, projectPath);
+    console.log(`[MAIN] Set project path for window ${window.id}:`, projectPath);
+    console.log(`[MAIN] windowProjects map now has ${windowProjects.size} entries`);
     updateRecentProjects(projectPath);
+    
+    // Update ProjectPathService for central project path management
+    const projectPathService = getProjectPathService();
+    projectPathService.setProjectPath(projectPath);
+    console.log(`[MAIN] Updated ProjectPathService with project path:`, projectPath);
     
     // Initialize git service for this window
     initializeGitServiceForWindow(window.id, projectPath);

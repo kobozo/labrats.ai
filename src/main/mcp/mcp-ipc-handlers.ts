@@ -6,10 +6,12 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as os from 'os';
 import * as crypto from 'crypto';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { commandApprovalManager } from './command-approval';
+import { getProjectPathService } from '../../services/project-path-service';
 
 // Declare global to access windowProjects from main.ts
 declare global {
@@ -27,6 +29,13 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
   currentWorkspaceRoot = workspaceRoot;
   console.log('[MCP-IPC] Setup called with workspace root:', workspaceRoot);
   
+  // Update the ProjectPathService if we have a valid workspace root
+  if (workspaceRoot) {
+    const projectPathService = getProjectPathService();
+    projectPathService.setProjectPath(workspaceRoot);
+    console.log('[MCP-IPC] Updated ProjectPathService with workspace root:', workspaceRoot);
+  }
+  
   // Only register handlers once
   if (handlersRegistered) {
     console.log('[MCP-IPC] Handlers already registered, updating workspace root to:', workspaceRoot);
@@ -40,23 +49,61 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
   ipcMain.handle('mcp:callTool', async (event, toolName: string, args: any) => {
     console.log(`[MCP-IPC] Tool call: ${toolName}, current workspace root:`, currentWorkspaceRoot);
     
-    // If no workspace root is set, try to get it from the window
-    if (!currentWorkspaceRoot) {
-      const window = BrowserWindow.fromWebContents(event.sender);
-      if (window) {
-        // Get the window ID and look up its project path
-        const windowProjects = global.windowProjects as Map<number, string>;
-        if (windowProjects) {
-          const projectPath = windowProjects.get(window.id);
-          if (projectPath) {
-            currentWorkspaceRoot = projectPath;
-            console.log(`[MCP-IPC] Retrieved workspace root from window:`, projectPath);
+    // Try to get workspace root from multiple sources
+    let workspaceRoot = currentWorkspaceRoot;
+    
+    if (!workspaceRoot) {
+      // Try ProjectPathService first
+      const projectPathService = getProjectPathService();
+      workspaceRoot = projectPathService.getProjectPath();
+      
+      if (workspaceRoot) {
+        console.log(`[MCP-IPC] Retrieved workspace root from ProjectPathService:`, workspaceRoot);
+      } else {
+        // Try window lookup
+        const window = BrowserWindow.fromWebContents(event.sender);
+        console.log(`[MCP-IPC] Looking up workspace for window:`, window?.id);
+        
+        if (window) {
+          const windowProjects = global.windowProjects as Map<number, string>;
+          console.log(`[MCP-IPC] Global windowProjects exists:`, !!windowProjects);
+          console.log(`[MCP-IPC] Window projects map size:`, windowProjects?.size);
+          console.log(`[MCP-IPC] Window projects entries:`, windowProjects ? Array.from(windowProjects.entries()) : 'none');
+          
+          if (windowProjects) {
+            const projectPath = windowProjects.get(window.id);
+            console.log(`[MCP-IPC] Project path for window ${window.id}:`, projectPath);
+            
+            if (projectPath) {
+              workspaceRoot = projectPath;
+              // Update both local cache and ProjectPathService
+              currentWorkspaceRoot = workspaceRoot;
+              projectPathService.setProjectPath(workspaceRoot);
+              console.log(`[MCP-IPC] Retrieved workspace root from window:`, workspaceRoot);
+            }
           }
+        } else {
+          console.log(`[MCP-IPC] Could not get window from event.sender`);
         }
       }
     }
     
-    if (!currentWorkspaceRoot) {
+    // If still no workspace root, try to get it from the current working directory
+    if (!workspaceRoot) {
+      const cwd = process.cwd();
+      console.log(`[MCP-IPC] Trying to use current working directory:`, cwd);
+      
+      // Check if current directory looks like a valid project
+      if (cwd && cwd !== '/' && cwd !== os.homedir()) {
+        workspaceRoot = cwd;
+        currentWorkspaceRoot = workspaceRoot;
+        const projectPathService = getProjectPathService();
+        projectPathService.setProjectPath(workspaceRoot);
+        console.log(`[MCP-IPC] Using current working directory as workspace root:`, workspaceRoot);
+      }
+    }
+    
+    if (!workspaceRoot) {
       throw new Error('No workspace root set');
     }
 
@@ -65,13 +112,13 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
     try {
       switch (toolName) {
         case 'listFiles':
-          return await handleListFiles(currentWorkspaceRoot, args);
+          return await handleListFiles(workspaceRoot, args);
         case 'readFile':
-          return await handleReadFile(currentWorkspaceRoot, args);
+          return await handleReadFile(workspaceRoot, args);
         case 'replaceText':
-          return await handleReplaceText(currentWorkspaceRoot, args);
+          return await handleReplaceText(workspaceRoot, args);
         case 'execCommand':
-          return await handleExecCommand(currentWorkspaceRoot, args);
+          return await handleExecCommand(workspaceRoot, args);
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }

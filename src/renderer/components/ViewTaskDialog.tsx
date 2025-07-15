@@ -4,6 +4,8 @@ import { Task } from '../../types/kanban';
 import { workflowStages } from '../../config/workflow-stages';
 import { agents } from '../../config/agents';
 import { dexyService } from '../../services/dexy-service-renderer';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 interface ViewTaskDialogProps {
   task: Task;
@@ -18,6 +20,18 @@ interface SimilarTask {
   similarity: number;
   reason: string;
 }
+
+// Configure marked options
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
+
+// Function to safely render markdown
+const renderMarkdown = (content: string): string => {
+  const rawMarkup = marked.parse(content);
+  return DOMPurify.sanitize(rawMarkup as string);
+};
 
 export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({ 
   task, 
@@ -226,8 +240,8 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
             <h3 className="text-lg font-semibold text-white mb-3">Description</h3>
             {task.description ? (
               <div 
-                className="text-gray-300 prose prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: task.description }}
+                className="text-gray-300 prose prose-invert max-w-none markdown-content task-description"
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(task.description) }}
               />
             ) : (
               <p className="text-gray-500 italic">No description provided</p>
@@ -424,6 +438,119 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
           </div>
         </div>
       )}
+      
+      <style>{`
+        /* Task description markdown styling */
+        .markdown-content.task-description {
+          line-height: 1.6;
+        }
+        
+        .markdown-content.task-description strong {
+          font-weight: 600;
+          color: #e5e7eb;
+        }
+        
+        .markdown-content.task-description em {
+          font-style: italic;
+          color: #d1d5db;
+        }
+        
+        .markdown-content.task-description code {
+          background-color: rgba(55, 65, 81, 0.8);
+          padding: 0.125rem 0.375rem;
+          border-radius: 0.25rem;
+          font-size: 0.875rem;
+          color: #fbbf24;
+          font-family: 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
+        }
+        
+        .markdown-content.task-description pre {
+          background-color: rgba(31, 41, 55, 0.8);
+          padding: 1rem;
+          border-radius: 0.5rem;
+          overflow-x: auto;
+          border: 1px solid rgba(75, 85, 99, 0.5);
+        }
+        
+        .markdown-content.task-description pre code {
+          background-color: transparent;
+          padding: 0;
+          color: #e5e7eb;
+        }
+        
+        .markdown-content.task-description h1,
+        .markdown-content.task-description h2,
+        .markdown-content.task-description h3,
+        .markdown-content.task-description h4 {
+          font-weight: 600;
+          margin-top: 1.5rem;
+          margin-bottom: 0.5rem;
+          color: #f3f4f6;
+        }
+        
+        .markdown-content.task-description h1 { font-size: 1.5rem; }
+        .markdown-content.task-description h2 { font-size: 1.25rem; }
+        .markdown-content.task-description h3 { font-size: 1.125rem; }
+        .markdown-content.task-description h4 { font-size: 1rem; }
+        
+        .markdown-content.task-description ul,
+        .markdown-content.task-description ol {
+          margin-left: 1.5rem;
+          margin-bottom: 1rem;
+        }
+        
+        .markdown-content.task-description li {
+          margin-bottom: 0.25rem;
+        }
+        
+        .markdown-content.task-description blockquote {
+          border-left: 4px solid #4b5563;
+          padding-left: 1rem;
+          margin: 1rem 0;
+          color: #9ca3af;
+          font-style: italic;
+        }
+        
+        .markdown-content.task-description a {
+          color: #60a5fa;
+          text-decoration: underline;
+        }
+        
+        .markdown-content.task-description a:hover {
+          color: #93bbfc;
+        }
+        
+        .markdown-content.task-description hr {
+          border: none;
+          border-top: 1px solid #4b5563;
+          margin: 1.5rem 0;
+        }
+        
+        .markdown-content.task-description table {
+          border-collapse: collapse;
+          margin: 1rem 0;
+          width: 100%;
+        }
+        
+        .markdown-content.task-description th,
+        .markdown-content.task-description td {
+          border: 1px solid #4b5563;
+          padding: 0.5rem;
+          text-align: left;
+        }
+        
+        .markdown-content.task-description th {
+          background-color: rgba(55, 65, 81, 0.5);
+          font-weight: 600;
+        }
+        
+        .markdown-content.task-description img {
+          max-width: 100%;
+          height: auto;
+          border-radius: 0.5rem;
+          margin: 1rem 0;
+        }
+      `}</style>
     </div>
   );
 };

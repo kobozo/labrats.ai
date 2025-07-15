@@ -142,6 +142,21 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
     return tasks.filter(task => task.status === status);
   };
 
+  // Helper function to strip markdown and get plain text for preview
+  const stripMarkdown = (text: string): string => {
+    return text
+      .replace(/\*\*([^*]+)\*\*/g, '$1') // Bold
+      .replace(/\*([^*]+)\*/g, '$1') // Italic
+      .replace(/`([^`]+)`/g, '$1') // Inline code
+      .replace(/```[^`]*```/g, '') // Code blocks
+      .replace(/^#+\s+/gm, '') // Headers
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Links
+      .replace(/^>\s+/gm, '') // Blockquotes
+      .replace(/^[-*+]\s+/gm, '') // Lists
+      .replace(/\n{2,}/g, ' ') // Multiple newlines
+      .trim();
+  };
+
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -290,7 +305,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
                   </div>
                   
                   <p className="text-gray-300 text-xs mb-3 leading-relaxed">
-                    {task.description}
+                    {stripMarkdown(task.description)}
                   </p>
                   
                   <div className="flex items-center justify-between">
@@ -375,7 +390,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
                 </div>
                 
                 <p className="text-gray-300 text-xs mb-2 line-clamp-2">
-                  {task.description}
+                  {stripMarkdown(task.description)}
                 </p>
                 
                 <div className="flex items-center justify-between">

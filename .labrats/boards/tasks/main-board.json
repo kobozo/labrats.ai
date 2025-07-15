@@ -343,5 +343,28 @@
         "content": "-specific fields"
       }
     ]
+  },
+  {
+    "id": "TASK-1752563184822455",
+    "title": "TODO: Implement search functionality when available",
+    "description": "**Code TODO**: Implement search functionality when available\n\n**Location**: src/renderer/components/ViewTaskDialog.tsx:76\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n   74:       }\n   75: \n>  76:       // TODO: Implement search functionality when available\n   77:       // For now, we'll skip similar tasks\n   78:       console.log('[ViewTaskDialog] Search functionality not available yet');\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:06:24.822Z",
+    "updatedAt": "2025-07-15T07:06:24.822Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-444eec7f",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/ViewTaskDialog.tsx",
+        "lineNumber": 76,
+        "content": "Implement search functionality when available"
+      }
+    ]
   }
 ]

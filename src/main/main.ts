@@ -293,6 +293,7 @@ function createMenu(window?: BrowserWindow): void {
               initializeGitServiceForWindow(targetWindow.id, projectPath);
               setDexyProjectPath(projectPath);
               todoAutoScanner.startScanning(projectPath);
+              setupMcpIpcHandlers(projectPath);
               
               updateRecentProjects(projectPath);
               saveOpenWindows();
@@ -424,6 +425,7 @@ function updateRecentProjectsMenu(): void {
             initializeGitServiceForWindow(focusedWindow.id, project.path);
             setDexyProjectPath(project.path);
             todoAutoScanner.startScanning(project.path);
+            setupMcpIpcHandlers(project.path);
             
             updateRecentProjects(project.path);
             saveOpenWindows();
@@ -467,6 +469,7 @@ ipcMain.handle('open-folder', async (event) => {
       initializeGitServiceForWindow(requestingWindow.id, projectPath);
       setDexyProjectPath(projectPath);
       todoAutoScanner.startScanning(projectPath);
+      setupMcpIpcHandlers(projectPath);
     }
 
     updateRecentProjects(projectPath);

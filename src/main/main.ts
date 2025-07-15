@@ -10,6 +10,7 @@ import { LABRATS_CONFIG_DIR } from './constants';
 import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
 import { getAIProviderManager } from '../services/ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager';
+import { initializeMcpService, setupMcpHandlers } from './mcp-service';
 
 app.name = 'LabRats.AI';
 
@@ -1625,10 +1626,9 @@ console.log('[MAIN] Registering Dexy handlers...');
 registerDexyHandlers();
 
 // MCP IPC handlers
-import { initializeMcpService, setupMcpHandlers } from './mcp-service';
 console.log('[MAIN] Setting up MCP handlers...');
 setupMcpHandlers();
-console.log('[MAIN] Dexy handlers registered successfully');
+console.log('[MAIN] MCP handlers registered successfully');
 
 // TODO Scanning IPC handlers
 import { setupTodoIpcHandlers } from './todo-ipc-handlers';

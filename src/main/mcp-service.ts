@@ -10,7 +10,7 @@ export async function initializeMcpService(projectPath: string): Promise<void> {
   try {
     mcpProjectRoot = projectPath;
     mcpServerReady = true;
-    console.log('[MCP-SERVICE] MCP service ready');
+    console.log('[MCP-SERVICE] MCP service ready. Root:', mcpProjectRoot, 'Ready:', mcpServerReady);
   } catch (error) {
     console.error('[MCP-SERVICE] Failed to initialize MCP service:', error);
     mcpServerReady = false;

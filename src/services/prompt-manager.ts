@@ -208,6 +208,24 @@ class PromptManager {
         promptParts.push(rolePrompt);
       }
       
+      // 4. Add MCP tools information (for all agents except git-commit-generator)
+      if (agentId !== 'git-commit-generator') {
+        promptParts.push(`## Available MCP Tools
+
+You have access to MCP (Model Context Protocol) tools for exploring the project:
+
+- **list_files**: List files and directories in the project
+  - Usage: \`[[mcp:list_files {"path": ".", "recursive": false}]]\`
+  - Parameters:
+    - path: Directory path relative to project root (optional, default: ".")
+    - recursive: List files recursively (optional, default: false)
+    - include_hidden: Include hidden files (optional, default: false)
+    - pattern: Glob pattern to filter files (optional, e.g., "*.ts")
+
+When you need to explore the project structure or find specific files, use these MCP tools.
+The tool results will be automatically processed and shown in your response.`);
+      }
+      
       // Combine all parts
       const fullPrompt = promptParts.filter(part => part.length > 0).join('\n\n');
       

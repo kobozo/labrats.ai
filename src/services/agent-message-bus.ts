@@ -10,6 +10,7 @@ import { getAIProviderManager } from './ai-provider-manager';
 import { getLabRatsBackend, getLabRatsBackendAsync, resetLabRatsBackend } from './labrats-backend-service';
 import { notificationService } from './notification-service';
 import { z } from 'zod';
+import { getMcpClient, McpClientManager } from './mcp/mcp-client-manager';
 
 // Zod schema for agent response structure
 const agentResponseSchema = z.object({
@@ -85,6 +86,7 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private loopDetection: Map<string, { lastContent: string; count: number; lastTimestamp: number }> = new Map();
   private failedAgents: Set<string> = new Set(); // Track agents that have failed
   private conversationId: string = ''; // Unique ID for this conversation
+  private mcpClient: McpClientManager | null = null; // MCP client for file access
 
   constructor(options: MessageBusOptions = {}) {
     super();
@@ -119,6 +121,26 @@ export class AgentMessageBus extends BrowserEventEmitter {
       console.error('[AGENT-BUS] LabRats backend not available:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       throw new Error(`Cannot start multi-agent chat: ${errorMessage}\n\nPlease go to Settings > Backend and configure your LabRats backend correctly.`);
+    }
+
+    // Initialize MCP client for file access
+    try {
+      // Get project root from electron API
+      let projectRoot = '/Users/yannick/Kobozo/labrats.ai'; // Default fallback
+      
+      if (typeof window !== 'undefined' && window.electronAPI?.getProjectPath) {
+        const path = await window.electronAPI.getProjectPath();
+        if (path) {
+          projectRoot = path;
+        }
+      }
+      
+      this.mcpClient = getMcpClient(projectRoot);
+      await this.mcpClient.connect();
+      console.log('[AGENT-BUS] MCP client connected successfully');
+    } catch (error) {
+      console.error('[AGENT-BUS] Failed to initialize MCP client:', error);
+      // Don't fail the bus start, just log the error
     }
     
     this.busActive = true;
@@ -928,7 +950,7 @@ Do NOT continue the conversation. Do NOT ask what's next. This is the final summ
         if (response.success && response.message) {
           const agentMessage: BusMessage = {
             id: this.generateId(),
-            content: response.message.content,
+            content: processedContent,
             author: agentId,
             timestamp: new Date(),
             mentions: [],
@@ -987,6 +1009,14 @@ Your current session: ${context.sessionId}
 Actions: planning, open, waiting, implementing, needs_review, reviewing, done, user_input, wait_for_user
 Use "involve" field to mention other agents when needed.
 
+${this.mcpClient?.isReady() ? `
+Available MCP Tools:
+- list_files: List files and directories in the project
+  Usage: [[mcp:list_files {"path": "src", "recursive": true}]]
+  
+When you need to explore files or understand the project structure, use MCP tools.
+` : ''}
+
 Respond with structured output containing: message, action, involve (array), metadata.`;
         console.log(`[AGENT-BUS] Subsequent invocation for ${agentId} - sending minimal prompt`);
       }
@@ -1003,9 +1033,12 @@ Respond with structured output containing: message, action, involve (array), met
         // Store raw response for POV mode
         context.lastRawResponse = response.message.content;
         
+        // Process any MCP tool calls in the response
+        const processedContent = await this.processMcpToolCalls(response.message.content);
+        
         // Get structured response if available
         const structured = (response.message as any).structuredResponse || {
-          message: response.message.content,
+          message: processedContent,
           action: 'open',
           involve: [],
           metadata: {}
@@ -1013,10 +1046,10 @@ Respond with structured output containing: message, action, involve (array), met
         
         const agentMessage: BusMessage = {
           id: this.generateId(),
-          content: response.message.content,
+          content: processedContent,
           author: agentId,
           timestamp: new Date(),
-          mentions: this.extractMentions(response.message.content),
+          mentions: this.extractMentions(processedContent),
           messageType: 'agent',
           sessionId: context!.sessionId,
           action: structured.action,
@@ -1165,9 +1198,12 @@ Respond with structured output containing: message, action, involve (array), met
         // Store raw response for POV mode
         context.lastRawResponse = response.message.content;
         
+        // Process any MCP tool calls in the response
+        const processedContent = await this.processMcpToolCalls(response.message.content);
+        
         // Get structured response if available
         const structured = (response.message as any).structuredResponse || {
-          message: response.message.content,
+          message: processedContent,
           action: 'open',
           involve: [],
           metadata: {}
@@ -1175,10 +1211,10 @@ Respond with structured output containing: message, action, involve (array), met
         
         const agentMessage: BusMessage = {
           id: this.generateId(),
-          content: response.message.content,
+          content: processedContent,
           author: agentId,
           timestamp: new Date(),
-          mentions: this.extractMentions(response.message.content),
+          mentions: this.extractMentions(processedContent),
           messageType: 'agent',
           sessionId: context!.sessionId,
           action: structured.action,
@@ -2655,6 +2691,47 @@ START YOUR REVIEW NOW!`;
       });
     }
     console.log('================================');
+  }
+
+  private async processMcpToolCalls(content: string): Promise<string> {
+    if (!this.mcpClient?.isReady()) {
+      return content;
+    }
+
+    // Look for MCP tool calls in the format [[mcp:tool_name {args}]]
+    const mcpPattern = /\[\[mcp:(\w+)\s*({[^}]+})\]\]/g;
+    let processedContent = content;
+    let match;
+
+    while ((match = mcpPattern.exec(content)) !== null) {
+      const toolName = match[1];
+      const argsStr = match[2];
+      
+      try {
+        const args = JSON.parse(argsStr);
+        console.log(`[AGENT-BUS] Processing MCP tool call: ${toolName}`, args);
+        
+        const result = await this.mcpClient.callTool(toolName, args);
+        
+        if (result.content && result.content.length > 0) {
+          const toolResult = result.content[0].text || 'No result';
+          
+          // Replace the tool call with the result
+          processedContent = processedContent.replace(
+            match[0],
+            `\n\n**Tool Result (${toolName}):**\n\`\`\`json\n${toolResult}\n\`\`\`\n`
+          );
+        }
+      } catch (error) {
+        console.error(`[AGENT-BUS] Error processing MCP tool ${toolName}:`, error);
+        processedContent = processedContent.replace(
+          match[0],
+          `\n\n**Tool Error (${toolName}):** ${error instanceof Error ? error.message : 'Unknown error'}\n`
+        );
+      }
+    }
+
+    return processedContent;
   }
 }
 

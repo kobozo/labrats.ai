@@ -151,20 +151,16 @@ class PromptManager {
           promptParts = [switchySingleAgentPrompt.trim()];
           
           // Add MCP tools for single-agent mode too
-          promptParts.push(`## Available MCP Tools
+          promptParts.push(`## Available Tools
 
-You have access to MCP (Model Context Protocol) tools for exploring the project:
+You have access to tools for exploring the project. When you need to explore files or understand the project structure, use the available tools. The system will automatically call the appropriate tools based on your needs.
 
-- **list_files**: List files and directories in the project
-  - Usage: \`[[mcp:list_files {"path": ".", "recursive": false}]]\`
-  - Parameters:
-    - path: Directory path relative to project root (optional, default: ".")
-    - recursive: List files recursively (optional, default: false)
-    - include_hidden: Include hidden files (optional, default: false)
-    - pattern: Glob pattern to filter files (optional, e.g., "*.ts")
+Available capabilities:
+- List files and directories in the project
+- Navigate through the project structure
+- Filter files by patterns
 
-When you need to explore the project structure or find specific files, use these MCP tools.
-The tool results will be automatically processed and shown in your response.`);
+Simply express your intent naturally, and the tools will be invoked automatically.`);
           
           return promptParts.join('\n\n');
         }
@@ -227,20 +223,16 @@ The tool results will be automatically processed and shown in your response.`);
       
       // 4. Add MCP tools information (for all agents except git-commit-generator)
       if (agentId !== 'git-commit-generator') {
-        promptParts.push(`## Available MCP Tools
+        promptParts.push(`## Available Tools
 
-You have access to MCP (Model Context Protocol) tools for exploring the project:
+You have access to tools for exploring the project. When you need to explore files or understand the project structure, simply express your intent and the appropriate tools will be called automatically.
 
-- **list_files**: List files and directories in the project
-  - Usage: \`[[mcp:list_files {"path": ".", "recursive": false}]]\`
-  - Parameters:
-    - path: Directory path relative to project root (optional, default: ".")
-    - recursive: List files recursively (optional, default: false)
-    - include_hidden: Include hidden files (optional, default: false)
-    - pattern: Glob pattern to filter files (optional, e.g., "*.ts")
+Available capabilities:
+- List files and directories in the project
+- Navigate through the project structure
+- Filter files by patterns
 
-When you need to explore the project structure or find specific files, use these MCP tools.
-The tool results will be automatically processed and shown in your response.`);
+The system handles tool invocation automatically based on your needs.`);
       }
       
       // Combine all parts

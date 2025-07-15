@@ -19,9 +19,14 @@ export async function initializeMcpService(projectPath: string): Promise<void> {
 }
 
 export function setupMcpHandlers(): void {
+  console.log('[MCP-SERVICE] Setting up IPC handlers');
+  
   // Handler to call MCP tools
   ipcMain.handle('mcp-call-tool', async (event, toolName: string, args: any) => {
+    console.log('[MCP-SERVICE] Tool call received:', toolName, args);
+    
     if (!mcpServerReady || !mcpProjectRoot) {
+      console.log('[MCP-SERVICE] Service not ready. Ready:', mcpServerReady, 'Root:', mcpProjectRoot);
       return {
         success: false,
         error: 'MCP service not initialized'
@@ -45,6 +50,7 @@ export function setupMcpHandlers(): void {
 
   // Handler to check MCP status
   ipcMain.handle('mcp-status', async () => {
+    console.log('[MCP-SERVICE] Status check - Ready:', mcpServerReady, 'Root:', mcpProjectRoot);
     return {
       ready: mcpServerReady,
       serverInfo: mcpServerReady ? {

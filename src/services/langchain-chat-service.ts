@@ -4,6 +4,7 @@ import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from '@langchain/
 import { LLMResult } from '@langchain/core/outputs';
 import { getAIProviderManager } from './ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager-renderer';
+import { createMcpTools, isMcpAvailable } from './mcp/langchain-mcp-tools';
 
 export interface LangChainChatMessage {
   id: string;
@@ -49,6 +50,7 @@ export class LangChainChatService {
     try {
       // Get provider and model
       const { providerId, modelId } = await this.getProviderAndModel(options);
+      console.log('[LANGCHAIN] Using provider:', providerId, 'model:', modelId);
       
       // Variable to capture token usage
       let tokenUsage: TokenUsage | undefined;
@@ -114,12 +116,115 @@ export class LangChainChatService {
       this.conversationHistory.push(userMessage);
       await this.persistConversationHistory();
 
-      // Get response from LangChain
-      const response = await chatModel.invoke(messages);
+      // Check if MCP is available and bind tools if needed
+      let processedContent = '';
+      let toolsAvailable = false;
+      let mcpTools: any[] = [];
       
-      // Process MCP tool calls in the response
-      let processedContent = response.content.toString();
-      processedContent = await this.processMcpToolCalls(processedContent);
+      console.log('[LANGCHAIN] Checking MCP availability...');
+      if (await isMcpAvailable()) {
+        console.log('[LANGCHAIN] MCP is available, creating tools...');
+        mcpTools = createMcpTools();
+        toolsAvailable = mcpTools.length > 0;
+        console.log('[LANGCHAIN] Tools created:', mcpTools.length, 'tools available');
+        
+        // Check if model supports tools
+        if (modelId === 'gpt-4o-mini' || modelId === 'gpt-3.5-turbo') {
+          console.warn('[LANGCHAIN] Warning: Model', modelId, 'may have limited tool support. Consider using gpt-4-turbo or gpt-4o for better tool calling.');
+        }
+      } else {
+        console.log('[LANGCHAIN] MCP is not available');
+      }
+      
+      if (toolsAvailable) {
+        console.log('[LANGCHAIN] Binding', mcpTools.length, 'tools to model...');
+        console.log('[LANGCHAIN] Tools:', mcpTools.map(t => t.name));
+        
+        // Bind tools to the model
+        const modelWithTools = chatModel.bindTools(mcpTools);
+        
+        // Invoke the model
+        const aiMsg = await modelWithTools.invoke(messages);
+        
+        console.log('[LANGCHAIN] AI response:', {
+          hasContent: !!aiMsg.content,
+          contentType: typeof aiMsg.content,
+          hasToolCalls: !!aiMsg.tool_calls,
+          toolCallsLength: aiMsg.tool_calls?.length || 0
+        });
+        
+        // Initialize content
+        let finalContent = '';
+        
+        // Get the AI's message content
+        if (typeof aiMsg.content === 'string') {
+          finalContent = aiMsg.content;
+        } else if (Array.isArray(aiMsg.content)) {
+          // Handle array content (tool calls might be here)
+          for (const content of aiMsg.content) {
+            if (typeof content === 'string') {
+              finalContent += content;
+            } else if (typeof content === 'object' && content !== null && 'text' in content) {
+              finalContent += (content as any).text;
+            }
+          }
+        }
+        
+        // Check if the model wants to use tools
+        if (aiMsg.tool_calls && aiMsg.tool_calls.length > 0) {
+          console.log('[LANGCHAIN] Model requested', aiMsg.tool_calls.length, 'tool calls');
+          
+          // Execute each tool call
+          for (const toolCall of aiMsg.tool_calls) {
+            console.log('[LANGCHAIN] Executing tool:', toolCall.name, 'with args:', toolCall.args);
+            
+            const tool = mcpTools.find(t => t.name === toolCall.name);
+            if (tool) {
+              try {
+                const result = await tool.invoke(toolCall.args);
+                console.log('[LANGCHAIN] Tool result length:', result.length);
+                
+                // Format the tool result nicely
+                if (toolCall.name === 'list_files') {
+                  try {
+                    const parsed = JSON.parse(result);
+                    finalContent += `\n\n**Files in ${parsed.path || '.'}:**\n`;
+                    if (parsed.entries && parsed.entries.length > 0) {
+                      for (const entry of parsed.entries) {
+                        const icon = entry.type === 'directory' ? '📁' : '📄';
+                        finalContent += `${icon} ${entry.name}\n`;
+                      }
+                      finalContent += `\n_Total: ${parsed.total_count} items_`;
+                    } else {
+                      finalContent += '_No files found_';
+                    }
+                  } catch {
+                    // If parsing fails, show raw result
+                    finalContent += `\n\n**Tool Result (${toolCall.name}):**\n\`\`\`json\n${result}\n\`\`\``;
+                  }
+                } else {
+                  // For other tools, show raw result
+                  finalContent += `\n\n**Tool Result (${toolCall.name}):**\n\`\`\`json\n${result}\n\`\`\``;
+                }
+              } catch (error) {
+                console.error('[LANGCHAIN] Tool error:', error);
+                finalContent += `\n\n**Tool Error (${toolCall.name}):** ${error instanceof Error ? error.message : 'Unknown error'}`;
+              }
+            } else {
+              console.error('[LANGCHAIN] Tool not found:', toolCall.name);
+              finalContent += `\n\n**Error:** Tool '${toolCall.name}' not found`;
+            }
+          }
+        } else {
+          console.log('[LANGCHAIN] No tool calls requested by model');
+        }
+        
+        processedContent = finalContent || 'I understand you want to see files, but I need to use the file listing tool. Let me try again.';
+      } else {
+        console.log('[LANGCHAIN] No tools available, using regular model');
+        const response = await chatModel.invoke(messages);
+        processedContent = response.content.toString();
+      }
       
       const assistantMessage: LangChainChatMessage = {
         id: this.generateId(),
@@ -382,48 +487,6 @@ export class LangChainChatService {
     this.sessionTokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
   }
 
-  private async processMcpToolCalls(content: string): Promise<string> {
-    if (typeof window === 'undefined' || !window.electronAPI?.mcp) {
-      return content;
-    }
-
-    // Look for MCP tool calls in the format [[mcp:tool_name {args}]]
-    const mcpPattern = /\[\[mcp:(\w+)\s*({[^}]+})\]\]/g;
-    let processedContent = content;
-    let match;
-
-    while ((match = mcpPattern.exec(content)) !== null) {
-      const toolName = match[1];
-      const argsStr = match[2];
-      
-      try {
-        const args = JSON.parse(argsStr);
-        console.log(`[LANGCHAIN] Processing MCP tool call: ${toolName}`, args);
-        
-        const response = await window.electronAPI.mcp.callTool(toolName, args);
-        
-        if (response.success && response.result?.content && response.result.content.length > 0) {
-          const toolResult = response.result.content[0].text || 'No result';
-          
-          // Replace the tool call with the result
-          processedContent = processedContent.replace(
-            match[0],
-            `\n\n**Tool Result (${toolName}):**\n\`\`\`json\n${toolResult}\n\`\`\`\n`
-          );
-        } else if (!response.success) {
-          throw new Error(response.error || 'Unknown error');
-        }
-      } catch (error) {
-        console.error(`[LANGCHAIN] Error processing MCP tool ${toolName}:`, error);
-        processedContent = processedContent.replace(
-          match[0],
-          `\n\n**Tool Error (${toolName}):** ${error instanceof Error ? error.message : 'Unknown error'}\n`
-        );
-      }
-    }
-
-    return processedContent;
-  }
 
   // Private method to persist conversation history
   private async persistConversationHistory(): Promise<void> {

@@ -10,7 +10,6 @@ import { getAIProviderManager } from './ai-provider-manager';
 import { getLabRatsBackend, getLabRatsBackendAsync, resetLabRatsBackend } from './labrats-backend-service';
 import { notificationService } from './notification-service';
 import { z } from 'zod';
-import { getMcpClient, McpClientManager } from './mcp/mcp-client-manager';
 
 // Zod schema for agent response structure
 const agentResponseSchema = z.object({
@@ -86,7 +85,7 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private loopDetection: Map<string, { lastContent: string; count: number; lastTimestamp: number }> = new Map();
   private failedAgents: Set<string> = new Set(); // Track agents that have failed
   private conversationId: string = ''; // Unique ID for this conversation
-  private mcpClient: McpClientManager | null = null; // MCP client for file access
+  private mcpReady: boolean = false; // Track MCP readiness
 
   constructor(options: MessageBusOptions = {}) {
     super();
@@ -123,24 +122,16 @@ export class AgentMessageBus extends BrowserEventEmitter {
       throw new Error(`Cannot start multi-agent chat: ${errorMessage}\n\nPlease go to Settings > Backend and configure your LabRats backend correctly.`);
     }
 
-    // Initialize MCP client for file access
+    // Check MCP status
     try {
-      // Get project root from electron API
-      let projectRoot = '/Users/yannick/Kobozo/labrats.ai'; // Default fallback
-      
-      if (typeof window !== 'undefined' && window.electronAPI?.getProjectPath) {
-        const path = await window.electronAPI.getProjectPath();
-        if (path) {
-          projectRoot = path;
-        }
+      if (typeof window !== 'undefined' && window.electronAPI?.mcp) {
+        const status = await window.electronAPI.mcp.getStatus();
+        this.mcpReady = status.ready;
+        console.log('[AGENT-BUS] MCP status:', status);
       }
-      
-      this.mcpClient = getMcpClient(projectRoot);
-      await this.mcpClient.connect();
-      console.log('[AGENT-BUS] MCP client connected successfully');
     } catch (error) {
-      console.error('[AGENT-BUS] Failed to initialize MCP client:', error);
-      // Don't fail the bus start, just log the error
+      console.error('[AGENT-BUS] Failed to check MCP status:', error);
+      this.mcpReady = false;
     }
     
     this.busActive = true;
@@ -1009,7 +1000,7 @@ Your current session: ${context.sessionId}
 Actions: planning, open, waiting, implementing, needs_review, reviewing, done, user_input, wait_for_user
 Use "involve" field to mention other agents when needed.
 
-${this.mcpClient?.isReady() ? `
+${this.mcpReady ? `
 Available MCP Tools:
 - list_files: List files and directories in the project
   Usage: [[mcp:list_files {"path": "src", "recursive": true}]]
@@ -2694,7 +2685,7 @@ START YOUR REVIEW NOW!`;
   }
 
   private async processMcpToolCalls(content: string): Promise<string> {
-    if (!this.mcpClient?.isReady()) {
+    if (!this.mcpReady || typeof window === 'undefined' || !window.electronAPI?.mcp) {
       return content;
     }
 
@@ -2711,16 +2702,18 @@ START YOUR REVIEW NOW!`;
         const args = JSON.parse(argsStr);
         console.log(`[AGENT-BUS] Processing MCP tool call: ${toolName}`, args);
         
-        const result = await this.mcpClient.callTool(toolName, args);
+        const response = await window.electronAPI.mcp.callTool(toolName, args);
         
-        if (result.content && result.content.length > 0) {
-          const toolResult = result.content[0].text || 'No result';
+        if (response.success && response.result?.content && response.result.content.length > 0) {
+          const toolResult = response.result.content[0].text || 'No result';
           
           // Replace the tool call with the result
           processedContent = processedContent.replace(
             match[0],
             `\n\n**Tool Result (${toolName}):**\n\`\`\`json\n${toolResult}\n\`\`\`\n`
           );
+        } else if (!response.success) {
+          throw new Error(response.error || 'Unknown error');
         }
       } catch (error) {
         console.error(`[AGENT-BUS] Error processing MCP tool ${toolName}:`, error);

@@ -181,4 +181,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Project path
   getProjectPath: () => ipcRenderer.invoke('get-project-path'),
+  
+  // MCP API
+  mcp: {
+    callTool: (toolName: string, args: any) => ipcRenderer.invoke('mcp-call-tool', toolName, args),
+    getStatus: () => ipcRenderer.invoke('mcp-status'),
+  },
 });

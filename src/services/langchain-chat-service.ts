@@ -188,27 +188,7 @@ export class LangChainChatService {
                 console.log('[LANGCHAIN] Tool result length:', result.length);
                 
                 // Format the tool result nicely
-                if (toolCall.name === 'list_files') {
-                  try {
-                    const parsed = JSON.parse(result);
-                    finalContent += `\n\n**Files in ${parsed.path || '.'}:**\n`;
-                    if (parsed.entries && parsed.entries.length > 0) {
-                      for (const entry of parsed.entries) {
-                        const icon = entry.type === 'directory' ? '📁' : '📄';
-                        finalContent += `${icon} ${entry.name}\n`;
-                      }
-                      finalContent += `\n_Total: ${parsed.total_count} items_`;
-                    } else {
-                      finalContent += '_No files found_';
-                    }
-                  } catch {
-                    // If parsing fails, show raw result
-                    finalContent += `\n\n**Tool Result (${toolCall.name}):**\n\`\`\`json\n${result}\n\`\`\``;
-                  }
-                } else {
-                  // For other tools, show raw result
-                  finalContent += `\n\n**Tool Result (${toolCall.name}):**\n\`\`\`json\n${result}\n\`\`\``;
-                }
+                finalContent += this.formatToolResult(toolCall.name, result, toolCall.args);
               } catch (error) {
                 console.error('[LANGCHAIN] Tool error:', error);
                 finalContent += `\n\n**Tool Error (${toolCall.name}):** ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -538,6 +518,185 @@ export class LangChainChatService {
       return { success: false, error: `Provider ${providerId} not found` };
     }
     return provider.testConnection();
+  }
+
+  // Format tool results for better presentation
+  private formatToolResult(toolName: string, result: string, args: any): string {
+    try {
+      const parsed = JSON.parse(result);
+      
+      switch (toolName) {
+        case 'listFiles':
+          return this.formatListFilesResult(parsed, args);
+        case 'readFile':
+          return this.formatReadFileResult(parsed, args);
+        case 'replaceText':
+          return this.formatReplaceTextResult(parsed, args);
+        case 'execCommand':
+          return this.formatExecCommandResult(parsed, args);
+        default:
+          return `\n\n**Tool Result (${toolName}):**\n\`\`\`json\n${result}\n\`\`\``;
+      }
+    } catch (error) {
+      // If parsing fails, show raw result
+      return `\n\n**Tool Result (${toolName}):**\n\`\`\`json\n${result}\n\`\`\``;
+    }
+  }
+
+  private formatListFilesResult(parsed: any, args: any): string {
+    const path = parsed.path || args.path || '.';
+    let output = `\n\n### 📁 Files in \`${path}\`\n\n`;
+    
+    if (parsed.entries && parsed.entries.length > 0) {
+      // Group directories and files
+      const directories = parsed.entries.filter((entry: any) => entry.type === 'directory');
+      const files = parsed.entries.filter((entry: any) => entry.type === 'file');
+      
+      // Show directories first
+      if (directories.length > 0) {
+        output += `**📂 Directories (${directories.length}):**\n`;
+        for (const dir of directories) {
+          output += `- 📁 \`${dir.name}/\`\n`;
+        }
+        output += '\n';
+      }
+      
+      // Show files
+      if (files.length > 0) {
+        output += `**📄 Files (${files.length}):**\n`;
+        for (const file of files) {
+          const icon = this.getFileIcon(file.name);
+          output += `- ${icon} \`${file.name}\`\n`;
+        }
+        output += '\n';
+      }
+      
+      output += `*Total: ${parsed.total_count} items*`;
+    } else {
+      output += '*No files found*';
+    }
+    
+    return output;
+  }
+
+  private formatReadFileResult(parsed: any, args: any): string {
+    const filePath = parsed.path || args.path;
+    const extension = filePath.split('.').pop()?.toLowerCase() || '';
+    const language = this.getLanguageFromExtension(extension);
+    
+    let output = `\n\n### 📄 File: \`${filePath}\`\n\n`;
+    
+    if (parsed.content) {
+      const contentLength = parsed.content.length;
+      const totalSize = parsed.totalSize || contentLength;
+      
+      // Show file info
+      if (totalSize > contentLength) {
+        output += `*Showing ${contentLength} of ${totalSize} characters*\n\n`;
+      }
+      
+      // Show content with syntax highlighting
+      output += `\`\`\`${language}\n${parsed.content}\n\`\`\``;
+    } else {
+      output += '*File is empty*';
+    }
+    
+    return output;
+  }
+
+  private formatReplaceTextResult(parsed: any, args: any): string {
+    const filePath = parsed.path || args.path;
+    
+    let output = `\n\n### ✏️ Text Replacement in \`${filePath}\`\n\n`;
+    
+    if (parsed.replaced) {
+      output += `✅ **Successfully replaced text**\n\n`;
+      output += `**Position:** Character ${parsed.position}\n`;
+      output += `**Old text length:** ${parsed.oldLength} characters\n`;
+      output += `**New text length:** ${parsed.newLength} characters\n`;
+      
+      const delta = parsed.newLength - parsed.oldLength;
+      if (delta > 0) {
+        output += `**Change:** +${delta} characters\n`;
+      } else if (delta < 0) {
+        output += `**Change:** ${delta} characters\n`;
+      } else {
+        output += `**Change:** No size change\n`;
+      }
+    } else {
+      output += `❌ **Failed to replace text**\n`;
+    }
+    
+    return output;
+  }
+
+  private formatExecCommandResult(parsed: any, args: any): string {
+    const cmd = parsed.cmd || args.cmd;
+    const cwd = parsed.cwd || args.cwd || '.';
+    const exitCode = parsed.exitCode || 0;
+    
+    let output = `\n\n### 🖥️ Command: \`${cmd}\`\n\n`;
+    output += `**Working directory:** \`${cwd}\`\n`;
+    output += `**Exit code:** ${exitCode === 0 ? '✅ 0 (success)' : `❌ ${exitCode} (error)`}\n\n`;
+    
+    if (parsed.stdout && parsed.stdout.trim()) {
+      output += `**Output:**\n\`\`\`\n${parsed.stdout}\n\`\`\`\n`;
+    }
+    
+    if (parsed.stderr && parsed.stderr.trim()) {
+      output += `**Error output:**\n\`\`\`\n${parsed.stderr}\n\`\`\`\n`;
+    }
+    
+    if (!parsed.stdout?.trim() && !parsed.stderr?.trim()) {
+      output += `*No output*`;
+    }
+    
+    return output;
+  }
+
+  private getFileIcon(filename: string): string {
+    const extension = filename.split('.').pop()?.toLowerCase() || '';
+    
+    const iconMap: { [key: string]: string } = {
+      // Code files
+      'js': '🟨', 'jsx': '🟨', 'ts': '🔵', 'tsx': '🔵',
+      'py': '🐍', 'java': '☕', 'cpp': '⚡', 'c': '⚡',
+      'go': '🐹', 'rs': '🦀', 'php': '🐘', 'rb': '💎',
+      'swift': '🐦', 'kt': '🟣', 'dart': '🎯',
+      
+      // Web files
+      'html': '🌐', 'css': '🎨', 'scss': '🎨', 'less': '🎨',
+      'json': '📋', 'xml': '📋', 'yaml': '📋', 'yml': '📋',
+      
+      // Documents
+      'md': '📝', 'txt': '📄', 'pdf': '📕', 'doc': '📘', 'docx': '📘',
+      
+      // Images
+      'png': '🖼️', 'jpg': '🖼️', 'jpeg': '🖼️', 'gif': '🖼️', 'svg': '🖼️',
+      'ico': '🖼️', 'webp': '🖼️',
+      
+      // Config files
+      'gitignore': '🚫', 'env': '🔐', 'config': '⚙️', 'conf': '⚙️',
+      'lock': '🔒', 'log': '📊'
+    };
+    
+    return iconMap[extension] || '📄';
+  }
+
+  private getLanguageFromExtension(extension: string): string {
+    const langMap: { [key: string]: string } = {
+      'js': 'javascript', 'jsx': 'javascript',
+      'ts': 'typescript', 'tsx': 'typescript',
+      'py': 'python', 'java': 'java', 'cpp': 'cpp', 'c': 'c',
+      'go': 'go', 'rs': 'rust', 'php': 'php', 'rb': 'ruby',
+      'swift': 'swift', 'kt': 'kotlin', 'dart': 'dart',
+      'html': 'html', 'css': 'css', 'scss': 'scss',
+      'json': 'json', 'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml',
+      'md': 'markdown', 'txt': 'text', 'sh': 'bash',
+      'sql': 'sql', 'dockerfile': 'dockerfile'
+    };
+    
+    return langMap[extension] || 'text';
   }
 }
 

@@ -249,6 +249,7 @@ export interface ElectronAPI {
   checkCommand: (command: string) => Promise<{ available: boolean }>;
   executeClaudeCommand: (request: any) => Promise<{ success: boolean; content?: string; error?: string; usage?: any }>;
   focusWindow: () => void;
+  getProjectPath: () => Promise<string>;
   config: ConfigAPI;
   git: GitAPI;
   terminal?: TerminalAPI;

@@ -38,9 +38,9 @@ export function registerFileTools(
     {
       title: "List Files",
       description: "List files and directories in the project with navigation capabilities",
-      inputSchema: listFilesSchema
+      inputSchema: listFilesSchema as any
     },
-    async (params) => {
+    async ({ params }: any) => {
       try {
         const { path: requestedPath, recursive, include_hidden, pattern } = listFilesSchema.parse(params);
         
@@ -132,14 +132,14 @@ export function registerFileTools(
 
         return {
           content: [{
-            type: "text",
+            type: "text" as const,
             text: JSON.stringify(result, null, 2)
           }]
         };
       } catch (error) {
         return {
           content: [{
-            type: "text",
+            type: "text" as const,
             text: `Error: ${error instanceof Error ? error.message : String(error)}`
           }],
           isError: true

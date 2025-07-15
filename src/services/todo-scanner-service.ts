@@ -112,15 +112,10 @@ export class TodoScannerService {
 
     for (const pattern of patterns) {
       try {
-        const files = await new Promise<string[]>((resolve, reject) => {
-          glob.glob(pattern, {
-            cwd: projectPath,
-            absolute: true,
-            ignore: this.EXCLUDE_PATTERNS
-          }, (err, matches) => {
-            if (err) reject(err);
-            else resolve(matches);
-          });
+        const files = await glob.glob(pattern, {
+          cwd: projectPath,
+          absolute: true,
+          ignore: this.EXCLUDE_PATTERNS
         });
         allFiles.push(...files);
       } catch (error) {

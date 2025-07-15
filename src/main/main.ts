@@ -606,6 +606,17 @@ ipcMain.handle('get-env', async (event, key: string) => {
   return process.env[key];
 });
 
+ipcMain.handle('get-project-path', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window) {
+    const projectPath = windowProjects.get(window.id);
+    if (projectPath) {
+      return projectPath;
+    }
+  }
+  return process.cwd();
+});
+
 // System API handlers
 ipcMain.handle('open-external', async (event, url: string) => {
   try {

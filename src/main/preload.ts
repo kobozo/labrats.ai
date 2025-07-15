@@ -178,4 +178,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Window management
   focusWindow: () => ipcRenderer.send('focus-window'),
+  
+  // Project path
+  getProjectPath: () => ipcRenderer.invoke('get-project-path'),
 });

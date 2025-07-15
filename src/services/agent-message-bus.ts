@@ -950,7 +950,7 @@ Do NOT continue the conversation. Do NOT ask what's next. This is the final summ
         if (response.success && response.message) {
           const agentMessage: BusMessage = {
             id: this.generateId(),
-            content: processedContent,
+            content: response.message.content,
             author: agentId,
             timestamp: new Date(),
             mentions: [],

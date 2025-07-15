@@ -122,7 +122,16 @@ export class LangChainChatService {
       let mcpTools: any[] = [];
       
       console.log('[LANGCHAIN] Checking MCP availability...');
-      if (await isMcpAvailable()) {
+      
+      // Check multiple times with a small delay to handle initialization timing
+      let mcpAvailable = await isMcpAvailable();
+      if (!mcpAvailable && this.currentProjectPath) {
+        console.log('[LANGCHAIN] MCP not ready yet, waiting 500ms...');
+        await new Promise(resolve => setTimeout(resolve, 500));
+        mcpAvailable = await isMcpAvailable();
+      }
+      
+      if (mcpAvailable) {
         console.log('[LANGCHAIN] MCP is available, creating tools...');
         mcpTools = createMcpTools();
         toolsAvailable = mcpTools.length > 0;
@@ -133,7 +142,7 @@ export class LangChainChatService {
           console.warn('[LANGCHAIN] Warning: Model', modelId, 'may have limited tool support. Consider using gpt-4-turbo or gpt-4o for better tool calling.');
         }
       } else {
-        console.log('[LANGCHAIN] MCP is not available');
+        console.log('[LANGCHAIN] MCP is not available after retry');
       }
       
       if (toolsAvailable) {

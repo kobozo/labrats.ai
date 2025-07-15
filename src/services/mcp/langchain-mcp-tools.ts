@@ -93,7 +93,7 @@ export async function isMcpAvailable(): Promise<boolean> {
   try {
     const status = await window.electronAPI.mcp.getStatus();
     console.log('[MCP-TOOLS] MCP status:', status);
-    return status.ready;
+    return status.ready === true;
   } catch (error) {
     console.error('[MCP-TOOLS] Error checking MCP status:', error);
     return false;

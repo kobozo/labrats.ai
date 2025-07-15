@@ -167,6 +167,8 @@ export interface AIAPI {
   validateAPIKey: (serviceId: string, apiKey: string) => Promise<AIValidationResult>;
   testAPIKey: (serviceId: string, apiKey: string) => Promise<AITestResult>;
   resetConfiguration: () => Promise<AIResult>;
+  checkServiceOnline: (serviceId: string) => Promise<boolean>;
+  checkAllServicesOnline: () => Promise<void>;
   getProviders: () => Promise<any[]>;
   getAvailableProviders: () => Promise<any[]>;
   getModels: (providerId: string) => Promise<any[]>;
@@ -185,6 +187,47 @@ export interface ChatHistoryAPI {
   cleanup: (projectPath: string, maxAge?: number) => Promise<ChatHistoryResult>;
 }
 
+export interface KanbanAPI {
+  getBoard: (projectPath: string, boardId: string) => Promise<any>;
+  saveBoard: (projectPath: string, board: any) => Promise<{ success: boolean; error?: string }>;
+  getTasks: (projectPath: string, boardId: string) => Promise<any[]>;
+  updateTask: (projectPath: string, boardId: string, task: any) => Promise<{ success: boolean; error?: string }>;
+  deleteTask: (projectPath: string, boardId: string, taskId: string) => Promise<{ success: boolean; error?: string }>;
+  getEpics: (projectPath: string, boardId: string) => Promise<any[]>;
+  updateEpic: (projectPath: string, boardId: string, epic: any) => Promise<{ success: boolean; error?: string }>;
+  checkBranches: (projectPath: string) => Promise<string[]>;
+}
+
+export interface DexyAPI {
+  initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  isReady: () => Promise<boolean>;
+  getConfig: () => Promise<{ providerId: string; modelId: string } | null>;
+  vectorizeTask: (params: { task: any; boardId: string }) => Promise<{ success: boolean; error?: string }>;
+  updateTaskVector: (params: { task: any; boardId: string }) => Promise<{ success: boolean; error?: string }>;
+  deleteTaskVector: (taskId: string) => Promise<{ success: boolean; error?: string }>;
+  findSimilarTasks: (params: { task: any; options?: { topK?: number; threshold?: number; excludeTaskId?: string } }) => Promise<{ success: boolean; error?: string; results: Array<{ task: any; similarity: number }> }>;
+  getIndices: () => Promise<{ success: boolean; error?: string; indices: any[] }>;
+  syncTasks: (params: { tasks: any[]; boardId: string }) => Promise<{ success: boolean; error?: string }>;
+  hasTaskVector: (taskId: string) => Promise<{ success: boolean; hasVector: boolean; error?: string }>;
+  getVectorizedTaskIds: () => Promise<{ success: boolean; taskIds: string[]; error?: string }>;
+}
+
+export interface TodoAPI {
+  scanProject: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  scanNew: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  validate: (todoId: string, projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getStats: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  createTasks: (projectPath: string, todoIds?: string[]) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getMappings: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getMappingByTodo: (todoId: string, projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getMappingByTask: (taskId: string, projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  removeMapping: (todoId: string, projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  getSettings: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  updateSettings: (projectPath: string, settings: any) => Promise<{ success: boolean; error?: string }>;
+  cleanupInvalid: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  sync: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+}
+
 export interface ProjectStateAPI {
   get: (key: string) => Promise<any>;
   set: (key: string, value: any) => Promise<boolean>;
@@ -195,6 +238,7 @@ export interface ElectronAPI {
   openFolder: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   readDirectory: (dirPath: string) => Promise<FileNode[]>;
   readFile: (filePath: string) => Promise<string>;
+  getFileStats: (filePath: string) => Promise<{ size: string; modifiedTime: string; isDirectory: boolean; isFile: boolean }>;
   onFolderOpened: (callback: (folderPath: string) => void) => void;
   getRecentProjects: () => Promise<RecentProject[]>;
   removeRecentProject: (path: string) => Promise<RecentProject[]>;
@@ -211,6 +255,9 @@ export interface ElectronAPI {
   ai?: AIAPI;
   prompt?: PromptAPI;
   chatHistory?: ChatHistoryAPI;
+  kanban?: KanbanAPI;
+  dexy?: DexyAPI;
+  todo?: TodoAPI;
 }
 
 declare global {

@@ -78,6 +78,8 @@ interface ChatProps {
   onCodeReview: (changes: any) => void;
   currentFolder?: string | null;
   onTokenUsageChange?: (usage: TokenUsage) => void;
+  initialMessage?: { message: string; taskId?: string; assignee?: string } | null;
+  onMessageSent?: () => void;
 }
 
 // Map config agents to Chat component format
@@ -112,13 +114,24 @@ marked.setOptions({
   gfm: true,
 });
 
-// Function to safely render markdown
+// Function to safely render markdown with task links
 const renderMarkdown = (content: string): string => {
-  const rawMarkup = marked.parse(content);
+  // First parse task links
+  const contentWithTaskLinks = parseTaskLinks(content);
+  // Then parse markdown
+  const rawMarkup = marked.parse(contentWithTaskLinks);
   return DOMPurify.sanitize(rawMarkup as string);
 };
 
-export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onTokenUsageChange }) => {
+// Function to parse task links and convert to clickable elements
+const parseTaskLinks = (content: string): string => {
+  // Pattern: [[TASK:task-id|task-title]]
+  return content.replace(/\[\[TASK:([^|]+)\|([^\]]+)\]\]/g, (match, taskId, taskTitle) => {
+    return `<a href="#" class="task-link" data-task-id="${taskId}" title="View task: ${taskTitle}">${taskTitle}</a>`;
+  });
+};
+
+export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onTokenUsageChange, initialMessage, onMessageSent }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [activeAgents, setActiveAgents] = useState(agents.filter(a => a.isActive));
@@ -164,6 +177,24 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
   const chatService = getLangChainChatService();
   const providerManager = getAIProviderManager();
   const baseChatService = getChatService();
+  
+  // Handle initial message
+  useEffect(() => {
+    if (initialMessage && initialMessage.message) {
+      setInputValue(initialMessage.message);
+      // Optionally set the assignee as the active agent if it's an AI agent
+      if (initialMessage.assignee && initialMessage.assignee !== 'LabRats') {
+        const agent = agents.find(a => a.name === initialMessage.assignee);
+        if (agent && !agent.isActive) {
+          setActiveAgents([...activeAgents, agent]);
+        }
+      }
+      // Clear the initial message
+      if (onMessageSent) {
+        onMessageSent();
+      }
+    }
+  }, [initialMessage]);
   const messageBus = getAgentMessageBus({
     maxContextMessages: 10,
     maxAgentHistory: 20
@@ -175,6 +206,33 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
 
   useEffect(() => {
     scrollToBottom();
+  }, [messages]);
+
+  // Add click handlers for task links
+  useEffect(() => {
+    const handleTaskLinkClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.classList.contains('task-link')) {
+        event.preventDefault();
+        const taskId = target.getAttribute('data-task-id');
+        if (taskId) {
+          // Dispatch event to open task view dialog
+          const openTaskEvent = new CustomEvent('open-task-view', {
+            detail: { taskId }
+          });
+          window.dispatchEvent(openTaskEvent);
+        }
+      }
+    };
+
+    // Add event listener to the messages container
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.addEventListener('click', handleTaskLinkClick);
+      return () => {
+        container.removeEventListener('click', handleTaskLinkClick);
+      };
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -1698,6 +1756,7 @@ To debug the message bus, open console and type: debugBus()
                 cursorPosition={cursorPosition}
                 onSelect={handleMentionSelect}
                 onClose={() => setShowMentionAutocomplete(false)}
+                singleAgentMode={singleAgentMode}
               />
             )}
           </div>
@@ -1848,6 +1907,22 @@ To debug the message bus, open console and type: debugBus()
         /* User message markdown styling */
         .markdown-content.user-message {
           color: white;
+        }
+        
+        /* Task link styling */
+        .task-link {
+          color: #a78bfa !important;
+          text-decoration: none !important;
+          border-bottom: 1px dashed #a78bfa;
+          cursor: pointer;
+          transition: all 0.2s;
+          padding: 0 2px;
+        }
+        
+        .task-link:hover {
+          color: #c4b5fd !important;
+          border-bottom-color: #c4b5fd;
+          background-color: rgba(167, 139, 250, 0.1);
         }
         
         .markdown-content.user-message strong {

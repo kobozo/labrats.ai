@@ -159,6 +159,10 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
   window.webContents.once('did-finish-load', () => {
     if (projectPath) {
       window.webContents.send('folder-opened', projectPath);
+      // Initialize Dexy for this project
+      setDexyProjectPath(projectPath);
+      // Initialize TODO auto-scanner for this project
+      todoAutoScanner.startScanning(projectPath);
     }
   });
 
@@ -282,8 +286,10 @@ function createMenu(window?: BrowserWindow): void {
               targetWindow.webContents.send('folder-opened', projectPath);
               windowProjects.set(targetWindow.id, projectPath);
               
-              // Initialize or update git service for this window
+              // Initialize services for this window
               initializeGitServiceForWindow(targetWindow.id, projectPath);
+              setDexyProjectPath(projectPath);
+              todoAutoScanner.startScanning(projectPath);
               
               updateRecentProjects(projectPath);
               saveOpenWindows();
@@ -411,8 +417,10 @@ function updateRecentProjectsMenu(): void {
             focusedWindow.webContents.send('folder-opened', project.path);
             windowProjects.set(focusedWindow.id, project.path);
             
-            // Initialize or update git service for this window
+            // Initialize services for this window
             initializeGitServiceForWindow(focusedWindow.id, project.path);
+            setDexyProjectPath(project.path);
+            todoAutoScanner.startScanning(project.path);
             
             updateRecentProjects(project.path);
             saveOpenWindows();
@@ -452,8 +460,10 @@ ipcMain.handle('open-folder', async (event) => {
       requestingWindow.webContents.send('folder-opened', projectPath);
       windowProjects.set(requestingWindow.id, projectPath);
       
-      // Initialize or update git service for this window
+      // Initialize services for this window
       initializeGitServiceForWindow(requestingWindow.id, projectPath);
+      setDexyProjectPath(projectPath);
+      todoAutoScanner.startScanning(projectPath);
     }
 
     updateRecentProjects(projectPath);
@@ -573,6 +583,21 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
     return content;
   } catch (error) {
     console.error('Error reading file:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-file-stats', async (event, filePath: string) => {
+  try {
+    const stats = await fs.promises.stat(filePath);
+    return {
+      size: `${(stats.size / 1024).toFixed(2)} KB`,
+      modifiedTime: stats.mtime.toISOString(),
+      isDirectory: stats.isDirectory(),
+      isFile: stats.isFile()
+    };
+  } catch (error) {
+    console.error('Error getting file stats:', error);
     throw error;
   }
 });
@@ -1334,19 +1359,25 @@ ipcMain.handle('ai-get-supported-services', async () => {
 });
 
 ipcMain.handle('ai-get-service-config', async (event, serviceId: string) => {
-  const services = configManager.get('ai', 'services') || {};
-  const serviceConfig = services[serviceId] || {};
+  const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+  const centralizedService = CentralizedAPIKeyService.getInstance();
+  
+  const providerConfig = centralizedService.getProviderConfig(serviceId);
+  const hasApiKey = await centralizedService.isProviderConfigured(serviceId);
   
   return {
     id: serviceId,
-    enabled: serviceConfig.enabled || false,
-    hasApiKey: !!serviceConfig.encryptedApiKey
+    enabled: providerConfig?.enabled || false,
+    hasApiKey
   };
 });
 
 ipcMain.handle('ai-store-api-key', async (event, serviceId: string, apiKey: string) => {
   try {
-    await aiConfigService.storeAPIKey(serviceId, apiKey);
+    const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+    const centralizedService = CentralizedAPIKeyService.getInstance();
+    
+    await centralizedService.setAPIKey(serviceId, apiKey);
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -1355,14 +1386,10 @@ ipcMain.handle('ai-store-api-key', async (event, serviceId: string, apiKey: stri
 
 ipcMain.handle('ai-get-api-key', async (event, serviceId: string) => {
   try {
-    const services = configManager.get('ai', 'services') || {};
-    const serviceConfig = services[serviceId] || {};
-    const encryptedKey = serviceConfig.encryptedApiKey;
+    const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+    const centralizedService = CentralizedAPIKeyService.getInstance();
     
-    if (!encryptedKey) {
-      return { success: false, error: 'No API key stored for this service' };
-    }
-    const apiKey = await aiConfigService.getAPIKey(serviceId, encryptedKey);
+    const apiKey = await centralizedService.getAPIKey(serviceId);
     return { success: true, apiKey };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -1371,7 +1398,10 @@ ipcMain.handle('ai-get-api-key', async (event, serviceId: string) => {
 
 ipcMain.handle('ai-remove-api-key', async (event, serviceId: string) => {
   try {
-    await aiConfigService.removeAPIKey(serviceId);
+    const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+    const centralizedService = CentralizedAPIKeyService.getInstance();
+    
+    await centralizedService.removeAPIKey(serviceId);
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -1388,15 +1418,29 @@ ipcMain.handle('ai-set-service-enabled', async (event, serviceId: string, enable
 });
 
 ipcMain.handle('ai-validate-api-key', async (event, serviceId: string, apiKey: string) => {
-  return aiConfigService.validateAPIKey(serviceId, apiKey);
+  const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+  const centralizedService = CentralizedAPIKeyService.getInstance();
+  
+  return centralizedService.validateAPIKey(serviceId, apiKey);
 });
 
 ipcMain.handle('ai-test-api-key', async (event, serviceId: string, apiKey: string) => {
-  return await aiConfigService.testAPIKey(serviceId, apiKey);
+  const { CentralizedAPIKeyService } = require('../services/centralized-api-key-service');
+  const centralizedService = CentralizedAPIKeyService.getInstance();
+  
+  return await centralizedService.testConnection(serviceId);
 });
 
 ipcMain.handle('ai-reset-configuration', async () => {
   return aiConfigService.resetConfiguration();
+});
+
+ipcMain.handle('ai-check-service-online', async (event, serviceId: string) => {
+  return aiConfigService.checkServiceOnlineStatus(serviceId);
+});
+
+ipcMain.handle('ai-check-all-services-online', async () => {
+  return aiConfigService.checkAllServicesOnlineStatus();
 });
 
 ipcMain.handle('ai-get-providers', async (): Promise<AIProviderConfig[]> => {
@@ -1434,6 +1478,135 @@ ipcMain.on('focus-window', (event) => {
     window.show();
   }
 });
+
+// Kanban IPC handlers
+import { KanbanStorageService } from './kanban-storage-service';
+
+ipcMain.handle('kanban:getBoard', async (event, projectPath: string, boardId: string) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    return await storage.getBoard(boardId);
+  } catch (error) {
+    console.error('[IPC] kanban:getBoard error:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('kanban:saveBoard', async (event, projectPath: string, board: any) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    await storage.saveBoard(board);
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] kanban:saveBoard error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('kanban:getTasks', async (event, projectPath: string, boardId: string) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    const tasks = await storage.getTasks(boardId);
+  
+  // Check for branches for each task
+  for (const task of tasks) {
+    if (task.id && projectPath) {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      try {
+        const { stdout } = await execAsync('git branch -a', { cwd: projectPath });
+        const branches = stdout.split('\n').map((b: string) => b.trim());
+        task.hasBranch = branches.some((branch: string) => branch.includes(task.id));
+      } catch {
+        task.hasBranch = false;
+      }
+    }
+  }
+  
+  return tasks;
+  } catch (error) {
+    console.error('[IPC] kanban:getTasks error:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('kanban:updateTask', async (event, projectPath: string, boardId: string, task: any) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    await storage.updateTask(boardId, task);
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] kanban:updateTask error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('kanban:deleteTask', async (event, projectPath: string, boardId: string, taskId: string) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    await storage.deleteTask(boardId, taskId);
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] kanban:deleteTask error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('kanban:getEpics', async (event, projectPath: string, boardId: string) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    return await storage.getEpics(boardId);
+  } catch (error) {
+    console.error('[IPC] kanban:getEpics error:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('kanban:updateEpic', async (event, projectPath: string, boardId: string, epic: any) => {
+  try {
+    const storage = new KanbanStorageService(projectPath);
+    await storage.updateEpic(boardId, epic);
+    return { success: true };
+  } catch (error) {
+    console.error('[IPC] kanban:updateEpic error:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('kanban:checkBranches', async (event, projectPath: string) => {
+  if (!projectPath) {
+    console.error('[IPC] kanban:checkBranches - no project path provided');
+    return [];
+  }
+  
+  const { exec } = require('child_process');
+  const { promisify } = require('util');
+  const execAsync = promisify(exec);
+  
+  try {
+    const { stdout } = await execAsync('git branch -a', { cwd: projectPath });
+    return stdout.split('\n')
+      .map((b: string) => b.trim())
+      .filter((b: string) => b.length > 0);
+  } catch {
+    return [];
+  }
+});
+
+// Dexy Vectorization IPC handlers
+import { registerDexyHandlers, setDexyProjectPath } from './dexy-ipc-handlers';
+console.log('[MAIN] Registering Dexy handlers...');
+registerDexyHandlers();
+console.log('[MAIN] Dexy handlers registered successfully');
+
+// TODO Scanning IPC handlers
+import { setupTodoIpcHandlers } from './todo-ipc-handlers';
+import { todoAutoScanner } from '../services/todo-auto-scanner';
+console.log('[MAIN] Registering TODO handlers...');
+setupTodoIpcHandlers();
+console.log('[MAIN] TODO handlers registered successfully');
 
 // Chat History IPC handlers
 ipcMain.handle('chat-history-save', async (event, projectPath: string, messages: any[]) => {

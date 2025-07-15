@@ -33,6 +33,8 @@ import { getFileIconInfo } from '../utils/fileIcons';
 import { stateManager } from '../../services/state-manager';
 import { gitMonitor, GitMonitorState } from '../../services/git-monitor';
 import { getPromptManager } from '../../services/prompt-manager';
+import { getLangChainChatService } from '../../services/langchain-chat-service';
+import { getAIProviderManager } from '../../services/ai-provider-manager';
 
 interface GitExplorerProps {
   currentFolder: string | null;
@@ -518,8 +520,17 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
     
     setIsGeneratingCommitMessage(true);
     try {
-      // Initialize prompt manager
+      // Initialize services
       const promptManager = getPromptManager();
+      const chatService = getLangChainChatService();
+      const providerManager = getAIProviderManager();
+
+      // Get default AI provider and model
+      const defaultConfig = await providerManager.getDefault();
+      if (!defaultConfig) {
+        console.error('No default AI provider configured');
+        return;
+      }
 
       // Get the diff for staged files
       const diffs = await Promise.all(
@@ -557,17 +568,19 @@ export const GitExplorer: React.FC<GitExplorerProps> = ({ currentFolder, isVisib
         return;
       }
 
-      // Generate commit message using AI
-      const aiResponse = await window.electronAPI.executeClaudeCommand({
-        prompt: prompt + '\n\nGit Diff:\n```\n' + combinedDiff + '\n```',
-        maxTokens: 150
+      // Generate commit message using the LangChain chat service
+      const fullPrompt = prompt + '\n\nGit Diff:\n```\n' + combinedDiff + '\n```';
+      const response = await chatService.sendMessage(fullPrompt, {
+        providerId: defaultConfig.providerId,
+        modelId: defaultConfig.modelId,
+        systemPrompt: 'You are a helpful assistant that generates concise, conventional git commit messages.'
       });
 
-      if (aiResponse.success && aiResponse.content) {
-        const generatedMessage = aiResponse.content.trim();
+      if (response.success && response.message) {
+        const generatedMessage = response.message.content.trim();
         setCommitMessage(generatedMessage);
       } else {
-        console.error('Failed to generate AI commit message:', aiResponse.error);
+        console.error('Failed to generate AI commit message:', response.error);
       }
     } catch (error) {
       console.error('Error generating commit message:', error);

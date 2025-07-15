@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: () => ipcRenderer.invoke('open-folder'),
   readDirectory: (dirPath: string) => ipcRenderer.invoke('read-directory', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+  getFileStats: (filePath: string) => ipcRenderer.invoke('get-file-stats', filePath),
   onFolderOpened: (callback: (folderPath: string) => void) => 
     ipcRenderer.on('folder-opened', (_event, folderPath) => callback(folderPath)),
   getRecentProjects: () => ipcRenderer.invoke('get-recent-projects'),
@@ -102,6 +103,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     validateAPIKey: (serviceId: string, apiKey: string) => ipcRenderer.invoke('ai-validate-api-key', serviceId, apiKey),
     testAPIKey: (serviceId: string, apiKey: string) => ipcRenderer.invoke('ai-test-api-key', serviceId, apiKey),
     resetConfiguration: () => ipcRenderer.invoke('ai-reset-configuration'),
+    checkServiceOnline: (serviceId: string) => ipcRenderer.invoke('ai-check-service-online', serviceId),
+    checkAllServicesOnline: () => ipcRenderer.invoke('ai-check-all-services-online'),
     getProviders: () => ipcRenderer.invoke('ai-get-providers'),
     getModels: (providerId: string) => ipcRenderer.invoke('ai-get-models', providerId),
     getAvailableProviders: () => ipcRenderer.invoke('ai-get-available-providers'),
@@ -122,6 +125,50 @@ contextBridge.exposeInMainWorld('electronAPI', {
     load: (projectPath: string) => ipcRenderer.invoke('chat-history-load', projectPath),
     clear: (projectPath: string) => ipcRenderer.invoke('chat-history-clear', projectPath),
     cleanup: (projectPath: string, maxAge?: number) => ipcRenderer.invoke('chat-history-cleanup', projectPath, maxAge),
+  },
+
+  // Kanban API
+  kanban: {
+    getBoard: (projectPath: string, boardId: string) => ipcRenderer.invoke('kanban:getBoard', projectPath, boardId),
+    saveBoard: (projectPath: string, board: any) => ipcRenderer.invoke('kanban:saveBoard', projectPath, board),
+    getTasks: (projectPath: string, boardId: string) => ipcRenderer.invoke('kanban:getTasks', projectPath, boardId),
+    updateTask: (projectPath: string, boardId: string, task: any) => ipcRenderer.invoke('kanban:updateTask', projectPath, boardId, task),
+    deleteTask: (projectPath: string, boardId: string, taskId: string) => ipcRenderer.invoke('kanban:deleteTask', projectPath, boardId, taskId),
+    getEpics: (projectPath: string, boardId: string) => ipcRenderer.invoke('kanban:getEpics', projectPath, boardId),
+    updateEpic: (projectPath: string, boardId: string, epic: any) => ipcRenderer.invoke('kanban:updateEpic', projectPath, boardId, epic),
+    checkBranches: (projectPath: string) => ipcRenderer.invoke('kanban:checkBranches', projectPath),
+  },
+
+  // Dexy Vectorization API
+  dexy: {
+    initialize: (projectPath: string) => ipcRenderer.invoke('dexy:initialize', projectPath),
+    isReady: () => ipcRenderer.invoke('dexy:isReady'),
+    getConfig: () => ipcRenderer.invoke('dexy:getConfig'),
+    vectorizeTask: (params: { task: any; boardId: string }) => ipcRenderer.invoke('dexy:vectorizeTask', params),
+    updateTaskVector: (params: { task: any; boardId: string }) => ipcRenderer.invoke('dexy:updateTaskVector', params),
+    deleteTaskVector: (taskId: string) => ipcRenderer.invoke('dexy:deleteTaskVector', taskId),
+    findSimilarTasks: (params: { task: any; options?: any }) => ipcRenderer.invoke('dexy:findSimilarTasks', params),
+    getIndices: () => ipcRenderer.invoke('dexy:getIndices'),
+    syncTasks: (params: { tasks: any[]; boardId: string }) => ipcRenderer.invoke('dexy:syncTasks', params),
+    hasTaskVector: (taskId: string) => ipcRenderer.invoke('dexy:hasTaskVector', taskId),
+    getVectorizedTaskIds: () => ipcRenderer.invoke('dexy:getVectorizedTaskIds'),
+  },
+
+  // TODO Scanning API
+  todo: {
+    scanProject: (projectPath: string) => ipcRenderer.invoke('todo-scan-project', projectPath),
+    scanNew: (projectPath: string) => ipcRenderer.invoke('todo-scan-new', projectPath),
+    validate: (todoId: string, projectPath: string) => ipcRenderer.invoke('todo-validate', todoId, projectPath),
+    getStats: (projectPath: string) => ipcRenderer.invoke('todo-get-stats', projectPath),
+    createTasks: (projectPath: string, todoIds?: string[]) => ipcRenderer.invoke('todo-create-tasks', projectPath, todoIds),
+    getMappings: (projectPath: string) => ipcRenderer.invoke('todo-get-mappings', projectPath),
+    getMappingByTodo: (todoId: string, projectPath: string) => ipcRenderer.invoke('todo-get-mapping-by-todo', todoId, projectPath),
+    getMappingByTask: (taskId: string, projectPath: string) => ipcRenderer.invoke('todo-get-mapping-by-task', taskId, projectPath),
+    removeMapping: (todoId: string, projectPath: string) => ipcRenderer.invoke('todo-remove-mapping', todoId, projectPath),
+    getSettings: (projectPath: string) => ipcRenderer.invoke('todo-get-settings', projectPath),
+    updateSettings: (projectPath: string, settings: any) => ipcRenderer.invoke('todo-update-settings', projectPath, settings),
+    cleanupInvalid: (projectPath: string) => ipcRenderer.invoke('todo-cleanup-invalid', projectPath),
+    sync: (projectPath: string) => ipcRenderer.invoke('todo-sync', projectPath),
   },
 
   // System API

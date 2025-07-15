@@ -1,0 +1,85 @@
+{
+  "_comment": "TODO: This data should be moved to a backend API service with proper caching (TTL ~24h) for centralized management and real-time updates",
+  "models": [
+    {
+      "id": "claude-opus-4-20250514",
+      "name": "Claude Opus 4",
+      "description": "Highest level of intelligence and capability",
+      "type": "reasoning",
+      "contextWindow": 200000,
+      "maxTokens": 32000,
+      "inputCost": 15.00,
+      "outputCost": 75.00,
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": true,
+        "codeGeneration": true
+      }
+    },
+    {
+      "id": "claude-sonnet-4-20250514",
+      "name": "Claude Sonnet 4",
+      "description": "High intelligence and balanced performance",
+      "type": "reasoning",
+      "contextWindow": 200000,
+      "maxTokens": 64000,
+      "inputCost": 3.00,
+      "outputCost": 15.00,
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": true,
+        "codeGeneration": true
+      }
+    },
+    {
+      "id": "claude-3-7-sonnet-20250219",
+      "name": "Claude Sonnet 3.7",
+      "description": "High intelligence with toggleable extended thinking",
+      "type": "reasoning",
+      "contextWindow": 200000,
+      "maxTokens": 64000,
+      "inputCost": 3.00,
+      "outputCost": 15.00,
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": true,
+        "codeGeneration": true
+      }
+    },
+    {
+      "id": "claude-3-5-sonnet-20241022",
+      "name": "Claude 3.5 Sonnet",
+      "description": "High level of intelligence and capability",
+      "type": "reasoning",
+      "contextWindow": 200000,
+      "maxTokens": 8192,
+      "inputCost": 3.00,
+      "outputCost": 15.00,
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": true,
+        "codeGeneration": true
+      }
+    },
+    {
+      "id": "claude-3-5-haiku-20241022",
+      "name": "Claude 3.5 Haiku",
+      "description": "Intelligence at blazing speeds",
+      "type": "reasoning",
+      "contextWindow": 200000,
+      "maxTokens": 8192,
+      "inputCost": 0.25,
+      "outputCost": 1.25,
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": true,
+        "codeGeneration": true
+      }
+    }
+  ]
+}

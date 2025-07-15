@@ -2,10 +2,12 @@ import {
   AIProvider,
   AIProviderConfig,
   AIModel,
+  AIModelType,
   ChatCompletionRequest,
   ChatCompletionResponse,
   StreamingChatResponse
 } from '../../types/ai-provider';
+import openaiModels from '../../config/models/openai-models.json';
 
 export class OpenAIProvider implements AIProvider {
   public readonly id = 'openai';
@@ -47,9 +49,9 @@ export class OpenAIProvider implements AIProvider {
     return this.apiKey.startsWith('sk-');
   }
 
-  async getModels(): Promise<AIModel[]> {
+  async getAllModels(includeEmbedding: boolean = false): Promise<AIModel[]> {
     if (!this.config.endpoints.models) {
-      return this.getFallbackModels();
+      return this.getFallbackModels(includeEmbedding);
     }
     try {
       const apiKey = await this.getApiKey();
@@ -69,101 +71,173 @@ export class OpenAIProvider implements AIProvider {
       const data = await response.json();
       
       if (data.data && Array.isArray(data.data)) {
-        // Filter to only include GPT models suitable for chat
-        const chatModels = data.data.filter((model: any) => 
-          model.id.includes('gpt') && 
-          !model.id.includes('instruct') &&
-          !model.id.includes('edit')
-        );
-
-        return chatModels.map((model: any) => ({
-          id: model.id,
-          name: this.formatModelName(model.id),
-          description: this.getModelDescription(model.id),
-          contextWindow: this.getContextWindow(model.id),
-          maxTokens: this.getMaxTokens(model.id),
-          inputCost: this.getInputCost(model.id),
-          outputCost: this.getOutputCost(model.id),
-          features: {
-            streaming: true,
-            functionCalling: this.supportsFunctionCalling(model.id),
-            vision: this.supportsVision(model.id),
-            codeGeneration: true
+        // Map all models and determine their types
+        const allModels = data.data.map((model: any) => {
+          // Determine model type based on ID
+          let modelType: AIModelType = 'reasoning';
+          
+          if (model.id.includes('embedding') || model.id.includes('ada')) {
+            modelType = 'embedding';
+          } else if (model.id.includes('instruct') || model.id.includes('davinci') || model.id.includes('babbage') || model.id.includes('curie')) {
+            modelType = 'completion';
+          } else if (model.id.includes('whisper') || model.id.includes('dall-e') || model.id.includes('tts')) {
+            modelType = 'specialized';
           }
-        }));
+          
+          return {
+            id: model.id,
+            name: this.formatModelName(model.id),
+            description: this.getModelDescription(model.id),
+            type: modelType,
+            contextWindow: this.getContextWindow(model.id),
+            maxTokens: this.getMaxTokens(model.id),
+            inputCost: this.getInputCost(model.id),
+            outputCost: this.getOutputCost(model.id),
+            features: {
+              streaming: true,
+              functionCalling: this.supportsFunctionCalling(model.id),
+              vision: this.supportsVision(model.id),
+              codeGeneration: true
+            }
+          };
+        });
+        
+        // Filter based on includeEmbedding parameter
+        if (includeEmbedding) {
+          return allModels;
+        } else {
+          return allModels.filter((model: any) => 
+            model.type === 'reasoning' || model.type === 'completion'
+          );
+        }
       }
-
+      
       return [];
     } catch (error) {
       console.error('Error fetching OpenAI models:', error);
       
-      // Fallback to known models
-      return this.getFallbackModels();
+      // Fallback to default model only
+      return this.getFallbackModels(includeEmbedding);
     }
   }
 
-  private getFallbackModels(): AIModel[] {
-    return [
-      {
-        id: 'gpt-4-turbo-preview',
-        name: 'GPT-4 Turbo',
-        description: 'Most capable GPT-4 model with improved instructions following',
-        contextWindow: 128000,
-        maxTokens: 4096,
-        inputCost: 0.01,
-        outputCost: 0.03,
-        features: {
-          streaming: true,
-          functionCalling: true,
-          vision: false,
-          codeGeneration: true
+  async getModels(): Promise<AIModel[]> {
+    // For backward compatibility, getModels returns only reasoning/completion models
+    return this.getAllModels(false);
+  }
+
+  private getFallbackModels(includeEmbedding: boolean = false): AIModel[] {
+    // If including embedding models and we have known embedding models
+    if (includeEmbedding) {
+      const embeddingModels: AIModel[] = [
+        {
+          id: 'text-embedding-3-small',
+          name: 'Text Embedding 3 Small',
+          description: 'Most capable embedding model for semantic search and similarity',
+          type: 'embedding' as AIModelType,
+          contextWindow: 8192,
+          maxTokens: 0,
+          inputCost: 0.00002,
+          outputCost: 0,
+          features: {
+            streaming: false,
+            functionCalling: false,
+            vision: false,
+            codeGeneration: false
+          }
+        },
+        {
+          id: 'text-embedding-3-large',
+          name: 'Text Embedding 3 Large',
+          description: 'Large embedding model with higher dimensions for better accuracy',
+          type: 'embedding' as AIModelType,
+          contextWindow: 8192,
+          maxTokens: 0,
+          inputCost: 0.00013,
+          outputCost: 0,
+          features: {
+            streaming: false,
+            functionCalling: false,
+            vision: false,
+            codeGeneration: false
+          }
+        },
+        {
+          id: 'text-embedding-ada-002',
+          name: 'Text Embedding Ada 002',
+          description: 'Previous generation embedding model',
+          type: 'embedding' as AIModelType,
+          contextWindow: 8192,
+          maxTokens: 0,
+          inputCost: 0.00010,
+          outputCost: 0,
+          features: {
+            streaming: false,
+            functionCalling: false,
+            vision: false,
+            codeGeneration: false
+          }
         }
-      },
-      {
-        id: 'gpt-4',
-        name: 'GPT-4',
-        description: 'More capable than any GPT-3.5 model, able to do more complex tasks',
-        contextWindow: 8192,
-        maxTokens: 4096,
-        inputCost: 0.03,
-        outputCost: 0.06,
-        features: {
-          streaming: true,
-          functionCalling: true,
-          vision: false,
-          codeGeneration: true
-        }
-      },
-      {
-        id: 'gpt-3.5-turbo',
-        name: 'GPT-3.5 Turbo',
-        description: 'Fast, inexpensive model for simple tasks',
-        contextWindow: 16385,
-        maxTokens: 4096,
-        inputCost: 0.0015,
-        outputCost: 0.002,
-        features: {
-          streaming: true,
-          functionCalling: true,
-          vision: false,
-          codeGeneration: true
-        }
+      ];
+      
+      // Include default model if it exists in JSON
+      const defaultModel = this.config.defaultModel;
+      const modelFromJson = openaiModels.models.find(m => m.id === defaultModel);
+      
+      if (modelFromJson) {
+        return [...embeddingModels, {
+          ...modelFromJson,
+          type: modelFromJson.type as AIModelType
+        }];
       }
-    ];
+      
+      return embeddingModels;
+    }
+    
+    // When offline or API unavailable, return only the default configured model
+    const defaultModel = this.config.defaultModel;
+    const modelFromJson = openaiModels.models.find(m => m.id === defaultModel);
+    
+    if (modelFromJson) {
+      return [{
+        ...modelFromJson,
+        type: modelFromJson.type as AIModelType
+      }];
+    }
+    
+    // Absolute fallback - return minimal model info
+    return [{
+      id: defaultModel,
+      name: defaultModel,
+      description: 'Default OpenAI model (offline mode)',
+      type: 'reasoning' as AIModelType,
+      contextWindow: 8192,
+      maxTokens: 4096,
+      features: {
+        streaming: true,
+        functionCalling: true,
+        vision: false,
+        codeGeneration: true
+      }
+    }];
   }
 
   private formatModelName(modelId: string): string {
-    const nameMap: { [key: string]: string } = {
-      'gpt-4-turbo-preview': 'GPT-4 Turbo',
-      'gpt-4': 'GPT-4',
-      'gpt-4-32k': 'GPT-4 32K',
-      'gpt-3.5-turbo': 'GPT-3.5 Turbo',
-      'gpt-3.5-turbo-16k': 'GPT-3.5 Turbo 16K'
-    };
-    return nameMap[modelId] || modelId;
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.name;
+    
+    // For models not in our JSON, format the ID nicely
+    return modelId
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
   }
 
   private getModelDescription(modelId: string): string {
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.description;
+    
+    // Fallback descriptions for models not in our JSON
     if (modelId.includes('gpt-4')) {
       return 'Most capable GPT model, best for complex tasks requiring deep understanding';
     } else if (modelId.includes('gpt-3.5')) {
@@ -173,6 +247,10 @@ export class OpenAIProvider implements AIProvider {
   }
 
   private getContextWindow(modelId: string): number {
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.contextWindow;
+    
+    // Fallback for models not in our JSON
     if (modelId.includes('gpt-4-turbo')) return 128000;
     if (modelId.includes('gpt-4-32k')) return 32768;
     if (modelId.includes('gpt-4')) return 8192;
@@ -182,10 +260,15 @@ export class OpenAIProvider implements AIProvider {
   }
 
   private getMaxTokens(modelId: string): number {
-    return 4096; // Standard max output for OpenAI models
+    const model = openaiModels.models.find(m => m.id === modelId);
+    return model?.maxTokens || 4096; // Standard max output for OpenAI models
   }
 
   private getInputCost(modelId: string): number {
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.inputCost;
+    
+    // Fallback for models not in our JSON
     if (modelId.includes('gpt-4-turbo')) return 0.01;
     if (modelId.includes('gpt-4')) return 0.03;
     if (modelId.includes('gpt-3.5')) return 0.0015;
@@ -193,6 +276,10 @@ export class OpenAIProvider implements AIProvider {
   }
 
   private getOutputCost(modelId: string): number {
+    const model = openaiModels.models.find(m => m.id === modelId);
+    if (model) return model.outputCost;
+    
+    // Fallback for models not in our JSON
     if (modelId.includes('gpt-4-turbo')) return 0.03;
     if (modelId.includes('gpt-4')) return 0.06;
     if (modelId.includes('gpt-3.5')) return 0.002;
@@ -374,6 +461,24 @@ export class OpenAIProvider implements AIProvider {
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
       };
+    }
+  }
+  
+  async isOnline(): Promise<boolean> {
+    try {
+      // Try to fetch a small resource to check connectivity
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch('https://api.openai.com/v1/models', {
+        method: 'HEAD',
+        signal: controller.signal
+      }).catch(() => null);
+      
+      clearTimeout(timeoutId);
+      return response !== null && (response.ok || response.status === 401 || response.status === 403);
+    } catch (error) {
+      return false;
     }
   }
 }

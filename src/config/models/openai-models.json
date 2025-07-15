@@ -1,0 +1,53 @@
+{
+  "_comment": "TODO: This data should be moved to a backend API service with proper caching (TTL ~24h) for centralized management and real-time updates",
+  "models": [
+    {
+      "id": "gpt-4-turbo-preview",
+      "name": "GPT-4 Turbo",
+      "description": "Most capable GPT-4 model with improved instructions following",
+      "type": "reasoning",
+      "contextWindow": 128000,
+      "maxTokens": 4096,
+      "inputCost": 0.01,
+      "outputCost": 0.03,
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": false,
+        "codeGeneration": true
+      }
+    },
+    {
+      "id": "gpt-4",
+      "name": "GPT-4",
+      "description": "More capable than any GPT-3.5 model, able to do more complex tasks",
+      "type": "reasoning",
+      "contextWindow": 8192,
+      "maxTokens": 4096,
+      "inputCost": 0.03,
+      "outputCost": 0.06,
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": false,
+        "codeGeneration": true
+      }
+    },
+    {
+      "id": "gpt-3.5-turbo",
+      "name": "GPT-3.5 Turbo",
+      "description": "Fast, inexpensive model for simple tasks",
+      "type": "reasoning",
+      "contextWindow": 16385,
+      "maxTokens": 4096,
+      "inputCost": 0.0015,
+      "outputCost": 0.002,
+      "features": {
+        "streaming": true,
+        "functionCalling": true,
+        "vision": false,
+        "codeGeneration": true
+      }
+    }
+  ]
+}

@@ -10,9 +10,11 @@ import '@vscode/codicons/dist/codicon.css';
 interface FileExplorerProps {
   currentFolder: string | null;
   isVisible?: boolean;
+  navigateToFile?: { filePath: string; lineNumber?: number } | null;
+  onNavigationComplete?: () => void;
 }
 
-export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVisible = true }) => {
+export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVisible = true, navigateToFile, onNavigationComplete }) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +121,65 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVis
     checkDebugMode();
   }, []);
 
+  const loadFileContent = async (filePath: string) => {
+    try {
+      const content = await window.electronAPI.readFile(filePath);
+      setFileContent(content);
+    } catch (error) {
+      setFileContent(`Error loading file: ${error}`);
+    }
+  };
+
+  // Handle navigation to specific file
+  useEffect(() => {
+    if (navigateToFile && currentFolder && isVisible) {
+      const navigateToRequestedFile = async () => {
+        const { filePath, lineNumber } = navigateToFile;
+        
+        // Convert relative path to absolute if needed
+        const absolutePath = filePath.startsWith('/') 
+          ? filePath 
+          : `${currentFolder}/${filePath}`;
+
+        // Find the file node in the tree
+        const fileNode = findNodeByPath(fileTree, absolutePath);
+        
+        if (fileNode) {
+          // File is already in the tree, select it
+          setSelectedFile(fileNode);
+          if (fileNode.type === 'file') {
+            await loadFileContent(fileNode.path);
+          }
+        } else {
+          // File not in tree, try to load it directly
+          try {
+            const stats = await window.electronAPI.getFileStats(absolutePath);
+            const newNode: FileNode = {
+              id: absolutePath,
+              name: absolutePath.split('/').pop() || '',
+              type: 'file',
+              path: absolutePath,
+              size: stats.size,
+              lastModified: stats.modifiedTime,
+              isExpanded: false
+            };
+            setSelectedFile(newNode);
+            await loadFileContent(absolutePath);
+          } catch (error) {
+            console.error('Failed to load file:', absolutePath, error);
+          }
+        }
+
+        // Complete navigation
+        if (onNavigationComplete) {
+          onNavigationComplete();
+        }
+      };
+
+      navigateToRequestedFile();
+    }
+  }, [navigateToFile, currentFolder, fileTree, isVisible, onNavigationComplete]);
+
 
   // Load folder contents when currentFolder changes
   useEffect(() => {
@@ -190,15 +251,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVis
       }
     }
     return null;
-  };
-
-  const loadFileContent = async (filePath: string) => {
-    try {
-      const content = await window.electronAPI.readFile(filePath);
-      setFileContent(content);
-    } catch (error) {
-      setFileContent(`Error loading file: ${error}`);
-    }
   };
 
   const handleOpenFolder = async () => {

@@ -1,0 +1,370 @@
+[
+  {
+    "id": "TASK-1752562924275361",
+    "title": "TODO: Scanning IPC handlers",
+    "description": "**Code TODO**: Scanning IPC handlers\n\n**Location**: src/main/main.ts:1604\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  1602: console.log('[MAIN] Dexy handlers registered successfully');\n  1603: \n> 1604: // TODO Scanning IPC handlers\n  1605: import { setupTodoIpcHandlers } from './todo-ipc-handlers';\n  1606: import { todoAutoScanner } from '../services/todo-auto-scanner';\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.275Z",
+    "updatedAt": "2025-07-15T07:02:04.275Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-099904f6",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/main/main.ts",
+        "lineNumber": 1604,
+        "content": "Scanning IPC handlers"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924276613",
+    "title": "TODO: Scanning API",
+    "description": "**Code TODO**: Scanning API\n\n**Location**: src/main/preload.ts:157\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  155:   },\n  156: \n> 157:   // TODO Scanning API\n  158:   todo: {\n  159:     scanProject: (projectPath: string) => ipcRenderer.invoke('todo-scan-project', projectPath),\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.276Z",
+    "updatedAt": "2025-07-15T07:02:04.276Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-2aac1fef",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/main/preload.ts",
+        "lineNumber": 157,
+        "content": "Scanning API"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924276833",
+    "title": "TODO: loadIndices is async, so it won't complete in constructor",
+    "description": "**Code TODO**: loadIndices is async, so it won't complete in constructor\n\n**Location**: src/main/vector-storage-service.ts:44\n**Type**: NOTE\n**Priority**: low\n\n**Context**:\n```\n   42:     this.projectPath = projectPath;\n   43:     this.ensureVectorDirectories();\n>  44:     // Note: loadIndices is async, so it won't complete in constructor\n   45:     // We'll need to ensure it's loaded before use\n   46:   }\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.276Z",
+    "updatedAt": "2025-07-15T07:02:04.276Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-0963ed4a",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/main/vector-storage-service.ts",
+        "lineNumber": 44,
+        "content": "loadIndices is async, so it won't complete in constructor"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924276171",
+    "title": "TODO: Overview",
+    "description": "**Code TODO**: Overview\n\n**Location**: src/renderer/components/Dashboard.tsx:632\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  630:             ) : (\n  631:               <>\n> 632:                 {/* TODO Overview */}\n  633:                 <div className=\"bg-gray-800 rounded-lg p-6 border border-gray-700\">\n  634:                   <div className=\"flex items-center justify-between mb-6\">\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.277Z",
+    "updatedAt": "2025-07-15T07:02:04.277Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-22a274c7",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/Dashboard.tsx",
+        "lineNumber": 632,
+        "content": "Overview"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924277117",
+    "title": "TODO: Types Distribution",
+    "description": "**Code TODO**: Types Distribution\n\n**Location**: src/renderer/components/Dashboard.tsx:699\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  697:                   </div>\n  698: \n> 699:                   {/* TODO Types Distribution */}\n  700:                   {todoStats && Object.keys(todoStats.byType).length > 0 && (\n  701:                     <div className=\"mb-6\">\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.277Z",
+    "updatedAt": "2025-07-15T07:02:04.277Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-2674a8c6",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/Dashboard.tsx",
+        "lineNumber": 699,
+        "content": "Types Distribution"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924277115",
+    "title": "TODO: Selected file restoration moved to separate useEffect",
+    "description": "**Code TODO**: Selected file restoration moved to separate useEffect\n\n**Location**: src/renderer/components/FileExplorer.tsx:220\n**Type**: NOTE\n**Priority**: low\n\n**Context**:\n```\n  218:       setFileTree(processedFiles);\n  219:       \n> 220:       // Note: Selected file restoration moved to separate useEffect\n  221:     } catch (error) {\n  222:       setError(`Failed to load directory: ${error}`);\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.277Z",
+    "updatedAt": "2025-07-15T07:02:04.277Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-2fef1740",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/FileExplorer.tsx",
+        "lineNumber": 220,
+        "content": "Selected file restoration moved to separate useEffect"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924278316",
+    "title": "TODO: Implement search functionality when available",
+    "description": "**Code TODO**: Implement search functionality when available\n\n**Location**: src/renderer/components/ViewTaskDialog.tsx:62\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n   60:       }\n   61: \n>  62:       // TODO: Implement search functionality when available\n   63:       // For now, we'll skip similar tasks\n   64:       console.log('[ViewTaskDialog] Search functionality not available yet');\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.278Z",
+    "updatedAt": "2025-07-15T07:02:04.278Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-1709703e",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/ViewTaskDialog.tsx",
+        "lineNumber": 62,
+        "content": "Implement search functionality when available"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924278291",
+    "title": "TODO: Move embedding model definitions to backend API with proper caching",
+    "description": "**Code TODO**: Move embedding model definitions to backend API with proper caching\n\n**Location**: src/renderer/components/settings/VectorStoreSettings.tsx:80\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n   78:   ];\n   79: \n>  80:   // TODO: Move embedding model definitions to backend API with proper caching\n   81:   // This data should be fetched from a backend service that:\n   82:   // 1. Maintains up-to-date embedding model information\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.278Z",
+    "updatedAt": "2025-07-15T07:02:04.278Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-306243ef",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/settings/VectorStoreSettings.tsx",
+        "lineNumber": 80,
+        "content": "Move embedding model definitions to backend API with proper caching"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924278778",
+    "title": "TODO: Ziggy and Scratchy will be created only when they decide to join",
+    "description": "**Code TODO**: Ziggy and Scratchy will be created only when they decide to join\n\n**Location**: src/services/agent-message-bus.ts:135\n**Type**: NOTE\n**Priority**: low\n\n**Context**:\n```\n  133:     await this.createAgentContext('cortex');\n  134:     \n> 135:     // NOTE: Ziggy and Scratchy will be created only when they decide to join\n  136:     // through the AI decision process, not automatically\n  137:     \n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.279Z",
+    "updatedAt": "2025-07-15T07:02:04.279Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-272f565a",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/services/agent-message-bus.ts",
+        "lineNumber": 135,
+        "content": "Ziggy and Scratchy will be created only when they decide to join"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924279611",
+    "title": "TODO: report or issue detection",
+    "description": "**Code TODO**: report or issue detection\n\n**Location**: src/services/agent-message-bus.ts:1544\n**Type**: BUG\n**Priority**: low\n\n**Context**:\n```\n  1542:     }\n  1543: \n> 1544:     // Bug report or issue detection\n  1545:     if (this.isBugReport(messageContent, senderAgent, receivingAgent)) {\n  1546:       return `This message reports a bug or issue from ${senderAgent.name}. You should investigate and fix the reported problem. Acknowledge the issue and provide a solution or workaround.`;\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.279Z",
+    "updatedAt": "2025-07-15T07:02:04.279Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-0d098788",
+    "todoType": "BUG",
+    "fileReferences": [
+      {
+        "filePath": "src/services/agent-message-bus.ts",
+        "lineNumber": 1544,
+        "content": "report or issue detection"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924279639",
+    "title": "TODO: This service runs in the main process, so we need to get the provider differently",
+    "description": "**Code TODO**: This service runs in the main process, so we need to get the provider differently\n\n**Location**: src/services/dexy-vectorization-service.ts:39\n**Type**: NOTE\n**Priority**: medium\n\n**Context**:\n```\n   37:     if (this.config && this.config.providerId && this.config.modelId) {\n   38:       // Initialize the embedding provider\n>  39:       // Note: This service runs in the main process, so we need to get the provider differently\n   40:       // For now, we'll set the provider when calling the embedding API\n   41:       this.provider = { id: this.config.providerId } as AIProvider;\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "medium",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.279Z",
+    "updatedAt": "2025-07-15T07:02:04.279Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-07360245",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/services/dexy-vectorization-service.ts",
+        "lineNumber": 39,
+        "content": "This service runs in the main process, so we need to get the provider differently"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924280601",
+    "title": "TODO: Implement proper batch processing for providers that support it",
+    "description": "**Code TODO**: Implement proper batch processing for providers that support it\n\n**Location**: src/services/embedding-service.ts:78\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n   76:   async embedBatch(texts: string[], options: EmbeddingOptions): Promise<EmbeddingResult[]> {\n   77:     // For now, process sequentially\n>  78:     // TODO: Implement proper batch processing for providers that support it\n   79:     const results: EmbeddingResult[] = [];\n   80:     \n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.280Z",
+    "updatedAt": "2025-07-15T07:02:04.280Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-69b75ec9",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/services/embedding-service.ts",
+        "lineNumber": 78,
+        "content": "Implement proper batch processing for providers that support it"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924280246",
+    "title": "TODO: Anthropic doesn't have a public models endpoint, so we'll attempt it",
+    "description": "**Code TODO**: Anthropic doesn't have a public models endpoint, so we'll attempt it\n\n**Location**: src/services/providers/anthropic.ts:60\n**Type**: NOTE\n**Priority**: low\n\n**Context**:\n```\n   58:     try {\n   59:       // Try to fetch models from Anthropic API\n>  60:       // Note: Anthropic doesn't have a public models endpoint, so we'll attempt it\n   61:       // but fall back to a curated list of known models\n   62:       try {\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.280Z",
+    "updatedAt": "2025-07-15T07:02:04.280Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-419007aa",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/services/providers/anthropic.ts",
+        "lineNumber": 60,
+        "content": "Anthropic doesn't have a public models endpoint, so we'll attempt it"
+      }
+    ]
+  },
+  {
+    "id": "TASK-175256292428025",
+    "title": "TODO: -specific metadata",
+    "description": "**Code TODO**: -specific metadata\n\n**Location**: src/services/todo-task-manager.ts:195\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  193:       updatedAt: new Date().toISOString(),\n  194:       projectPath,\n> 195:       // TODO-specific metadata\n  196:       todoId: todo.id,\n  197:       todoType: todo.type,\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.280Z",
+    "updatedAt": "2025-07-15T07:02:04.280Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-4624b1b6",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/services/todo-task-manager.ts",
+        "lineNumber": 195,
+        "content": "-specific metadata"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752562924281813",
+    "title": "TODO: -specific fields",
+    "description": "**Code TODO**: -specific fields\n\n**Location**: src/types/kanban.ts:39\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n   37:   tags?: string[];\n   38:   \n>  39:   // TODO-specific fields\n   40:   todoId?: string;\n   41:   todoType?: 'TODO' | 'FIXME' | 'HACK' | 'NOTE' | 'BUG';\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:02:04.281Z",
+    "updatedAt": "2025-07-15T07:02:04.281Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-5ab4c915",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/types/kanban.ts",
+        "lineNumber": 39,
+        "content": "-specific fields"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752563184822455",
+    "title": "TODO: Implement search functionality when available",
+    "description": "**Code TODO**: Implement search functionality when available\n\n**Location**: src/renderer/components/ViewTaskDialog.tsx:76\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n   74:       }\n   75: \n>  76:       // TODO: Implement search functionality when available\n   77:       // For now, we'll skip similar tasks\n   78:       console.log('[ViewTaskDialog] Search functionality not available yet');\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T07:06:24.822Z",
+    "updatedAt": "2025-07-15T07:06:24.822Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-444eec7f",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/ViewTaskDialog.tsx",
+        "lineNumber": 76,
+        "content": "Implement search functionality when available"
+      }
+    ]
+  }
+]

@@ -1,7 +1,10 @@
+export type AIModelType = 'reasoning' | 'embedding' | 'completion' | 'specialized';
+
 export interface AIModel {
   id: string;
   name: string;
   description?: string;
+  type?: AIModelType; // Model category - defaults to 'reasoning' if not specified
   contextWindow: number;
   maxTokens: number;
   inputCost?: number;  // Cost per 1K tokens
@@ -29,6 +32,7 @@ export interface AIProviderFeatures {
   streaming: boolean;
   functionCalling: boolean;
   vision: boolean;
+  embeddings?: boolean;
   maxTokens: number;
   contextWindow: number;
 }
@@ -47,6 +51,7 @@ export interface AIProviderConfig {
   id: string;
   name: string;
   description: string;
+  baseUrl?: string;
   endpoints: AIProviderEndpoints;
   authentication: AIProviderAuthentication;
   defaultModel: string;
@@ -112,6 +117,9 @@ export interface AIProvider {
 
   // Fetch available models from the provider
   getModels(): Promise<AIModel[]>;
+  
+  // Fetch all models including embedding models
+  getAllModels?(includeEmbedding: boolean): Promise<AIModel[]>;
 
   // Chat completion (non-streaming)
   chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse>;
@@ -124,6 +132,9 @@ export interface AIProvider {
 
   // Test connection to the provider
   testConnection(): Promise<{ success: boolean; error?: string }>;
+  
+  // Check if provider is online (has network connectivity)
+  isOnline?(): Promise<boolean>;
 }
 
 export interface AIProviderManager {

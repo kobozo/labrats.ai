@@ -11,6 +11,7 @@ import nestorAvatar from '../renderer/assets/avatars/nestor.webp';
 import quillAvatar from '../renderer/assets/avatars/quill.webp';
 import switchyAvatar from '../renderer/assets/avatars/switchy.webp';
 import sketchyAvatar from '../renderer/assets/avatars/sketchy.webp';
+import dexyAvatar from '../renderer/assets/avatars/dexy.webp';
 
 export interface Agent {
   id: string;
@@ -21,6 +22,8 @@ export interface Agent {
   avatar: string;
   description: string;
   summary?: string; // Compact persona for token efficiency (≤30 words)
+  mentionInChat?: boolean; // If false, agent cannot be mentioned in chat (defaults to true)
+  singleMode?: boolean; // If true, agent is only available in single-agent mode (defaults to false)
 }
 
 export const agents: Agent[] = [
@@ -33,6 +36,7 @@ export const agents: Agent[] = [
     avatar: cortexAvatar,
     description: 'The brilliant strategist who sees the big picture and transforms ideas into actionable roadmaps.',
     summary: 'Strategic thinker. Transforms ideas into roadmaps. Focuses on big picture and user value.',
+    mentionInChat: true,
   },
   {
     id: 'switchy',
@@ -43,6 +47,8 @@ export const agents: Agent[] = [
     avatar: switchyAvatar,
     description: 'The adaptable all-rounder who seamlessly switches between any role when the team is offline.',
     summary: 'Versatile assistant. Adapts to any development role. Your solo coding companion.',
+    mentionInChat: false,
+    singleMode: true,
   },
   {
     id: 'ziggy',
@@ -153,5 +159,16 @@ export const agents: Agent[] = [
     avatar: sketchyAvatar,
     description: 'The creative visionary who sketches user experiences from the heart and designs with empathy.',
     summary: 'UX designer. Creates intuitive interfaces. Designs with user empathy.',
+  },
+  {
+    id: 'dexy',
+    name: 'Dexy',
+    title: 'Vectorization Agent',
+    icon: '🗄️',
+    colorAccent: '#f6ad55', // amber orange
+    avatar: dexyAvatar,
+    description: 'The nimble index keeper who organizes knowledge into vectors for lightning-fast search.',
+    summary: 'Vector indexer. Curates and embeds knowledge for rapid retrieval.',
+    mentionInChat: false,
   },
 ]; 

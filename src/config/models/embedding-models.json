@@ -1,0 +1,53 @@
+{
+  "_comment": "TODO: This data should be moved to a backend API service with proper caching (TTL ~24h) for centralized management and real-time updates",
+  "models": {
+    "openai": [
+      {
+        "id": "text-embedding-3-small",
+        "name": "Text Embedding 3 Small",
+        "description": "Latest and most efficient embedding model",
+        "dimensions": 1536,
+        "inputCost": 0.00002
+      },
+      {
+        "id": "text-embedding-3-large",
+        "name": "Text Embedding 3 Large",
+        "description": "Highest performance embedding model",
+        "dimensions": 3072,
+        "inputCost": 0.00013
+      },
+      {
+        "id": "text-embedding-ada-002",
+        "name": "Text Embedding Ada 002",
+        "description": "Previous generation embedding model",
+        "dimensions": 1536,
+        "inputCost": 0.0001
+      }
+    ],
+    "anthropic": [
+      {
+        "id": "claude-3-embed",
+        "name": "Claude 3 Embed",
+        "description": "Claude's embedding model",
+        "dimensions": 1024,
+        "inputCost": 0.00008
+      }
+    ],
+    "ollama": [
+      {
+        "id": "nomic-embed-text",
+        "name": "Nomic Embed Text",
+        "description": "Open source embedding model",
+        "dimensions": 768,
+        "inputCost": 0
+      },
+      {
+        "id": "all-minilm",
+        "name": "All MiniLM",
+        "description": "Compact embedding model",
+        "dimensions": 384,
+        "inputCost": 0
+      }
+    ]
+  }
+}

@@ -52,6 +52,7 @@
   "homepage": "https://github.com/kobozo/labrats.ai#readme",
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
+    "@types/glob": "^8.1.0",
     "@types/node": "^24.0.10",
     "@typescript-eslint/eslint-plugin": "^8.36.0",
     "@typescript-eslint/parser": "^8.36.0",
@@ -106,6 +107,7 @@
     "node-pty": "^1.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "reactflow": "^11.11.4",
     "simple-git": "^3.28.0",
     "zod": "^3.25.76"
   }

@@ -30,7 +30,8 @@ import {
   Folder,
   Terminal,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Code
 } from 'lucide-react';
 import './App.css';
 
@@ -50,6 +51,8 @@ function App() {
   const [showBranchMenu, setShowBranchMenu] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<{ promptTokens: number; completionTokens: number; totalTokens: number }>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
   const [labRatsBackendOnline, setLabRatsBackendOnline] = useState<boolean>(false);
+  const [navigateToFile, setNavigateToFile] = useState<{ filePath: string; lineNumber?: number } | null>(null);
+  const [chatMessage, setChatMessage] = useState<{ message: string; taskId?: string; assignee?: string } | null>(null);
 
   // Set initial view based on whether a folder is loaded
   useEffect(() => {
@@ -103,6 +106,34 @@ function App() {
       stateManager.setPreviousView(previousView);
     }
   }, [previousView, currentFolder]);
+
+  // Listen for file navigation events
+  useEffect(() => {
+    const handleNavigateToFile = (event: CustomEvent) => {
+      const { filePath, lineNumber } = event.detail;
+      setNavigateToFile({ filePath, lineNumber });
+      setActiveView('files'); // Switch to file explorer
+    };
+
+    window.addEventListener('navigate-to-file', handleNavigateToFile as EventListener);
+    return () => {
+      window.removeEventListener('navigate-to-file', handleNavigateToFile as EventListener);
+    };
+  }, []);
+
+  // Listen for open chat with message events
+  useEffect(() => {
+    const handleOpenChatWithMessage = (event: CustomEvent) => {
+      const { message, taskId, assignee } = event.detail;
+      setChatMessage({ message, taskId, assignee });
+      setActiveView('chat'); // Switch to chat
+    };
+
+    window.addEventListener('open-chat-with-message', handleOpenChatWithMessage as EventListener);
+    return () => {
+      window.removeEventListener('open-chat-with-message', handleOpenChatWithMessage as EventListener);
+    };
+  }, []);
 
   const showNotification = (type: 'success' | 'info' | 'warning', message: string) => {
     setNotification({ type, message });
@@ -495,12 +526,14 @@ function App() {
                   onCodeReview={() => showNotification('info', 'Code review initiated')} 
                   currentFolder={currentFolder}
                   onTokenUsageChange={handleTokenUsageChange}
+                  initialMessage={chatMessage}
+                  onMessageSent={() => setChatMessage(null)}
                 />
               </ErrorBoundary>
             </div>
             
             <div style={{ display: activeView === 'kanban' ? 'block' : 'none', height: '100%' }}>
-              <KanbanBoard />
+              <KanbanBoard currentFolder={currentFolder} />
             </div>
             
             <div style={{ display: activeView === 'docs' ? 'block' : 'none', height: '100%' }}>
@@ -508,7 +541,12 @@ function App() {
             </div>
             
             <div style={{ display: activeView === 'files' ? 'block' : 'none', height: '100%' }}>
-              <FileExplorer currentFolder={currentFolder} isVisible={activeView === 'files'} />
+              <FileExplorer 
+                currentFolder={currentFolder} 
+                isVisible={activeView === 'files'} 
+                navigateToFile={navigateToFile}
+                onNavigationComplete={() => setNavigateToFile(null)}
+              />
             </div>
             
             <div style={{ display: activeView === 'git' ? 'block' : 'none', height: '100%' }}>
@@ -523,7 +561,7 @@ function App() {
             </div>
             
             <div style={{ display: activeView === 'dashboard' ? 'block' : 'none', height: '100%' }}>
-              <Dashboard />
+              <Dashboard currentFolder={currentFolder} />
             </div>
 
             {activeView === 'settings' && (

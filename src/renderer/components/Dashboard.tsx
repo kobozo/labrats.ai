@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
-import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle } from 'lucide-react';
+import { dexyService } from '../../services/dexy-service-renderer';
+import { kanbanService } from '../../services/kanban-service';
+import { todoService, TodoStats } from '../../services/todo-service-renderer';
 
 interface Metric {
   label: string;
@@ -117,8 +120,188 @@ const timelineEvents: TimelineEvent[] = [
   }
 ];
 
-export const Dashboard: React.FC = () => {
-  const [activeView, setActiveView] = useState<'overview' | 'timeline' | 'compare'>('overview');
+interface VectorStats {
+  totalTasks: number;
+  vectorizedTasks: number;
+  missingVectors: number;
+  lastSync: Date | null;
+  isDexyReady: boolean;
+  embeddingProvider?: string;
+  embeddingModel?: string;
+}
+
+interface DashboardProps {
+  currentFolder: string | null;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
+  const [activeView, setActiveView] = useState<'overview' | 'timeline' | 'compare' | 'todos' | 'embeddings'>('overview');
+  const [vectorStats, setVectorStats] = useState<VectorStats>({
+    totalTasks: 0,
+    vectorizedTasks: 0,
+    missingVectors: 0,
+    lastSync: null,
+    isDexyReady: false
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [todoStats, setTodoStats] = useState<TodoStats | null>(null);
+  const [isScanningTodos, setIsScanningTodos] = useState(false);
+
+  // Load vector statistics and TODO stats
+  useEffect(() => {
+    loadVectorStats();
+    if (currentFolder) {
+      loadTodoStats();
+    }
+  }, [currentFolder]);
+
+  // Reload stats when switching to embeddings or todos view
+  useEffect(() => {
+    if (activeView === 'embeddings' && currentFolder) {
+      loadVectorStats();
+    } else if (activeView === 'todos' && currentFolder) {
+      loadTodoStats();
+    }
+  }, [activeView, currentFolder]);
+
+  // Listen for task updates to refresh vector stats
+  useEffect(() => {
+    const handleTaskUpdate = () => {
+      if (activeView === 'embeddings' && currentFolder) {
+        console.log('[Dashboard] Task update detected, refreshing vector stats');
+        setTimeout(() => loadVectorStats(), 500); // Small delay to ensure sync completes
+      }
+    };
+
+    // Listen for custom events from KanbanBoard
+    window.addEventListener('task-updated', handleTaskUpdate);
+    window.addEventListener('task-created', handleTaskUpdate);
+    window.addEventListener('task-deleted', handleTaskUpdate);
+
+    return () => {
+      window.removeEventListener('task-updated', handleTaskUpdate);
+      window.removeEventListener('task-created', handleTaskUpdate);
+      window.removeEventListener('task-deleted', handleTaskUpdate);
+    };
+  }, [activeView, currentFolder]);
+
+  const loadVectorStats = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Loading vector stats for folder:', currentFolder);
+
+    try {
+      // Initialize Dexy first if we have a project folder
+      await dexyService.initialize(currentFolder);
+      
+      // Check if Dexy is ready
+      const isReady = await dexyService.isReady();
+      console.log('[Dashboard] Dexy ready:', isReady);
+      
+      if (isReady) {
+        // Get Dexy config
+        const config = await dexyService.getConfig();
+        console.log('[Dashboard] Dexy config:', config);
+        
+        // Get all tasks
+        const tasks = await kanbanService.getTasks('main-board');
+        const totalTasks = tasks.length;
+        console.log('[Dashboard] Total tasks:', totalTasks);
+        
+        // Get vectorized task IDs
+        const vectorizedIds = await dexyService.getVectorizedTaskIds();
+        const vectorizedTasks = vectorizedIds.length;
+        console.log('[Dashboard] Vectorized task IDs:', vectorizedIds);
+        console.log('[Dashboard] Vectorized count:', vectorizedTasks);
+        
+        setVectorStats({
+          totalTasks,
+          vectorizedTasks,
+          missingVectors: totalTasks - vectorizedTasks,
+          lastSync: new Date(),
+          isDexyReady: true,
+          embeddingProvider: config?.providerId,
+          embeddingModel: config?.modelId
+        });
+      } else {
+        // Dexy not ready, just show task count
+        const tasks = await kanbanService.getTasks('main-board');
+        setVectorStats({
+          totalTasks: tasks.length,
+          vectorizedTasks: 0,
+          missingVectors: tasks.length,
+          lastSync: null,
+          isDexyReady: false
+        });
+      }
+    } catch (error) {
+      console.error('[Dashboard] Failed to load vector stats:', error);
+    }
+  };
+
+  const handleForceResync = async () => {
+    if (!currentFolder || isSyncing) return;
+
+    console.log('[Dashboard] Starting force resync...');
+    setIsSyncing(true);
+    try {
+      // Initialize Dexy if needed
+      await dexyService.initialize(currentFolder);
+      
+      // Get all tasks and sync
+      const tasks = await kanbanService.getTasks('main-board');
+      console.log('[Dashboard] Found', tasks.length, 'tasks to sync');
+      
+      await dexyService.syncTasks(tasks, 'main-board');
+      console.log('[Dashboard] Sync completed');
+      
+      // Reload stats
+      await loadVectorStats();
+    } catch (error) {
+      console.error('[Dashboard] Failed to resync:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const loadTodoStats = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Loading TODO stats for folder:', currentFolder);
+
+    try {
+      // Set project for TODO service
+      todoService.setCurrentProject(currentFolder);
+      
+      const stats = await todoService.getStats();
+      console.log('[Dashboard] TODO stats:', stats);
+      
+      setTodoStats(stats);
+    } catch (error) {
+      console.error('[Dashboard] Failed to load TODO stats:', error);
+    }
+  };
+
+  const handleTodoScan = async () => {
+    if (!currentFolder || isScanningTodos) return;
+
+    console.log('[Dashboard] Starting TODO scan...');
+    setIsScanningTodos(true);
+    try {
+      // Set project for TODO service
+      todoService.setCurrentProject(currentFolder);
+      
+      const syncResult = await todoService.sync();
+      console.log('[Dashboard] TODO sync completed:', syncResult);
+      
+      // Reload stats
+      await loadTodoStats();
+    } catch (error) {
+      console.error('[Dashboard] Failed to scan TODOs:', error);
+    } finally {
+      setIsScanningTodos(false);
+    }
+  };
 
   const getTrendColor = (trend: string) => {
     switch (trend) {
@@ -153,7 +336,7 @@ export const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 bg-gray-900 overflow-hidden flex flex-col">
+    <div className="flex-1 bg-gray-900 flex flex-col h-full">
       {/* Header */}
       <div className="p-6 border-b border-gray-700 bg-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -167,7 +350,9 @@ export const Dashboard: React.FC = () => {
             {[
               { id: 'overview', label: 'Overview', icon: BarChart3 },
               { id: 'timeline', label: 'Timeline', icon: Clock },
-              { id: 'compare', label: 'Compare', icon: TrendingUp }
+              { id: 'compare', label: 'Compare', icon: TrendingUp },
+              { id: 'todos', label: 'TODOs', icon: Code },
+              { id: 'embeddings', label: 'Embeddings', icon: Database }
             ].map((view) => (
               <button
                 key={view.id}
@@ -187,7 +372,8 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Content */}
-      <div className="p-6 overflow-y-auto flex-1">
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-6">
         {activeView === 'overview' && (
           <div className="space-y-6">
             {/* Metrics Grid */}
@@ -430,6 +616,375 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
         )}
+
+        {activeView === 'todos' && (
+          <div className="space-y-6">
+            {!currentFolder ? (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div className="text-center py-8">
+                  <Code className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-white mb-2">No Project Loaded</h3>
+                  <p className="text-gray-400">Please open a project folder to view TODO analytics</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* TODO Overview */}
+                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">TODO Analytics</h3>
+                    <button
+                      onClick={handleTodoScan}
+                      disabled={isScanningTodos || !currentFolder}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                        isScanningTodos || !currentFolder
+                          ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isScanningTodos ? 'animate-spin' : ''}`} />
+                      <span>{isScanningTodos ? 'Scanning...' : 'Scan Now'}</span>
+                    </button>
+                  </div>
+
+                  {/* Key Metrics */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <Code className="w-5 h-5 text-blue-400" />
+                        <span className="text-2xl font-bold text-white">{todoStats?.total || 0}</span>
+                      </div>
+                      <div className="text-sm text-gray-400">Total TODOs</div>
+                      <div className="text-xs text-green-400 mt-1">
+                        {todoStats?.scannedFiles || 0} files scanned
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <CheckCircle className="w-5 h-5 text-green-400" />
+                        <span className="text-2xl font-bold text-white">{todoStats?.validMappings || 0}</span>
+                      </div>
+                      <div className="text-sm text-gray-400">Tasks Created</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {todoStats?.invalidMappings || 0} invalid mappings
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <AlertCircle className="w-5 h-5 text-yellow-400" />
+                        <span className="text-2xl font-bold text-white">
+                          {todoStats?.total ? todoStats.total - (todoStats.validMappings || 0) : 0}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-400">Unmapped TODOs</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Need task creation
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <Users className="w-5 h-5 text-purple-400" />
+                        <span className="text-2xl font-bold text-white">Cortex</span>
+                      </div>
+                      <div className="text-sm text-gray-400">Default Assignee</div>
+                      <div className="text-xs text-purple-400 mt-1">
+                        AI Agent
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TODO Types Distribution */}
+                  {todoStats && Object.keys(todoStats.byType).length > 0 && (
+                    <div className="mb-6">
+                      <h4 className="text-white font-medium mb-4">TODO Types Distribution</h4>
+                      <div className="space-y-3">
+                        {Object.entries(todoStats.byType).map(([type, count]) => {
+                          const total = todoStats.total;
+                          const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+                          
+                          return (
+                            <div key={type} className="flex items-center space-x-3">
+                              <span className="text-gray-300 w-16">{type}</span>
+                              <div className="flex-1 flex items-center space-x-3">
+                                <div className="flex-1 bg-gray-700 rounded-full h-2">
+                                  <div 
+                                    className={`h-2 rounded-full ${
+                                      type === 'TODO' ? 'bg-blue-500' :
+                                      type === 'FIXME' ? 'bg-red-500' :
+                                      type === 'HACK' ? 'bg-yellow-500' :
+                                      type === 'NOTE' ? 'bg-green-500' :
+                                      type === 'BUG' ? 'bg-purple-500' :
+                                      'bg-gray-500'
+                                    }`}
+                                    style={{ width: `${percentage}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-white font-mono text-sm w-12">{count}</span>
+                                <span className="text-gray-400 text-xs w-10">{percentage}%</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Priority Distribution */}
+                  {todoStats && Object.keys(todoStats.byPriority).length > 0 && (
+                    <div>
+                      <h4 className="text-white font-medium mb-4">Priority Distribution</h4>
+                      <div className="grid grid-cols-3 gap-4">
+                        {Object.entries(todoStats.byPriority).map(([priority, count]) => {
+                          const total = Object.values(todoStats.byPriority).reduce((sum, c) => sum + c, 0);
+                          const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+                          
+                          return (
+                            <div key={priority} className="text-center bg-gray-900 rounded-lg p-4 border border-gray-700">
+                              <div className={`text-2xl font-bold mb-2 ${
+                                priority === 'high' ? 'text-red-400' :
+                                priority === 'medium' ? 'text-yellow-400' :
+                                'text-green-400'
+                              }`}>
+                                {count}
+                              </div>
+                              <div className="text-gray-400 capitalize">{priority}</div>
+                              <div className="text-sm text-gray-500 mt-1">{percentage}%</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* File Extensions */}
+                {todoStats && Object.keys(todoStats.byFileExtension).length > 0 && (
+                  <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <h3 className="text-lg font-semibold text-white mb-4">TODOs by File Type</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {Object.entries(todoStats.byFileExtension)
+                        .sort(([, a], [, b]) => b - a)
+                        .slice(0, 8)
+                        .map(([ext, count]) => (
+                          <div key={ext} className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+                            <div className="flex items-center justify-between">
+                              <span className="text-gray-300 font-mono">{ext || 'No ext'}</span>
+                              <span className="text-white font-bold">{count}</span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {activeView === 'embeddings' && (
+          <div className="space-y-6">
+            {!currentFolder ? (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div className="text-center py-8">
+                  <Database className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-white mb-2">No Project Loaded</h3>
+                  <p className="text-gray-400">Please open a project folder to view embedding statistics</p>
+                </div>
+              </div>
+            ) : (
+            <>
+            {/* Vector Database Overview */}
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-white">Vector Database Overview</h3>
+                <button
+                  onClick={handleForceResync}
+                  disabled={isSyncing || !currentFolder}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                    isSyncing || !currentFolder
+                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isSyncing ? 'Syncing...' : 'Force Resync'}</span>
+                </button>
+              </div>
+
+              {/* Status Indicator */}
+              <div className="mb-6">
+                <div className="flex items-center space-x-3">
+                  {vectorStats.isDexyReady ? (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 text-green-400" />
+                      <span className="text-green-400">Dexy Service Active</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-5 h-5 text-red-400" />
+                      <span className="text-red-400">Dexy Service Not Configured</span>
+                    </>
+                  )}
+                </div>
+                {vectorStats.isDexyReady && vectorStats.embeddingProvider && (
+                  <div className="mt-2 text-sm text-gray-400">
+                    Using {vectorStats.embeddingProvider} / {vectorStats.embeddingModel}
+                  </div>
+                )}
+                {!vectorStats.isDexyReady && (
+                  <div className="mt-2 text-sm text-gray-400">
+                    Please configure Dexy in the AI Agents settings panel
+                  </div>
+                )}
+              </div>
+
+              {/* Vector Statistics */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <Layers className="w-5 h-5 text-blue-400" />
+                    <span className="text-2xl font-bold text-white">{vectorStats.totalTasks}</span>
+                  </div>
+                  <div className="text-sm text-gray-400">Total Tasks</div>
+                </div>
+
+                <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <Database className="w-5 h-5 text-green-400" />
+                    <span className="text-2xl font-bold text-white">{vectorStats.vectorizedTasks}</span>
+                  </div>
+                  <div className="text-sm text-gray-400">Vectorized Tasks</div>
+                  <div className="mt-2">
+                    <div className="w-full bg-gray-700 rounded-full h-2">
+                      <div
+                        className="bg-green-500 h-2 rounded-full transition-all"
+                        style={{ width: `${vectorStats.totalTasks > 0 ? (vectorStats.vectorizedTasks / vectorStats.totalTasks) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <AlertCircle className="w-5 h-5 text-yellow-400" />
+                    <span className="text-2xl font-bold text-white">{vectorStats.missingVectors}</span>
+                  </div>
+                  <div className="text-sm text-gray-400">Missing Vectors</div>
+                </div>
+              </div>
+
+              {/* Last Sync Info */}
+              {vectorStats.lastSync && (
+                <div className="text-sm text-gray-400">
+                  Last synchronized: {vectorStats.lastSync.toLocaleString()}
+                </div>
+              )}
+            </div>
+
+            {/* Vector Sources */}
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <h3 className="text-lg font-semibold text-white mb-6">Vector Sources</h3>
+              
+              <div className="space-y-4">
+                {/* Kanban Tasks */}
+                <div className="flex items-center justify-between p-4 bg-gray-700 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-blue-500/20 rounded">
+                      <FileText className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div>
+                      <div className="text-white font-medium">Kanban Tasks</div>
+                      <div className="text-sm text-gray-400">Task titles, descriptions, and metadata</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-semibold text-white">{vectorStats.vectorizedTasks}</div>
+                    <div className="text-sm text-gray-400">vectors</div>
+                  </div>
+                </div>
+
+                {/* Future: Code Files */}
+                <div className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg opacity-50">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-purple-500/20 rounded">
+                      <FileText className="w-5 h-5 text-purple-400" />
+                    </div>
+                    <div>
+                      <div className="text-white font-medium">Code Files</div>
+                      <div className="text-sm text-gray-400">Source code and documentation</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-500">Coming Soon</div>
+                  </div>
+                </div>
+
+                {/* Future: Git Commits */}
+                <div className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg opacity-50">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-green-500/20 rounded">
+                      <GitCommit className="w-5 h-5 text-green-400" />
+                    </div>
+                    <div>
+                      <div className="text-white font-medium">Git Commits</div>
+                      <div className="text-sm text-gray-400">Commit messages and diffs</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-500">Coming Soon</div>
+                  </div>
+                </div>
+
+                {/* Future: Chat History */}
+                <div className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg opacity-50">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-orange-500/20 rounded">
+                      <Users className="w-5 h-5 text-orange-400" />
+                    </div>
+                    <div>
+                      <div className="text-white font-medium">Chat History</div>
+                      <div className="text-sm text-gray-400">Agent conversations and decisions</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-500">Coming Soon</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Performance Metrics */}
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <h3 className="text-lg font-semibold text-white mb-6">Embedding Performance</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-green-400 mb-2">
+                    {vectorStats.totalTasks > 0 ? Math.round((vectorStats.vectorizedTasks / vectorStats.totalTasks) * 100) : 0}%
+                  </div>
+                  <div className="text-gray-400">Coverage Rate</div>
+                  <div className="text-sm text-gray-500 mt-1">Tasks with vectors</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-blue-400 mb-2">~50ms</div>
+                  <div className="text-gray-400">Avg. Search Time</div>
+                  <div className="text-sm text-gray-500 mt-1">Semantic similarity search</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-purple-400 mb-2">1536D</div>
+                  <div className="text-gray-400">Vector Dimension</div>
+                  <div className="text-sm text-gray-500 mt-1">Embedding size</div>
+                </div>
+              </div>
+            </div>
+            </>
+            )}
+          </div>
+        )}
+        </div>
       </div>
     </div>
   );

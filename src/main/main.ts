@@ -1286,6 +1286,9 @@ function formatFileSize(bytes: number): string {
 }
 
 app.whenReady().then(() => {
+  // Initialize MCP IPC handlers with null workspace (will be updated when projects open)
+  setupMcpIpcHandlers(null);
+  
   // Restore previous windows or create new one
   const lastActiveWindows = store.get('lastActiveWindows', []) as string[];
   const windowStates = store.get('windowStates', []) as WindowState[];

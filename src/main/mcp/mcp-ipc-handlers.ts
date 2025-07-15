@@ -13,10 +13,26 @@ import { commandApprovalManager } from './command-approval';
 
 const execAsync = promisify(exec);
 
+// Track if handlers are already set up
+let handlersRegistered = false;
+let currentWorkspaceRoot: string | null = null;
+
 export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
+  // Update the workspace root
+  currentWorkspaceRoot = workspaceRoot;
+  
+  // Only register handlers once
+  if (handlersRegistered) {
+    console.log('[MCP-IPC] Handlers already registered, updating workspace root only');
+    return;
+  }
+  
+  handlersRegistered = true;
+  console.log('[MCP-IPC] Registering MCP IPC handlers');
+  
   // Handle MCP tool calls from renderer process
   ipcMain.handle('mcp:callTool', async (event, toolName: string, args: any) => {
-    if (!workspaceRoot) {
+    if (!currentWorkspaceRoot) {
       throw new Error('No workspace root set');
     }
 
@@ -25,13 +41,13 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
     try {
       switch (toolName) {
         case 'listFiles':
-          return await handleListFiles(workspaceRoot, args);
+          return await handleListFiles(currentWorkspaceRoot, args);
         case 'readFile':
-          return await handleReadFile(workspaceRoot, args);
+          return await handleReadFile(currentWorkspaceRoot, args);
         case 'replaceText':
-          return await handleReplaceText(workspaceRoot, args);
+          return await handleReplaceText(currentWorkspaceRoot, args);
         case 'execCommand':
-          return await handleExecCommand(workspaceRoot, args);
+          return await handleExecCommand(currentWorkspaceRoot, args);
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }
@@ -198,7 +214,12 @@ async function handleExecCommand(workspaceRoot: string, args: any): Promise<stri
 
 // Clear handlers when workspace changes
 export function clearMcpIpcHandlers(): void {
-  ipcMain.removeHandler('mcp:callTool');
-  ipcMain.removeHandler('mcp:requestCommandApproval');
-  ipcMain.removeHandler('mcp:getAllowedCommands');
+  if (handlersRegistered) {
+    ipcMain.removeHandler('mcp:callTool');
+    ipcMain.removeHandler('mcp:requestCommandApproval');
+    ipcMain.removeHandler('mcp:getAllowedCommands');
+    handlersRegistered = false;
+    currentWorkspaceRoot = null;
+    console.log('[MCP-IPC] MCP IPC handlers cleared');
+  }
 }

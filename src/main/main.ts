@@ -617,6 +617,8 @@ ipcMain.handle('get-project-path', async (event) => {
   if (window) {
     const projectPath = windowProjects.get(window.id);
     if (projectPath) {
+      // Ensure MCP handlers are set up for this project
+      setupMcpIpcHandlers(projectPath);
       return projectPath;
     }
   }

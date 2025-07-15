@@ -140,7 +140,7 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
 }
 
 async function handleListFiles(workspaceRoot: string, args: any): Promise<string> {
-  const { path: dirPath = '.' } = args;
+  const { path: dirPath = '.', recursive = false } = args;
   
   // Validate path
   const absolutePath = path.resolve(workspaceRoot, dirPath);
@@ -149,41 +149,101 @@ async function handleListFiles(workspaceRoot: string, args: any): Promise<string
   }
 
   try {
-    const entries = await fs.readdir(absolutePath, { withFileTypes: true });
-    
-    const files: any[] = [];
-    const directories: any[] = [];
-    
-    for (const entry of entries) {
-      // Skip hidden files and common ignore patterns
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') {
-        continue;
+    if (recursive) {
+      // Recursive listing
+      const allEntries = await listFilesRecursively(absolutePath, workspaceRoot, dirPath);
+      return JSON.stringify({
+        path: dirPath,
+        entries: allEntries,
+        total_count: allEntries.length,
+        recursive: true,
+      });
+    } else {
+      // Non-recursive listing (existing logic)
+      const entries = await fs.readdir(absolutePath, { withFileTypes: true });
+      
+      const files: any[] = [];
+      const directories: any[] = [];
+      
+      for (const entry of entries) {
+        // Skip hidden files and common ignore patterns
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') {
+          continue;
+        }
+        
+        const item = {
+          name: entry.name,
+          type: entry.isDirectory() ? 'directory' : 'file',
+        };
+        
+        if (entry.isDirectory()) {
+          directories.push(item);
+        } else {
+          files.push(item);
+        }
       }
       
-      const item = {
-        name: entry.name,
-        type: entry.isDirectory() ? 'directory' : 'file',
-      };
+      // Sort directories first, then files
+      const allEntries = [...directories.sort((a, b) => a.name.localeCompare(b.name)), 
+                          ...files.sort((a, b) => a.name.localeCompare(b.name))];
       
-      if (entry.isDirectory()) {
-        directories.push(item);
-      } else {
-        files.push(item);
-      }
+      return JSON.stringify({
+        path: dirPath,
+        entries: allEntries,
+        total_count: allEntries.length,
+      });
     }
-    
-    // Sort directories first, then files
-    const allEntries = [...directories.sort((a, b) => a.name.localeCompare(b.name)), 
-                        ...files.sort((a, b) => a.name.localeCompare(b.name))];
-    
-    return JSON.stringify({
-      path: dirPath,
-      entries: allEntries,
-      total_count: allEntries.length,
-    });
   } catch (error: any) {
     throw new Error(`Failed to list files: ${error.message}`);
   }
+}
+
+async function listFilesRecursively(
+  absolutePath: string, 
+  workspaceRoot: string, 
+  relativePath: string,
+  baseRelativePath: string = relativePath
+): Promise<any[]> {
+  const entries = await fs.readdir(absolutePath, { withFileTypes: true });
+  const allEntries: any[] = [];
+  
+  for (const entry of entries) {
+    // Skip hidden files and common ignore patterns
+    if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') {
+      continue;
+    }
+    
+    const entryAbsolutePath = path.join(absolutePath, entry.name);
+    const entryRelativePath = path.join(relativePath, entry.name);
+    
+    // Calculate the path relative to the base directory
+    const displayPath = path.relative(baseRelativePath, entryRelativePath);
+    
+    if (entry.isDirectory()) {
+      allEntries.push({
+        name: displayPath,
+        type: 'directory',
+        path: entryRelativePath,
+      });
+      
+      // Recursively list files in subdirectory
+      const subEntries = await listFilesRecursively(
+        entryAbsolutePath, 
+        workspaceRoot, 
+        entryRelativePath,
+        baseRelativePath
+      );
+      allEntries.push(...subEntries);
+    } else {
+      allEntries.push({
+        name: displayPath,
+        type: 'file',
+        path: entryRelativePath,
+      });
+    }
+  }
+  
+  return allEntries;
 }
 
 async function handleReadFile(workspaceRoot: string, args: any): Promise<string> {

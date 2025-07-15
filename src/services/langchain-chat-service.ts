@@ -562,30 +562,37 @@ export class LangChainChatService {
 
   private formatListFilesResult(parsed: any, args: any): string {
     const path = parsed.path || args.path || '.';
-    let output = `\n\n### 📁 Files in \`${path}\`\n\n`;
+    const isRecursive = parsed.recursive || args.recursive;
+    
+    let output = `\n\n### 📁 Files in \`${path}\`${isRecursive ? ' (recursive)' : ''}\n\n`;
     
     if (parsed.entries && parsed.entries.length > 0) {
-      // Group directories and files
-      const directories = parsed.entries.filter((entry: any) => entry.type === 'directory');
-      const files = parsed.entries.filter((entry: any) => entry.type === 'file');
-      
-      // Show directories first
-      if (directories.length > 0) {
-        output += `**📂 Directories (${directories.length}):**\n`;
-        for (const dir of directories) {
-          output += `- 📁 \`${dir.name}/\`\n`;
+      if (isRecursive) {
+        // For recursive listing, show tree-like structure
+        output += this.formatRecursiveFileTree(parsed.entries);
+      } else {
+        // Non-recursive listing (existing logic)
+        const directories = parsed.entries.filter((entry: any) => entry.type === 'directory');
+        const files = parsed.entries.filter((entry: any) => entry.type === 'file');
+        
+        // Show directories first
+        if (directories.length > 0) {
+          output += `**📂 Directories (${directories.length}):**\n`;
+          for (const dir of directories) {
+            output += `- 📁 \`${dir.name}/\`\n`;
+          }
+          output += '\n';
         }
-        output += '\n';
-      }
-      
-      // Show files
-      if (files.length > 0) {
-        output += `**📄 Files (${files.length}):**\n`;
-        for (const file of files) {
-          const icon = this.getFileIcon(file.name);
-          output += `- ${icon} \`${file.name}\`\n`;
+        
+        // Show files
+        if (files.length > 0) {
+          output += `**📄 Files (${files.length}):**\n`;
+          for (const file of files) {
+            const icon = this.getFileIcon(file.name);
+            output += `- ${icon} \`${file.name}\`\n`;
+          }
+          output += '\n';
         }
-        output += '\n';
       }
       
       output += `*Total: ${parsed.total_count} items*`;
@@ -594,6 +601,31 @@ export class LangChainChatService {
     }
     
     return output;
+  }
+
+  private formatRecursiveFileTree(entries: any[]): string {
+    let output = '';
+    
+    // Group by directory structure
+    const tree: { [key: string]: any[] } = {};
+    
+    for (const entry of entries) {
+      const parts = entry.name.split('/');
+      const depth = parts.length - 1;
+      
+      // Create indentation based on depth
+      const indent = '  '.repeat(depth);
+      const name = parts[parts.length - 1];
+      
+      if (entry.type === 'directory') {
+        output += `${indent}📁 \`${name}/\`\n`;
+      } else {
+        const icon = this.getFileIcon(name);
+        output += `${indent}${icon} \`${name}\`\n`;
+      }
+    }
+    
+    return output + '\n';
   }
 
   private formatReadFileResult(parsed: any, args: any): string {

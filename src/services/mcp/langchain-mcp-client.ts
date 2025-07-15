@@ -23,11 +23,12 @@ class LangChainMcpClient {
       this.tools = [
         {
           name: 'listFiles',
-          description: 'List files and directories in a given path. Use this when asked about project structure, files in a directory, or to explore the workspace.',
+          description: 'List files and directories in a given path. Use this when asked about project structure, files in a directory, or to explore the workspace. Supports recursive listing.',
           inputSchema: {
             type: 'object',
             properties: {
               path: { type: 'string', description: 'Directory path relative to workspace root (use "." for root)' },
+              recursive: { type: 'boolean', description: 'Whether to list files recursively in subdirectories (default: false)' },
             },
             required: ['path'],
           },
@@ -98,6 +99,7 @@ class LangChainMcpClient {
     const toolSchemas: Record<string, any> = {
       listFiles: z.object({
         path: z.string().describe('Directory path relative to workspace root (use "." for root)'),
+        recursive: z.boolean().optional().describe('Whether to list files recursively in subdirectories'),
       }),
       readFile: z.object({
         path: z.string().describe('Relative path from workspace root'),

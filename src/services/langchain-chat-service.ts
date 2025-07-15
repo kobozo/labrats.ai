@@ -177,7 +177,9 @@ export class LangChainChatService {
         if (aiMsg.tool_calls && aiMsg.tool_calls.length > 0) {
           console.log('[LANGCHAIN] Model requested', aiMsg.tool_calls.length, 'tool calls');
           
-          // Execute each tool call
+          // Execute tools and collect results for further processing
+          const toolResults = [];
+          
           for (const toolCall of aiMsg.tool_calls) {
             console.log('[LANGCHAIN] Executing tool:', toolCall.name, 'with args:', toolCall.args);
             
@@ -187,17 +189,32 @@ export class LangChainChatService {
                 const result = await tool.invoke(toolCall.args);
                 console.log('[LANGCHAIN] Tool result length:', result.length);
                 
-                // Format the tool result nicely
-                finalContent += this.formatToolResult(toolCall.name, result, toolCall.args);
+                toolResults.push({
+                  toolCall,
+                  result,
+                  success: true
+                });
               } catch (error) {
                 console.error('[LANGCHAIN] Tool error:', error);
-                finalContent += `\n\n**Tool Error (${toolCall.name}):** ${error instanceof Error ? error.message : 'Unknown error'}`;
+                toolResults.push({
+                  toolCall,
+                  error: error instanceof Error ? error.message : 'Unknown error',
+                  success: false
+                });
               }
             } else {
               console.error('[LANGCHAIN] Tool not found:', toolCall.name);
-              finalContent += `\n\n**Error:** Tool '${toolCall.name}' not found`;
+              toolResults.push({
+                toolCall,
+                error: `Tool '${toolCall.name}' not found`,
+                success: false
+              });
             }
           }
+          
+          // Now we need to decide: should we process these results further or display them?
+          // We'll use the tool results to create a follow-up response
+          finalContent = await this.processToolResults(toolResults, messages, modelWithTools, finalContent);
         } else {
           console.log('[LANGCHAIN] No tool calls requested by model');
         }
@@ -697,6 +714,125 @@ export class LangChainChatService {
     };
     
     return langMap[extension] || 'text';
+  }
+
+  /**
+   * Process tool results intelligently - decide whether to display them or use them for further reasoning
+   */
+  private async processToolResults(
+    toolResults: Array<{
+      toolCall: any;
+      result?: string;
+      error?: string;
+      success: boolean;
+    }>,
+    originalMessages: any[],
+    modelWithTools: any,
+    currentContent: string
+  ): Promise<string> {
+    // Get the original user message to understand the intent
+    const userMessage = originalMessages[originalMessages.length - 1];
+    const userContent = userMessage.content.toLowerCase();
+    
+    // Determine if this is a processing request (summary, analysis, etc.) or a display request
+    const isProcessingRequest = this.isProcessingRequest(userContent);
+    
+    if (isProcessingRequest) {
+      console.log('[LANGCHAIN] Detected processing request, sending tool results back to model for reasoning');
+      return await this.processToolResultsWithModel(toolResults, originalMessages, modelWithTools, currentContent);
+    } else {
+      console.log('[LANGCHAIN] Detected display request, formatting tool results for presentation');
+      return this.formatToolResultsForDisplay(toolResults, currentContent);
+    }
+  }
+
+  /**
+   * Check if the user request requires processing the tool results rather than just displaying them
+   */
+  private isProcessingRequest(userContent: string): boolean {
+    const processingKeywords = [
+      'summarize', 'summary', 'explain', 'analyze', 'analysis', 'describe',
+      'what does', 'what is', 'how does', 'tell me about', 'review',
+      'understand', 'interpret', 'comment on', 'evaluate', 'assess',
+      'break down', 'overview', 'highlights', 'key points', 'main ideas',
+      'purpose', 'function', 'meaning', 'significance', 'implications'
+    ];
+    
+    return processingKeywords.some(keyword => userContent.includes(keyword));
+  }
+
+  /**
+   * Send tool results back to the model for further reasoning and processing
+   */
+  private async processToolResultsWithModel(
+    toolResults: Array<{
+      toolCall: any;
+      result?: string;
+      error?: string;
+      success: boolean;
+    }>,
+    originalMessages: any[],
+    modelWithTools: any,
+    currentContent: string
+  ): Promise<string> {
+    // Create a new message with the tool results as context
+    const toolResultsContext = toolResults.map(tr => {
+      if (tr.success) {
+        return `Tool ${tr.toolCall.name} executed successfully. Result: ${tr.result}`;
+      } else {
+        return `Tool ${tr.toolCall.name} failed with error: ${tr.error}`;
+      }
+    }).join('\n\n');
+
+    // Create a follow-up message to the model with the tool results
+    const followUpMessages = [
+      ...originalMessages,
+      {
+        role: 'assistant',
+        content: `I have executed the necessary tools. Here are the results:\n\n${toolResultsContext}\n\nBased on these results, I'll now provide you with the information you requested.`
+      },
+      {
+        role: 'user',
+        content: 'Please process and respond to my original request using the tool results you just obtained.'
+      }
+    ];
+
+    try {
+      // Send the follow-up request to the model WITHOUT tools to get a processed response
+      const followUpResponse = await modelWithTools.invoke(followUpMessages);
+      
+      // Combine the current content with the processed response
+      return currentContent + '\n\n' + followUpResponse.content.toString();
+    } catch (error) {
+      console.error('[LANGCHAIN] Error in follow-up processing:', error);
+      // Fallback to displaying the tool results
+      return this.formatToolResultsForDisplay(toolResults, currentContent);
+    }
+  }
+
+  /**
+   * Format tool results for direct display (when user wants to see the raw results)
+   */
+  private formatToolResultsForDisplay(
+    toolResults: Array<{
+      toolCall: any;
+      result?: string;
+      error?: string;
+      success: boolean;
+    }>,
+    currentContent: string
+  ): string {
+    let finalContent = currentContent;
+    
+    for (const toolResult of toolResults) {
+      if (toolResult.success) {
+        finalContent += this.formatToolResult(toolResult.toolCall.name, toolResult.result!, toolResult.toolCall.args);
+      } else {
+        finalContent += `\n\n**Tool Error (${toolResult.toolCall.name}):** ${toolResult.error}`;
+      }
+    }
+    
+    return finalContent;
   }
 }
 

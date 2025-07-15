@@ -141,8 +141,10 @@ export class LangChainChatService {
         console.log('[LANGCHAIN] Binding', mcpTools.length, 'tools to model...');
         console.log('[LANGCHAIN] Tools:', mcpTools.map(t => t.name));
         
-        // Bind tools to the model
-        const modelWithTools = chatModel.bindTools(mcpTools);
+        // Bind tools to the model with explicit tool usage instruction
+        const modelWithTools = chatModel.bindTools(mcpTools, {
+          tool_choice: "auto", // Let the model decide when to use tools
+        });
         
         // Invoke the model
         const aiMsg = await modelWithTools.invoke(messages);

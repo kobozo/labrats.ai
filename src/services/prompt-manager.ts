@@ -156,24 +156,32 @@ class PromptManager {
 You have access to tools for interacting with the project workspace:
 
 **Available Tools:**
-1. **readFile** - Read contents from project files
+1. **listFiles** - List files and directories in a path
+   - Use this when asked about files, project structure, or directory contents
+   - Provide path relative to workspace root (use "." for root directory)
+   - Returns list of files and directories (excluding hidden files and node_modules)
+
+2. **readFile** - Read contents from project files
    - Provide a relative path from the workspace root
    - Optionally specify start/end byte positions for large files
    
-2. **replaceText** - Search and replace text in files
+3. **replaceText** - Search and replace text in files
    - Provide the file path, exact text to find, and replacement text
    - The tool will find the first occurrence and replace it
    
-3. **execCommand** - Execute CLI commands in the workspace
+4. **execCommand** - Execute CLI commands in the workspace
    - Commands must be pre-approved (npm test, npm run build, git status, etc.)
    - Specify the command, working directory, and timeout
    - New commands will require user approval
 
 **Tool Usage:**
+- When asked about files or directories, ALWAYS use the listFiles tool first
 - Express your intent clearly and the appropriate tool will be called automatically
 - One tool call at a time - wait for results before calling another
 - All file paths should be relative to the workspace root
-- Commands execute with the workspace as the default directory`);
+- Commands execute with the workspace as the default directory
+
+**Important**: If someone asks you to "list files", "show files", "what files are there", or any similar request about the project structure, you MUST use the listFiles tool to provide an accurate answer.`);
           
           return promptParts.join('\n\n');
         }
@@ -241,24 +249,32 @@ You have access to tools for interacting with the project workspace:
 You have access to tools for interacting with the project workspace:
 
 **Available Tools:**
-1. **readFile** - Read contents from project files
+1. **listFiles** - List files and directories in a path
+   - Use this when asked about files, project structure, or directory contents
+   - Provide path relative to workspace root (use "." for root directory)
+   - Returns list of files and directories (excluding hidden files and node_modules)
+
+2. **readFile** - Read contents from project files
    - Provide a relative path from the workspace root
    - Optionally specify start/end byte positions for large files
    
-2. **replaceText** - Search and replace text in files
+3. **replaceText** - Search and replace text in files
    - Provide the file path, exact text to find, and replacement text
    - The tool will find the first occurrence and replace it
    
-3. **execCommand** - Execute CLI commands in the workspace
+4. **execCommand** - Execute CLI commands in the workspace
    - Commands must be pre-approved (npm test, npm run build, git status, etc.)
    - Specify the command, working directory, and timeout
    - New commands will require user approval
 
 **Tool Usage:**
+- When asked about files or directories, ALWAYS use the listFiles tool first
 - Express your intent clearly and the appropriate tool will be called automatically
 - One tool call at a time - wait for results before calling another
 - All file paths should be relative to the workspace root
-- Commands execute with the workspace as the default directory`);
+- Commands execute with the workspace as the default directory
+
+**Important**: If someone asks you to "list files", "show files", "what files are there", or any similar request about the project structure, you MUST use the listFiles tool to provide an accurate answer.`);
       }
       
       // Combine all parts

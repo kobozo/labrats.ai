@@ -22,6 +22,17 @@ class LangChainMcpClient {
       // Create tools directly for LangChain
       this.tools = [
         {
+          name: 'listFiles',
+          description: 'List files and directories in a given path. Use this when asked about project structure, files in a directory, or to explore the workspace.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'Directory path relative to workspace root (use "." for root)' },
+            },
+            required: ['path'],
+          },
+        },
+        {
           name: 'readFile',
           description: 'Read contents from a project file',
           inputSchema: {
@@ -85,6 +96,9 @@ class LangChainMcpClient {
 
     // Convert tool schemas to Zod schemas
     const toolSchemas: Record<string, any> = {
+      listFiles: z.object({
+        path: z.string().describe('Directory path relative to workspace root (use "." for root)'),
+      }),
       readFile: z.object({
         path: z.string().describe('Relative path from workspace root'),
         start: z.number().optional().describe('Start byte position'),

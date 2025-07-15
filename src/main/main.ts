@@ -104,6 +104,8 @@ const store: any = createSafeStore();
 
 const windows = new Map<number, BrowserWindow>();
 const windowProjects = new Map<number, string>();
+// Make windowProjects globally accessible for MCP handlers
+global.windowProjects = windowProjects;
 const configManager = new ConfigManager();
 const gitServices = new Map<number, GitService>();
 const terminalService = TerminalService.getInstance();
@@ -618,10 +620,12 @@ ipcMain.handle('get-project-path', async (event) => {
     const projectPath = windowProjects.get(window.id);
     if (projectPath) {
       // Ensure MCP handlers are set up for this project
+      console.log('[MAIN] get-project-path called, setting up MCP handlers for:', projectPath);
       setupMcpIpcHandlers(projectPath);
       return projectPath;
     }
   }
+  console.log('[MAIN] get-project-path called but no project path found');
   return process.cwd();
 });
 

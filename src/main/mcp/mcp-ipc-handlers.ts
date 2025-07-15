@@ -11,6 +11,11 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { commandApprovalManager } from './command-approval';
 
+// Declare global to access windowProjects from main.ts
+declare global {
+  var windowProjects: Map<number, string>;
+}
+
 const execAsync = promisify(exec);
 
 // Track if handlers are already set up
@@ -20,10 +25,11 @@ let currentWorkspaceRoot: string | null = null;
 export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
   // Update the workspace root
   currentWorkspaceRoot = workspaceRoot;
+  console.log('[MCP-IPC] Setup called with workspace root:', workspaceRoot);
   
   // Only register handlers once
   if (handlersRegistered) {
-    console.log('[MCP-IPC] Handlers already registered, updating workspace root only');
+    console.log('[MCP-IPC] Handlers already registered, updating workspace root to:', workspaceRoot);
     return;
   }
   
@@ -32,6 +38,24 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
   
   // Handle MCP tool calls from renderer process
   ipcMain.handle('mcp:callTool', async (event, toolName: string, args: any) => {
+    console.log(`[MCP-IPC] Tool call: ${toolName}, current workspace root:`, currentWorkspaceRoot);
+    
+    // If no workspace root is set, try to get it from the window
+    if (!currentWorkspaceRoot) {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (window) {
+        // Get the window ID and look up its project path
+        const windowProjects = global.windowProjects as Map<number, string>;
+        if (windowProjects) {
+          const projectPath = windowProjects.get(window.id);
+          if (projectPath) {
+            currentWorkspaceRoot = projectPath;
+            console.log(`[MCP-IPC] Retrieved workspace root from window:`, projectPath);
+          }
+        }
+      }
+    }
+    
     if (!currentWorkspaceRoot) {
       throw new Error('No workspace root set');
     }

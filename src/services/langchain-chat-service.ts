@@ -454,6 +454,7 @@ export class LangChainChatService {
 
   // Set current project path for state management
   async setCurrentProject(projectPath: string | null): Promise<void> {
+    console.log('[LANGCHAIN] Setting current project:', projectPath);
     this.currentProjectPath = projectPath;
     if (projectPath) {
       // Load conversation history from chat history manager
@@ -467,6 +468,10 @@ export class LangChainChatService {
         providerId: msg.providerId,
         modelId: msg.modelId
       }));
+      
+      // Give MCP service time to initialize if it hasn't already
+      console.log('[LANGCHAIN] Waiting for MCP service initialization...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } else {
       this.conversationHistory = [];
     }

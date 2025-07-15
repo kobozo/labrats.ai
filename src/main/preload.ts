@@ -184,7 +184,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // MCP API
   mcp: {
-    callTool: (toolName: string, args: any) => ipcRenderer.invoke('mcp-call-tool', toolName, args),
-    getStatus: () => ipcRenderer.invoke('mcp-status'),
+    callTool: (toolName: string, args: any) => ipcRenderer.invoke('mcp:callTool', toolName, args),
+    requestCommandApproval: (cmd: string, cwd: string) => ipcRenderer.invoke('mcp:requestCommandApproval', cmd, cwd),
+    getAllowedCommands: () => ipcRenderer.invoke('mcp:getAllowedCommands'),
   },
 });

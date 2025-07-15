@@ -151,16 +151,29 @@ class PromptManager {
           promptParts = [switchySingleAgentPrompt.trim()];
           
           // Add MCP tools for single-agent mode too
-          promptParts.push(`## Available Tools
+          promptParts.push(`## IDE Workspace Tools
 
-You have access to tools for exploring the project. When you need to explore files or understand the project structure, use the available tools. The system will automatically call the appropriate tools based on your needs.
+You have access to tools for interacting with the project workspace:
 
-Available capabilities:
-- List files and directories in the project
-- Navigate through the project structure
-- Filter files by patterns
+**Available Tools:**
+1. **readFile** - Read contents from project files
+   - Provide a relative path from the workspace root
+   - Optionally specify start/end byte positions for large files
+   
+2. **replaceText** - Search and replace text in files
+   - Provide the file path, exact text to find, and replacement text
+   - The tool will find the first occurrence and replace it
+   
+3. **execCommand** - Execute CLI commands in the workspace
+   - Commands must be pre-approved (npm test, npm run build, git status, etc.)
+   - Specify the command, working directory, and timeout
+   - New commands will require user approval
 
-Simply express your intent naturally, and the tools will be invoked automatically.`);
+**Tool Usage:**
+- Express your intent clearly and the appropriate tool will be called automatically
+- One tool call at a time - wait for results before calling another
+- All file paths should be relative to the workspace root
+- Commands execute with the workspace as the default directory`);
           
           return promptParts.join('\n\n');
         }
@@ -223,16 +236,29 @@ Simply express your intent naturally, and the tools will be invoked automaticall
       
       // 4. Add MCP tools information (for all agents except git-commit-generator)
       if (agentId !== 'git-commit-generator') {
-        promptParts.push(`## Available Tools
+        promptParts.push(`## IDE Workspace Tools
 
-You have access to tools for exploring the project. When you need to explore files or understand the project structure, simply express your intent and the appropriate tools will be called automatically.
+You have access to tools for interacting with the project workspace:
 
-Available capabilities:
-- List files and directories in the project
-- Navigate through the project structure
-- Filter files by patterns
+**Available Tools:**
+1. **readFile** - Read contents from project files
+   - Provide a relative path from the workspace root
+   - Optionally specify start/end byte positions for large files
+   
+2. **replaceText** - Search and replace text in files
+   - Provide the file path, exact text to find, and replacement text
+   - The tool will find the first occurrence and replace it
+   
+3. **execCommand** - Execute CLI commands in the workspace
+   - Commands must be pre-approved (npm test, npm run build, git status, etc.)
+   - Specify the command, working directory, and timeout
+   - New commands will require user approval
 
-The system handles tool invocation automatically based on your needs.`);
+**Tool Usage:**
+- Express your intent clearly and the appropriate tool will be called automatically
+- One tool call at a time - wait for results before calling another
+- All file paths should be relative to the workspace root
+- Commands execute with the workspace as the default directory`);
       }
       
       // Combine all parts

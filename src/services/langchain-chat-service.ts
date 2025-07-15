@@ -4,7 +4,7 @@ import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from '@langchain/
 import { LLMResult } from '@langchain/core/outputs';
 import { getAIProviderManager } from './ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager-renderer';
-import { createMcpTools, isMcpAvailable } from './mcp/langchain-mcp-tools';
+import { langchainMcpClient } from './mcp/langchain-mcp-client';
 
 export interface LangChainChatMessage {
   id: string;
@@ -116,33 +116,25 @@ export class LangChainChatService {
       this.conversationHistory.push(userMessage);
       await this.persistConversationHistory();
 
-      // Check if MCP is available and bind tools if needed
+      // Check if MCP client is connected and get tools
       let processedContent = '';
       let toolsAvailable = false;
       let mcpTools: any[] = [];
       
-      console.log('[LANGCHAIN] Checking MCP availability...');
+      console.log('[LANGCHAIN] Checking MCP client connection...');
       
-      // Check multiple times with a small delay to handle initialization timing
-      let mcpAvailable = await isMcpAvailable();
-      if (!mcpAvailable && this.currentProjectPath) {
-        console.log('[LANGCHAIN] MCP not ready yet, waiting 500ms...');
-        await new Promise(resolve => setTimeout(resolve, 500));
-        mcpAvailable = await isMcpAvailable();
-      }
-      
-      if (mcpAvailable) {
-        console.log('[LANGCHAIN] MCP is available, creating tools...');
-        mcpTools = createMcpTools();
+      if (langchainMcpClient.isConnected()) {
+        console.log('[LANGCHAIN] MCP client connected, getting tools...');
+        mcpTools = langchainMcpClient.getLangChainTools();
         toolsAvailable = mcpTools.length > 0;
-        console.log('[LANGCHAIN] Tools created:', mcpTools.length, 'tools available');
+        console.log('[LANGCHAIN] Tools available:', mcpTools.map(t => t.name));
         
         // Check if model supports tools
         if (modelId === 'gpt-4o-mini' || modelId === 'gpt-3.5-turbo') {
           console.warn('[LANGCHAIN] Warning: Model', modelId, 'may have limited tool support. Consider using gpt-4-turbo or gpt-4o for better tool calling.');
         }
       } else {
-        console.log('[LANGCHAIN] MCP is not available after retry');
+        console.log('[LANGCHAIN] MCP client not connected');
       }
       
       if (toolsAvailable) {
@@ -457,6 +449,13 @@ export class LangChainChatService {
     console.log('[LANGCHAIN] Setting current project:', projectPath);
     this.currentProjectPath = projectPath;
     if (projectPath) {
+      // Connect MCP client to the workspace
+      try {
+        await langchainMcpClient.connect(projectPath);
+      } catch (error) {
+        console.error('[LANGCHAIN] Failed to connect MCP client:', error);
+      }
+      
       // Load conversation history from chat history manager
       const persistedHistory = await chatHistoryManager.loadChatHistory(projectPath);
       this.conversationHistory = persistedHistory.map(msg => ({
@@ -468,12 +467,9 @@ export class LangChainChatService {
         providerId: msg.providerId,
         modelId: msg.modelId
       }));
-      
-      // Give MCP service time to initialize if it hasn't already
-      console.log('[LANGCHAIN] Waiting for MCP service initialization...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
     } else {
       this.conversationHistory = [];
+      await langchainMcpClient.disconnect();
     }
   }
 

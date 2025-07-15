@@ -10,7 +10,7 @@ import { LABRATS_CONFIG_DIR } from './constants';
 import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
 import { getAIProviderManager } from '../services/ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager';
-import { initializeMcpService, setupMcpHandlers } from './mcp-service';
+import { setupMcpIpcHandlers } from './mcp/mcp-ipc-handlers';
 
 app.name = 'LabRats.AI';
 
@@ -164,10 +164,8 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
       setDexyProjectPath(projectPath);
       // Initialize TODO auto-scanner for this project
       todoAutoScanner.startScanning(projectPath);
-      // Initialize MCP server for this project
-      initializeMcpService(projectPath).catch(err => 
-        console.error('[MAIN] Failed to initialize MCP:', err)
-      );
+      // Set up MCP IPC handlers
+      setupMcpIpcHandlers(projectPath);
     }
   });
 
@@ -295,9 +293,6 @@ function createMenu(window?: BrowserWindow): void {
               initializeGitServiceForWindow(targetWindow.id, projectPath);
               setDexyProjectPath(projectPath);
               todoAutoScanner.startScanning(projectPath);
-              initializeMcpService(projectPath).catch(err => 
-                console.error('[MAIN] Failed to initialize MCP:', err)
-              );
               
               updateRecentProjects(projectPath);
               saveOpenWindows();
@@ -429,9 +424,6 @@ function updateRecentProjectsMenu(): void {
             initializeGitServiceForWindow(focusedWindow.id, project.path);
             setDexyProjectPath(project.path);
             todoAutoScanner.startScanning(project.path);
-            initializeMcpService(project.path).catch(err => 
-              console.error('[MAIN] Failed to initialize MCP:', err)
-            );
             
             updateRecentProjects(project.path);
             saveOpenWindows();
@@ -475,9 +467,6 @@ ipcMain.handle('open-folder', async (event) => {
       initializeGitServiceForWindow(requestingWindow.id, projectPath);
       setDexyProjectPath(projectPath);
       todoAutoScanner.startScanning(projectPath);
-      initializeMcpService(projectPath).catch(err => 
-        console.error('[MAIN] Failed to initialize MCP:', err)
-      );
     }
 
     updateRecentProjects(projectPath);
@@ -1625,10 +1614,7 @@ import { registerDexyHandlers, setDexyProjectPath } from './dexy-ipc-handlers';
 console.log('[MAIN] Registering Dexy handlers...');
 registerDexyHandlers();
 
-// MCP IPC handlers
-console.log('[MAIN] Setting up MCP handlers...');
-setupMcpHandlers();
-console.log('[MAIN] MCP handlers registered successfully');
+// MCP server is now started when projects are opened
 
 // TODO Scanning IPC handlers
 import { setupTodoIpcHandlers } from './todo-ipc-handlers';

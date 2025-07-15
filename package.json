@@ -81,9 +81,9 @@
   "dependencies": {
     "@langchain/anthropic": "^0.3.24",
     "@langchain/core": "^0.3.62",
-    "@langchain/mcp-adapters": "^0.5.3",
     "@langchain/openai": "^0.5.18",
     "@modelcontextprotocol/sdk": "^1.15.1",
+    "@modelcontextprotocol/types": "^0.2.0",
     "@monaco-editor/react": "^4.7.0",
     "@tiptap/extension-code-block-lowlight": "^2.26.0",
     "@tiptap/extension-link": "^2.26.0",

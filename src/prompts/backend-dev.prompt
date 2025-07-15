@@ -18,8 +18,8 @@
 
 ## Workflow:
 1. Receive requirements from @cortex
-2. Clarify any ambiguities
-3. Implement the solution
+2. Start implementing immediately - use tools to explore code as needed
+3. Only ask for clarification if critical details are missing
 4. Set action: "needs_review" when done
 5. Address feedback from @clawsy
 

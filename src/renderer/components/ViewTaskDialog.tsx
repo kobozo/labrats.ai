@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, GitBranch, AlertCircle, Calendar, User, Tag, Trash2, Search, ExternalLink, FileCode, Code } from 'lucide-react';
+import { X, GitBranch, AlertCircle, Calendar, User, Tag, Trash2, Search, ExternalLink, FileCode, Code, MessageSquare, Sparkles } from 'lucide-react';
 import { Task } from '../../types/kanban';
 import { workflowStages } from '../../config/workflow-stages';
 import { agents } from '../../config/agents';
@@ -58,6 +58,27 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
       detail: { filePath, lineNumber }
     });
     window.dispatchEvent(event);
+    // Close this dialog
+    onClose();
+  };
+
+  const handleSolveTask = () => {
+    // Create a task reference link
+    const taskLink = `[[TASK:${task.id}|${task.title}]]`;
+    
+    // Create the initial message for the chat
+    const message = `Please help me solve this task: ${taskLink}\n\n${task.description}`;
+    
+    // Dispatch event to open chat with pre-filled message
+    const event = new CustomEvent('open-chat-with-message', {
+      detail: { 
+        message,
+        taskId: task.id,
+        assignee: task.assignee
+      }
+    });
+    window.dispatchEvent(event);
+    
     // Close this dialog
     onClose();
   };
@@ -144,6 +165,14 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
             )}
           </div>
           <div className="flex items-center space-x-2">
+            <button
+              onClick={handleSolveTask}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors flex items-center space-x-2"
+              title={`Ask ${task.assignee} to solve this task`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Solve</span>
+            </button>
             <button
               onClick={onEdit}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"

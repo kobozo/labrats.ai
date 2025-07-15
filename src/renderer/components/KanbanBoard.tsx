@@ -44,6 +44,23 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
     todoService.setCurrentProject(currentFolder);
   }, [currentFolder]);
 
+  // Listen for open task view events from chat
+  useEffect(() => {
+    const handleOpenTaskView = (event: CustomEvent) => {
+      const { taskId } = event.detail;
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        setSelectedTask(task);
+        setShowViewDialog(true);
+      }
+    };
+
+    window.addEventListener('open-task-view', handleOpenTaskView as EventListener);
+    return () => {
+      window.removeEventListener('open-task-view', handleOpenTaskView as EventListener);
+    };
+  }, [tasks]);
+
   // Load tasks on component mount and when currentFolder changes
   useEffect(() => {
     if (currentFolder) {

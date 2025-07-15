@@ -52,6 +52,7 @@ function App() {
   const [tokenUsage, setTokenUsage] = useState<{ promptTokens: number; completionTokens: number; totalTokens: number }>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
   const [labRatsBackendOnline, setLabRatsBackendOnline] = useState<boolean>(false);
   const [navigateToFile, setNavigateToFile] = useState<{ filePath: string; lineNumber?: number } | null>(null);
+  const [chatMessage, setChatMessage] = useState<{ message: string; taskId?: string; assignee?: string } | null>(null);
 
   // Set initial view based on whether a folder is loaded
   useEffect(() => {
@@ -117,6 +118,20 @@ function App() {
     window.addEventListener('navigate-to-file', handleNavigateToFile as EventListener);
     return () => {
       window.removeEventListener('navigate-to-file', handleNavigateToFile as EventListener);
+    };
+  }, []);
+
+  // Listen for open chat with message events
+  useEffect(() => {
+    const handleOpenChatWithMessage = (event: CustomEvent) => {
+      const { message, taskId, assignee } = event.detail;
+      setChatMessage({ message, taskId, assignee });
+      setActiveView('chat'); // Switch to chat
+    };
+
+    window.addEventListener('open-chat-with-message', handleOpenChatWithMessage as EventListener);
+    return () => {
+      window.removeEventListener('open-chat-with-message', handleOpenChatWithMessage as EventListener);
     };
   }, []);
 
@@ -511,6 +526,8 @@ function App() {
                   onCodeReview={() => showNotification('info', 'Code review initiated')} 
                   currentFolder={currentFolder}
                   onTokenUsageChange={handleTokenUsageChange}
+                  initialMessage={chatMessage}
+                  onMessageSent={() => setChatMessage(null)}
                 />
               </ErrorBoundary>
             </div>

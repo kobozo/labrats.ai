@@ -117,10 +117,14 @@ export class LangChainChatService {
       // Get response from LangChain
       const response = await chatModel.invoke(messages);
       
+      // Process MCP tool calls in the response
+      let processedContent = response.content.toString();
+      processedContent = await this.processMcpToolCalls(processedContent);
+      
       const assistantMessage: LangChainChatMessage = {
         id: this.generateId(),
         role: 'assistant',
-        content: response.content.toString(),
+        content: processedContent,
         timestamp: new Date(),
         agentId: options.agentId,
         providerId,
@@ -376,6 +380,49 @@ export class LangChainChatService {
   // Clear session token usage
   clearSessionTokenUsage(): void {
     this.sessionTokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
+  }
+
+  private async processMcpToolCalls(content: string): Promise<string> {
+    if (typeof window === 'undefined' || !window.electronAPI?.mcp) {
+      return content;
+    }
+
+    // Look for MCP tool calls in the format [[mcp:tool_name {args}]]
+    const mcpPattern = /\[\[mcp:(\w+)\s*({[^}]+})\]\]/g;
+    let processedContent = content;
+    let match;
+
+    while ((match = mcpPattern.exec(content)) !== null) {
+      const toolName = match[1];
+      const argsStr = match[2];
+      
+      try {
+        const args = JSON.parse(argsStr);
+        console.log(`[LANGCHAIN] Processing MCP tool call: ${toolName}`, args);
+        
+        const response = await window.electronAPI.mcp.callTool(toolName, args);
+        
+        if (response.success && response.result?.content && response.result.content.length > 0) {
+          const toolResult = response.result.content[0].text || 'No result';
+          
+          // Replace the tool call with the result
+          processedContent = processedContent.replace(
+            match[0],
+            `\n\n**Tool Result (${toolName}):**\n\`\`\`json\n${toolResult}\n\`\`\`\n`
+          );
+        } else if (!response.success) {
+          throw new Error(response.error || 'Unknown error');
+        }
+      } catch (error) {
+        console.error(`[LANGCHAIN] Error processing MCP tool ${toolName}:`, error);
+        processedContent = processedContent.replace(
+          match[0],
+          `\n\n**Tool Error (${toolName}):** ${error instanceof Error ? error.message : 'Unknown error'}\n`
+        );
+      }
+    }
+
+    return processedContent;
   }
 
   // Private method to persist conversation history

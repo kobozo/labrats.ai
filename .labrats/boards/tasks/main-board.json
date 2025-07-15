@@ -366,5 +366,97 @@
         "content": "Implement search functionality when available"
       }
     ]
+  },
+  {
+    "id": "TASK-1752575271905464",
+    "title": "TODO: Scanning IPC handlers",
+    "description": "**Code TODO**: Scanning IPC handlers\n\n**Location**: src/main/main.ts:1633\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  1631: console.log('[MAIN] Dexy handlers registered successfully');\n  1632: \n> 1633: // TODO Scanning IPC handlers\n  1634: import { setupTodoIpcHandlers } from './todo-ipc-handlers';\n  1635: import { todoAutoScanner } from '../services/todo-auto-scanner';\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T10:27:51.905Z",
+    "updatedAt": "2025-07-15T10:27:51.905Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-4e760c2e",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/main/main.ts",
+        "lineNumber": 1633,
+        "content": "Scanning IPC handlers"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752575271906830",
+    "title": "TODO: Implement search functionality when available",
+    "description": "**Code TODO**: Implement search functionality when available\n\n**Location**: src/renderer/components/ViewTaskDialog.tsx:97\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n   95:       }\n   96: \n>  97:       // TODO: Implement search functionality when available\n   98:       // For now, we'll skip similar tasks\n   99:       console.log('[ViewTaskDialog] Search functionality not available yet');\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T10:27:51.906Z",
+    "updatedAt": "2025-07-15T10:27:51.906Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-17453960",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/ViewTaskDialog.tsx",
+        "lineNumber": 97,
+        "content": "Implement search functionality when available"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752575271906851",
+    "title": "TODO: Ziggy and Scratchy will be created only when they decide to join",
+    "description": "**Code TODO**: Ziggy and Scratchy will be created only when they decide to join\n\n**Location**: src/services/agent-message-bus.ts:148\n**Type**: NOTE\n**Priority**: low\n\n**Context**:\n```\n  146:     await this.createAgentContext('cortex');\n  147:     \n> 148:     // NOTE: Ziggy and Scratchy will be created only when they decide to join\n  149:     // through the AI decision process, not automatically\n  150:     \n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T10:27:51.906Z",
+    "updatedAt": "2025-07-15T10:27:51.906Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-2c3e99c8",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/services/agent-message-bus.ts",
+        "lineNumber": 148,
+        "content": "Ziggy and Scratchy will be created only when they decide to join"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752575271907533",
+    "title": "TODO: report or issue detection",
+    "description": "**Code TODO**: report or issue detection\n\n**Location**: src/services/agent-message-bus.ts:1571\n**Type**: BUG\n**Priority**: low\n\n**Context**:\n```\n  1569:     }\n  1570: \n> 1571:     // Bug report or issue detection\n  1572:     if (this.isBugReport(messageContent, senderAgent, receivingAgent)) {\n  1573:       return `This message reports a bug or issue from ${senderAgent.name}. You should investigate and fix the reported problem. Acknowledge the issue and provide a solution or workaround.`;\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-15T10:27:51.907Z",
+    "updatedAt": "2025-07-15T10:27:51.907Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-4c8f3f92",
+    "todoType": "BUG",
+    "fileReferences": [
+      {
+        "filePath": "src/services/agent-message-bus.ts",
+        "lineNumber": 1571,
+        "content": "report or issue detection"
+      }
+    ]
   }
 ]

@@ -30,7 +30,8 @@ import {
   Folder,
   Terminal,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Code
 } from 'lucide-react';
 import './App.css';
 

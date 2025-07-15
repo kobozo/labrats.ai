@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Task, WorkflowStage } from '../types/kanban';
-import { TodoItem, TodoScanResult } from './todo-scanner-service';
-import { kanbanService } from './kanban-service';
+import { TodoItem } from './todo-scanner-service';
+import { KanbanStorageService } from '../main/kanban-storage-service';
 
 export interface TodoTaskMapping {
   todoId: string;
@@ -87,7 +87,7 @@ export class TodoTaskManager {
         autoScan: true,
         createTasks: true,
         defaultPriority: 'medium',
-        defaultAssignee: 'Developer',
+        defaultAssignee: 'Cortex',
         taskPrefix: 'TODO'
       }
     };
@@ -128,13 +128,20 @@ export class TodoTaskManager {
     
     const config = await this.loadConfig(projectPath);
     const createdTasks: Task[] = [];
-    const newMappings: TodoTaskMapping[] = [];
+
+    // Get existing tasks from the board to check for duplicates
+    const kanbanStorage = new KanbanStorageService(projectPath);
+    const existingTasks = await kanbanStorage.getTasks('main-board');
+    const existingTodoIds = new Set(
+      existingTasks
+        .filter(task => task.todoId)
+        .map(task => task.todoId)
+    );
 
     for (const todo of todos) {
       try {
-        // Check if task already exists
-        const existingMapping = config.mappings.find(m => m.todoId === todo.id);
-        if (existingMapping) {
+        // Check if task already exists for this TODO
+        if (existingTodoIds.has(todo.id)) {
           console.log('[TODO-TASK-MANAGER] Task already exists for TODO:', todo.id);
           continue;
         }
@@ -142,27 +149,14 @@ export class TodoTaskManager {
         // Create task
         const task = await this.createTaskFromTodo(todo, config, projectPath);
         createdTasks.push(task);
-
-        // Create mapping
-        const mapping: TodoTaskMapping = {
-          todoId: todo.id,
-          taskId: task.id,
-          filePath: todo.filePath,
-          lineNumber: todo.lineNumber,
-          createdAt: new Date().toISOString(),
-          lastSynced: new Date().toISOString(),
-          isValid: true
-        };
-
-        newMappings.push(mapping);
+        
         console.log('[TODO-TASK-MANAGER] Created task', task.id, 'for TODO:', todo.id);
       } catch (error) {
         console.error('[TODO-TASK-MANAGER] Error creating task for TODO:', todo.id, error);
       }
     }
 
-    // Update config with new mappings
-    config.mappings.push(...newMappings);
+    // Update last scan timestamp
     config.lastScan = new Date().toISOString();
     await this.saveConfig(projectPath, config);
 
@@ -191,17 +185,26 @@ export class TodoTaskManager {
       description,
       assignee: config.settings.defaultAssignee,
       priority,
-      type: this.mapTodoTypeToTaskType(todo.type) as Task['type'],
+      type: 'todo',
       status: 'backlog' as WorkflowStage,
       createdBy: 'user',
       primaryRats: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      projectPath
+      projectPath,
+      // TODO-specific metadata
+      todoId: todo.id,
+      todoType: todo.type,
+      fileReferences: [{
+        filePath: todo.filePath,
+        lineNumber: todo.lineNumber,
+        content: todo.content
+      }]
     };
 
     // Save task to kanban service
-    await kanbanService.updateTask('main-board', task);
+    const kanbanStorage = new KanbanStorageService(projectPath);
+    await kanbanStorage.updateTask('main-board', task);
     
     return task;
   }
@@ -319,19 +322,29 @@ export class TodoTaskManager {
     tasksByPriority: Record<string, number>;
   }> {
     const config = await this.loadConfig(projectPath);
-    const validMappings = config.mappings.filter(m => m.isValid);
-    const invalidMappings = config.mappings.filter(m => !m.isValid);
+    
+    // Get all TODO tasks from the board
+    const kanbanStorage = new KanbanStorageService(projectPath);
+    const allTasks = await kanbanStorage.getTasks('main-board');
+    const todoTasks = allTasks.filter(task => task.type === 'todo' && task.todoId);
     
     const tasksByType: Record<string, number> = {};
     const tasksByPriority: Record<string, number> = {};
     
-    // We would need to get the actual tasks to compute these stats
-    // For now, return basic stats
+    // Count tasks by TODO type and priority
+    for (const task of todoTasks) {
+      if (task.todoType) {
+        tasksByType[task.todoType] = (tasksByType[task.todoType] || 0) + 1;
+      }
+      if (task.priority) {
+        tasksByPriority[task.priority] = (tasksByPriority[task.priority] || 0) + 1;
+      }
+    }
     
     return {
-      totalMappings: config.mappings.length,
-      validMappings: validMappings.length,
-      invalidMappings: invalidMappings.length,
+      totalMappings: todoTasks.length,
+      validMappings: todoTasks.length, // All tasks in board are valid
+      invalidMappings: 0, // No invalid mappings in new structure
       lastScan: config.lastScan,
       tasksByType,
       tasksByPriority

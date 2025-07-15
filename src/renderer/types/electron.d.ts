@@ -212,6 +212,22 @@ export interface DexyAPI {
   getVectorizedTaskIds: () => Promise<{ success: boolean; taskIds: string[]; error?: string }>;
 }
 
+export interface TodoAPI {
+  scanProject: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  scanNew: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  validate: (todoId: string, projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getStats: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  createTasks: (projectPath: string, todoIds?: string[]) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getMappings: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getMappingByTodo: (todoId: string, projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getMappingByTask: (taskId: string, projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  removeMapping: (todoId: string, projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  getSettings: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  updateSettings: (projectPath: string, settings: any) => Promise<{ success: boolean; error?: string }>;
+  cleanupInvalid: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  sync: (projectPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+}
+
 export interface ProjectStateAPI {
   get: (key: string) => Promise<any>;
   set: (key: string, value: any) => Promise<boolean>;
@@ -240,6 +256,7 @@ export interface ElectronAPI {
   chatHistory?: ChatHistoryAPI;
   kanban?: KanbanAPI;
   dexy?: DexyAPI;
+  todo?: TodoAPI;
 }
 
 declare global {

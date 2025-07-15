@@ -161,6 +161,8 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
       window.webContents.send('folder-opened', projectPath);
       // Initialize Dexy for this project
       setDexyProjectPath(projectPath);
+      // Initialize TODO auto-scanner for this project
+      todoAutoScanner.startScanning(projectPath);
     }
   });
 
@@ -284,11 +286,10 @@ function createMenu(window?: BrowserWindow): void {
               targetWindow.webContents.send('folder-opened', projectPath);
               windowProjects.set(targetWindow.id, projectPath);
               
-              // Initialize or update git service for this window
+              // Initialize services for this window
               initializeGitServiceForWindow(targetWindow.id, projectPath);
-              
-              // Initialize Dexy for this project
               setDexyProjectPath(projectPath);
+              todoAutoScanner.startScanning(projectPath);
               
               updateRecentProjects(projectPath);
               saveOpenWindows();
@@ -416,11 +417,10 @@ function updateRecentProjectsMenu(): void {
             focusedWindow.webContents.send('folder-opened', project.path);
             windowProjects.set(focusedWindow.id, project.path);
             
-            // Initialize or update git service for this window
+            // Initialize services for this window
             initializeGitServiceForWindow(focusedWindow.id, project.path);
-            
-            // Initialize Dexy for this project
             setDexyProjectPath(project.path);
+            todoAutoScanner.startScanning(project.path);
             
             updateRecentProjects(project.path);
             saveOpenWindows();
@@ -460,11 +460,10 @@ ipcMain.handle('open-folder', async (event) => {
       requestingWindow.webContents.send('folder-opened', projectPath);
       windowProjects.set(requestingWindow.id, projectPath);
       
-      // Initialize or update git service for this window
+      // Initialize services for this window
       initializeGitServiceForWindow(requestingWindow.id, projectPath);
-      
-      // Initialize Dexy for this project
       setDexyProjectPath(projectPath);
+      todoAutoScanner.startScanning(projectPath);
     }
 
     updateRecentProjects(projectPath);
@@ -1589,6 +1588,7 @@ console.log('[MAIN] Dexy handlers registered successfully');
 
 // TODO Scanning IPC handlers
 import { setupTodoIpcHandlers } from './todo-ipc-handlers';
+import { todoAutoScanner } from '../services/todo-auto-scanner';
 console.log('[MAIN] Registering TODO handlers...');
 setupTodoIpcHandlers();
 console.log('[MAIN] TODO handlers registered successfully');

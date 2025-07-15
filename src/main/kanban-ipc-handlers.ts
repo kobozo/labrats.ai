@@ -22,68 +22,68 @@ export function setupKanbanHandlers(projectPath: string) {
   handlersRegistered = true;
 
   // Board operations
-  ipcMain.handle('kanban:getBoard', async (_, boardId: string) => {
-    if (!currentProjectPath) throw new Error('No project path set');
-    const storage = new KanbanStorageService(currentProjectPath);
+  ipcMain.handle('kanban:getBoard', async (_, projectPath: string, boardId: string) => {
+    if (!projectPath) throw new Error('No project path provided');
+    const storage = new KanbanStorageService(projectPath);
     return await storage.getBoard(boardId);
   });
 
-  ipcMain.handle('kanban:saveBoard', async (_, board: Board) => {
-    if (!currentProjectPath) throw new Error('No project path set');
-    const storage = new KanbanStorageService(currentProjectPath);
+  ipcMain.handle('kanban:saveBoard', async (_, projectPath: string, board: Board) => {
+    if (!projectPath) throw new Error('No project path provided');
+    const storage = new KanbanStorageService(projectPath);
     await storage.saveBoard(board);
     return { success: true };
   });
 
   // Task operations
-  ipcMain.handle('kanban:getTasks', async (_, boardId: string) => {
-    if (!currentProjectPath) throw new Error('No project path set');
-    const storage = new KanbanStorageService(currentProjectPath);
+  ipcMain.handle('kanban:getTasks', async (_, projectPath: string, boardId: string) => {
+    if (!projectPath) throw new Error('No project path provided');
+    const storage = new KanbanStorageService(projectPath);
     const tasks = await storage.getTasks(boardId);
     
     // Check for branches for each task
     for (const task of tasks) {
       if (task.id) {
-        task.hasBranch = await checkBranchExists(task.id, currentProjectPath);
+        task.hasBranch = await checkBranchExists(task.id, projectPath);
       }
     }
     
     return tasks;
   });
 
-  ipcMain.handle('kanban:updateTask', async (_, { boardId, task }: { boardId: string; task: Task }) => {
-    if (!currentProjectPath) throw new Error('No project path set');
-    const storage = new KanbanStorageService(currentProjectPath);
+  ipcMain.handle('kanban:updateTask', async (_, projectPath: string, boardId: string, task: Task) => {
+    if (!projectPath) throw new Error('No project path provided');
+    const storage = new KanbanStorageService(projectPath);
     console.log('Updating task:', boardId, task);
     await storage.updateTask(boardId, task);
     return { success: true };
   });
 
-  ipcMain.handle('kanban:deleteTask', async (_, { boardId, taskId }: { boardId: string; taskId: string }) => {
-    if (!currentProjectPath) throw new Error('No project path set');
-    const storage = new KanbanStorageService(currentProjectPath);
+  ipcMain.handle('kanban:deleteTask', async (_, projectPath: string, boardId: string, taskId: string) => {
+    if (!projectPath) throw new Error('No project path provided');
+    const storage = new KanbanStorageService(projectPath);
     await storage.deleteTask(boardId, taskId);
     return { success: true };
   });
 
   // Epic operations
-  ipcMain.handle('kanban:getEpics', async (_, boardId: string) => {
-    if (!currentProjectPath) throw new Error('No project path set');
-    const storage = new KanbanStorageService(currentProjectPath);
+  ipcMain.handle('kanban:getEpics', async (_, projectPath: string, boardId: string) => {
+    if (!projectPath) throw new Error('No project path provided');
+    const storage = new KanbanStorageService(projectPath);
     return await storage.getEpics(boardId);
   });
 
-  ipcMain.handle('kanban:updateEpic', async (_, { boardId, epic }: { boardId: string; epic: Epic }) => {
-    if (!currentProjectPath) throw new Error('No project path set');
-    const storage = new KanbanStorageService(currentProjectPath);
+  ipcMain.handle('kanban:updateEpic', async (_, projectPath: string, boardId: string, epic: Epic) => {
+    if (!projectPath) throw new Error('No project path provided');
+    const storage = new KanbanStorageService(projectPath);
     await storage.updateEpic(boardId, epic);
     return { success: true };
   });
 
   // Branch operations
-  ipcMain.handle('kanban:checkBranches', async () => {
-    if (!currentProjectPath) throw new Error('No project path set');
-    const branches = await getGitBranches(currentProjectPath);
+  ipcMain.handle('kanban:checkBranches', async (_, projectPath: string) => {
+    if (!projectPath) throw new Error('No project path provided');
+    const branches = await getGitBranches(projectPath);
     return branches;
   });
 }

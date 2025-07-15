@@ -16,7 +16,7 @@ export interface Task {
   description: string;
   assignee: string;
   priority: 'low' | 'medium' | 'high';
-  type: 'feature' | 'bug' | 'task' | 'agent-task' | 'hotfix';
+  type: 'feature' | 'bug' | 'task' | 'agent-task' | 'hotfix' | 'todo';
   status: WorkflowStage;
   createdBy: 'user' | 'agent';
   agentColor?: string;
@@ -35,6 +35,17 @@ export interface Task {
   hasBranch?: boolean;
   boardId?: string;
   tags?: string[];
+  
+  // TODO-specific fields
+  todoId?: string;
+  todoType?: 'TODO' | 'FIXME' | 'HACK' | 'NOTE' | 'BUG';
+  
+  // File references (array for multiple files)
+  fileReferences?: Array<{
+    filePath: string;
+    lineNumber: number;
+    content?: string;
+  }>;
   
   // Metadata
   createdAt: string;

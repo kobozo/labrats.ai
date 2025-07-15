@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { todoScannerService } from '../services/todo-scanner-service';
 import { todoTaskManager } from '../services/todo-task-manager';
+import { KanbanStorageService } from './kanban-storage-service';
 
 export function setupTodoIpcHandlers() {
   console.log('[TODO-IPC] Setting up TODO scanning IPC handlers');
@@ -265,10 +266,15 @@ export function setupTodoIpcHandlers() {
         return { success: true, data: { skipped: true, reason: 'Auto-creation disabled' } };
       }
 
+      // Get existing tasks from board to find already processed TODOs
+      const kanbanStorage = new KanbanStorageService(projectPath);
+      const existingTasks = await kanbanStorage.getTasks('main-board');
+      const existingTodoIds = existingTasks
+        .filter(task => task.todoId)
+        .map(task => ({ id: task.todoId }));
+      
       // Scan for new TODOs
-      const mappings = await todoTaskManager.getMappings(projectPath);
-      const existingTodos = mappings.map(m => ({ id: m.todoId }));
-      const newTodos = await todoScannerService.scanForNewTodos(projectPath, existingTodos as any[]);
+      const newTodos = await todoScannerService.scanForNewTodos(projectPath, existingTodoIds as any[]);
       
       // Create tasks from new TODOs
       const createdTasks = await todoTaskManager.createTasksFromTodos(newTodos, projectPath);

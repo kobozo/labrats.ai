@@ -77,7 +77,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-scan-project', this.currentProject) as TodoServiceResult<TodoScanResult>;
+      if (typeof window === 'undefined' || !window.electronAPI?.todo?.scanProject) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return null;
+      }
+
+      const result = await window.electronAPI.todo.scanProject(this.currentProject) as TodoServiceResult<TodoScanResult>;
       
       if (result.success && result.data) {
         console.log('[TODO-SERVICE-RENDERER] Scan completed:', result.data.todos.length, 'TODOs found');
@@ -102,7 +107,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-scan-new', this.currentProject) as TodoServiceResult<TodoItem[]>;
+      if (typeof window === 'undefined' || !window.electronAPI?.todo?.scanNew) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return [];
+      }
+
+      const result = await window.electronAPI.todo.scanNew(this.currentProject) as TodoServiceResult<TodoItem[]>;
       
       if (result.success && result.data) {
         console.log('[TODO-SERVICE-RENDERER] New TODOs found:', result.data.length);
@@ -127,7 +137,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-validate', todoId, this.currentProject) as TodoServiceResult<{ isValid: boolean }>;
+      if (typeof window === 'undefined' || !window.electronAPI?.todo?.validate) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return false;
+      }
+
+      const result = await window.electronAPI.todo.validate(todoId, this.currentProject) as TodoServiceResult<{ isValid: boolean }>;
       
       if (result.success && result.data) {
         return result.data.isValid;
@@ -151,7 +166,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-get-stats', this.currentProject) as TodoServiceResult<TodoStats>;
+      if (!window.electronAPI?.todo?.getStats) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return null;
+      }
+      
+      const result = await window.electronAPI.todo.getStats(this.currentProject) as TodoServiceResult<TodoStats>;
       
       if (result.success && result.data) {
         console.log('[TODO-SERVICE-RENDERER] TODO stats retrieved:', result.data);
@@ -176,7 +196,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-create-tasks', this.currentProject, todoIds) as TodoServiceResult<{ tasks: Task[]; count: number }>;
+      if (!window.electronAPI?.todo?.createTasks) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return [];
+      }
+      
+      const result = await window.electronAPI.todo.createTasks(this.currentProject, todoIds) as TodoServiceResult<{ tasks: Task[]; count: number }>;
       
       if (result.success && result.data) {
         console.log('[TODO-SERVICE-RENDERER] Created', result.data.count, 'tasks from TODOs');
@@ -201,7 +226,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-get-mappings', this.currentProject) as TodoServiceResult<TodoTaskMapping[]>;
+      if (!window.electronAPI?.todo?.getMappings) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return [];
+      }
+      
+      const result = await window.electronAPI.todo.getMappings(this.currentProject) as TodoServiceResult<TodoTaskMapping[]>;
       
       if (result.success && result.data) {
         console.log('[TODO-SERVICE-RENDERER] Retrieved', result.data.length, 'mappings');
@@ -226,7 +256,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-get-mapping-by-todo', todoId, this.currentProject) as TodoServiceResult<TodoTaskMapping>;
+      if (!window.electronAPI?.todo?.getMappingByTodo) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return null;
+      }
+      
+      const result = await window.electronAPI.todo.getMappingByTodo(todoId, this.currentProject) as TodoServiceResult<TodoTaskMapping>;
       
       if (result.success && result.data) {
         return result.data;
@@ -250,7 +285,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-get-mapping-by-task', taskId, this.currentProject) as TodoServiceResult<TodoTaskMapping>;
+      if (!window.electronAPI?.todo?.getMappingByTask) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return null;
+      }
+      
+      const result = await window.electronAPI.todo.getMappingByTask(taskId, this.currentProject) as TodoServiceResult<TodoTaskMapping>;
       
       if (result.success && result.data) {
         return result.data;
@@ -274,7 +314,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-remove-mapping', todoId, this.currentProject) as TodoServiceResult<void>;
+      if (!window.electronAPI?.todo?.removeMapping) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return false;
+      }
+      
+      const result = await window.electronAPI.todo.removeMapping(todoId, this.currentProject) as TodoServiceResult<void>;
       
       if (result.success) {
         console.log('[TODO-SERVICE-RENDERER] Mapping removed successfully');
@@ -299,7 +344,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-get-settings', this.currentProject) as TodoServiceResult<TodoSettings>;
+      if (!window.electronAPI?.todo?.getSettings) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return null;
+      }
+      
+      const result = await window.electronAPI.todo.getSettings(this.currentProject) as TodoServiceResult<TodoSettings>;
       
       if (result.success && result.data) {
         return result.data;
@@ -323,7 +373,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-update-settings', this.currentProject, settings) as TodoServiceResult<void>;
+      if (!window.electronAPI?.todo?.updateSettings) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return false;
+      }
+      
+      const result = await window.electronAPI.todo.updateSettings(this.currentProject, settings) as TodoServiceResult<void>;
       
       if (result.success) {
         console.log('[TODO-SERVICE-RENDERER] Settings updated successfully');
@@ -348,7 +403,12 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-cleanup-invalid', this.currentProject) as TodoServiceResult<{ removedCount: number }>;
+      if (!window.electronAPI?.todo?.cleanupInvalid) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return 0;
+      }
+      
+      const result = await window.electronAPI.todo.cleanupInvalid(this.currentProject) as TodoServiceResult<{ removedCount: number }>;
       
       if (result.success && result.data) {
         console.log('[TODO-SERVICE-RENDERER] Cleaned up', result.data.removedCount, 'invalid mappings');
@@ -373,11 +433,16 @@ export class TodoServiceRenderer {
     }
 
     try {
-      const result = await (window as any).electron.ipcRenderer.invoke('todo-sync', this.currentProject) as TodoServiceResult<TodoSyncResult>;
+      if (typeof window === 'undefined' || !window.electronAPI?.todo?.sync) {
+        console.error('[TODO-SERVICE-RENDERER] ElectronAPI not available');
+        return null;
+      }
+
+      const result = await window.electronAPI.todo.sync(this.currentProject) as TodoServiceResult<TodoSyncResult>;
       
       if (result.success && result.data) {
         if ('skipped' in result.data) {
-          console.log('[TODO-SERVICE-RENDERER] Sync skipped:', (result.data as any).reason);
+          console.log('[TODO-SERVICE-RENDERER] Sync skipped');
           return { newTodos: 0, createdTasks: 0, tasks: [] };
         }
         

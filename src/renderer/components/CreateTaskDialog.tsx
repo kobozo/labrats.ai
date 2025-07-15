@@ -148,6 +148,8 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                     <option value="feature">Feature</option>
                     <option value="bug">Bug</option>
                     <option value="agent-task">Agent Task</option>
+                    <option value="todo">TODO</option>
+                    <option value="hotfix">Hotfix</option>
                   </select>
                 </div>
               </div>

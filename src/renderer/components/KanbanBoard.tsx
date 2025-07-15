@@ -158,6 +158,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       case 'feature': return <Plus className="w-4 h-4 text-blue-400" />;
       case 'agent-task': return <Zap className="w-4 h-4 text-orange-400" />;
       case 'hotfix': return <AlertCircle className="w-4 h-4 text-yellow-400" />;
+      case 'todo': return <Code className="w-4 h-4 text-purple-400" />;
       default: return <CheckCircle className="w-4 h-4 text-gray-400" />;
     }
   };

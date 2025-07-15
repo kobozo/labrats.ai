@@ -153,6 +153,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getVectorizedTaskIds: () => ipcRenderer.invoke('dexy:getVectorizedTaskIds'),
   },
 
+  // TODO Scanning API
+  todo: {
+    scanProject: (projectPath: string) => ipcRenderer.invoke('todo-scan-project', projectPath),
+    scanNew: (projectPath: string) => ipcRenderer.invoke('todo-scan-new', projectPath),
+    validate: (todoId: string, projectPath: string) => ipcRenderer.invoke('todo-validate', todoId, projectPath),
+    getStats: (projectPath: string) => ipcRenderer.invoke('todo-get-stats', projectPath),
+    createTasks: (projectPath: string, todoIds?: string[]) => ipcRenderer.invoke('todo-create-tasks', projectPath, todoIds),
+    getMappings: (projectPath: string) => ipcRenderer.invoke('todo-get-mappings', projectPath),
+    getMappingByTodo: (todoId: string, projectPath: string) => ipcRenderer.invoke('todo-get-mapping-by-todo', todoId, projectPath),
+    getMappingByTask: (taskId: string, projectPath: string) => ipcRenderer.invoke('todo-get-mapping-by-task', taskId, projectPath),
+    removeMapping: (todoId: string, projectPath: string) => ipcRenderer.invoke('todo-remove-mapping', todoId, projectPath),
+    getSettings: (projectPath: string) => ipcRenderer.invoke('todo-get-settings', projectPath),
+    updateSettings: (projectPath: string, settings: any) => ipcRenderer.invoke('todo-update-settings', projectPath, settings),
+    cleanupInvalid: (projectPath: string) => ipcRenderer.invoke('todo-cleanup-invalid', projectPath),
+    sync: (projectPath: string) => ipcRenderer.invoke('todo-sync', projectPath),
+  },
+
   // System API
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   checkCommand: (command: string) => ipcRenderer.invoke('check-command', command),

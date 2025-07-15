@@ -71,18 +71,23 @@ export class KanbanStorageService {
   }
 
   async updateTask(boardId: string, task: Task): Promise<void> {
+    console.log('[KanbanStorage] updateTask called for board:', boardId, 'task:', task.id);
     this.ensureDirectories();
     const tasks = await this.getTasks(boardId);
     const index = tasks.findIndex(t => t.id === task.id);
     
     if (index !== -1) {
+      console.log('[KanbanStorage] Updating existing task at index:', index);
       tasks[index] = { ...task, updatedAt: new Date().toISOString() };
     } else {
+      console.log('[KanbanStorage] Adding new task');
       tasks.push({ ...task, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     }
     
     const tasksPath = path.join(this.boardsPath, 'tasks', `${boardId}.json`);
+    console.log('[KanbanStorage] Writing', tasks.length, 'tasks to:', tasksPath);
     await fs.promises.writeFile(tasksPath, JSON.stringify(tasks, null, 2));
+    console.log('[KanbanStorage] Write complete');
   }
 
   async deleteTask(boardId: string, taskId: string): Promise<void> {

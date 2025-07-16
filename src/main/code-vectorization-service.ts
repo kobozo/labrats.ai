@@ -1000,8 +1000,12 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
 
     const { limit = 10, type, language, minSimilarity = 0.5 } = options;
     
+    console.log(`[CODE-VECTORIZATION] Searching for: "${query}" with minSimilarity: ${minSimilarity}`);
+    console.log(`[CODE-VECTORIZATION] Using index: ${this.codeIndex!.id}`);
+    
     // Generate embedding for query
     const queryEmbedding = await this.generateEmbedding(query);
+    console.log(`[CODE-VECTORIZATION] Generated query embedding with ${queryEmbedding.length} dimensions`);
     
     // Search with filters
     const results = await this.vectorStorage!.searchSimilar(this.codeIndex!.id, queryEmbedding, {

@@ -332,15 +332,40 @@ export class VectorStorageService {
     const { topK = 10, threshold = 0.0, filter } = options;
     const results: Array<{ document: VectorDocument; similarity: number }> = [];
 
-    for (const [_, doc] of index.documents) {
-      if (!doc.embedding) continue;
+    console.log(`[VECTOR-STORAGE] Searching ${index.documents.size} documents in index ${indexId}`);
+
+    for (const [docId, doc] of index.documents) {
       if (filter && !filter(doc)) continue;
 
+      // Load embedding from disk if not in memory
+      if (!doc.embedding || doc.embedding.length === 0) {
+        const embeddingPath = this.getEmbeddingFilePath(indexId, docId);
+        if (fs.existsSync(embeddingPath)) {
+          try {
+            const embedding = JSON.parse(await fs.promises.readFile(embeddingPath, 'utf-8'));
+            doc.embedding = embedding;
+          } catch (error) {
+            console.error(`[VECTOR-STORAGE] Failed to load embedding for document ${docId}:`, error);
+            continue;
+          }
+        } else {
+          console.warn(`[VECTOR-STORAGE] No embedding file found for document ${docId}`);
+          continue;
+        }
+      }
+
+      if (!doc.embedding || doc.embedding.length === 0) {
+        console.warn(`[VECTOR-STORAGE] Document ${docId} has no embedding after load attempt`);
+        continue;
+      }
+      
       const similarity = this.cosineSimilarity(queryVector, doc.embedding);
       if (similarity >= threshold) {
         results.push({ document: doc, similarity });
       }
     }
+
+    console.log(`[VECTOR-STORAGE] Found ${results.length} results above threshold ${threshold}`);
 
     // Sort by similarity descending
     results.sort((a, b) => b.similarity - a.similarity);

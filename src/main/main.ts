@@ -1652,6 +1652,12 @@ setupCodeVectorizationIpcHandlers();
 setupCodeVectorizationOrchestratorHandlers();
 console.log('[MAIN] Code Vectorization handlers registered successfully');
 
+// Line Counter IPC handlers
+import { setupLineCounterIpcHandlers } from './line-counter-ipc-handlers';
+console.log('[MAIN] Registering Line Counter handlers...');
+setupLineCounterIpcHandlers();
+console.log('[MAIN] Line Counter handlers registered successfully');
+
 // Chat History IPC handlers
 ipcMain.handle('chat-history-save', async (event, projectPath: string, messages: any[]) => {
   try {

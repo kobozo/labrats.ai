@@ -262,6 +262,7 @@ export interface ElectronAPI {
   mcp?: McpAPI;
   codeVectorization?: CodeVectorizationAPI;
   codeOrchestrator?: CodeOrchestratorAPI;
+  lineCounter?: LineCounterAPI;
   ipcRenderer?: {
     on: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
     removeListener: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
@@ -311,6 +312,17 @@ export interface CodeOrchestratorAPI {
   getStatus: () => Promise<{ success: boolean; status?: any; error?: string }>;
   forceReindex: () => Promise<{ success: boolean; error?: string }>;
   shutdown: () => Promise<{ success: boolean; error?: string }>;
+}
+
+export interface LineCountResult {
+  totalLines: number;
+  totalFiles: number;
+  fileTypes: { [ext: string]: { files: number; lines: number } };
+  formattedTotal?: string;
+}
+
+export interface LineCounterAPI {
+  count: (projectPath: string) => Promise<{ success: boolean; result?: LineCountResult; error?: string }>;
 }
 
 declare global {

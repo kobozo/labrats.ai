@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle } from 'lucide-react';
-import { CodeVectorizationProgress, PreScanResult } from '../types/electron';
+import { CodeVectorizationProgress, PreScanResult, LineCountResult } from '../types/electron';
 import { dexyService } from '../../services/dexy-service-renderer';
 import { kanbanService } from '../../services/kanban-service';
 import { todoService, TodoStats } from '../../services/todo-service-renderer';
@@ -176,6 +176,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   const [vectorizationProgress, setVectorizationProgress] = useState<CodeVectorizationProgress | null>(null);
   const [preScanResult, setPreScanResult] = useState<PreScanResult | null>(null);
   const [metrics, setMetrics] = useState<Metric[]>(defaultMetrics);
+  const [lineCountResult, setLineCountResult] = useState<LineCountResult | null>(null);
 
   // Load config and auto-start code vectorization
   useEffect(() => {
@@ -202,9 +203,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
               await codeVectorizationOrchestrator.vectorizeProject();
               console.log('[Dashboard] Vectorization started, waiting for completion...');
             } else {
-              console.log('[Dashboard] Project already vectorized, checking for changes and starting full scan...');
-              // Always do a full scan to catch files that changed while app was closed
-              await codeVectorizationOrchestrator.forceReindex();
+              console.log('[Dashboard] Project already vectorized, checking for changes since last run...');
+              // Do an incremental update to catch files that changed while app was closed
+              await codeVectorizationOrchestrator.vectorizeProject();
+              console.log('[Dashboard] Incremental update started...');
             }
             
             // Always start watching after vectorization/reindexing
@@ -234,6 +236,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
     if (currentFolder) {
       loadTodoStats();
       loadCodeVectorStats();
+      loadLineCount();
       
       // Set up code vectorization progress listener
       const unsubscribe = window.electronAPI?.codeVectorization?.onProgress?.((progress: CodeVectorizationProgress) => {
@@ -293,6 +296,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       loadCodeVectorStats();
     } else if (activeView === 'todos' && currentFolder) {
       loadTodoStats();
+    } else if (activeView === 'overview' && currentFolder) {
+      loadLineCount();
     }
   }, [activeView, currentFolder]);
 
@@ -317,19 +322,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
     };
   }, [activeView, currentFolder]);
 
+  // Calculate totals once and reuse everywhere
+  const getTotalElements = () => {
+    // Use pre-scan result if available (most accurate), otherwise fall back to code stats
+    if (preScanResult) {
+      return preScanResult.totalElements;
+    }
+    if (codeVectorStats?.stats?.totalElements) {
+      return codeVectorStats.stats.totalElements;
+    }
+    return 0;
+  };
+
   // Update metrics when stats change
   useEffect(() => {
-    if (vectorStats || codeVectorStats || preScanResult) {
+    if (vectorStats || codeVectorStats || preScanResult || lineCountResult) {
       const newMetrics = [...defaultMetrics];
+      
+      // Update Lines of Code metric with real count
+      if (lineCountResult) {
+        newMetrics[0] = {
+          ...newMetrics[0],
+          value: lineCountResult.formattedTotal || lineCountResult.totalLines.toString(),
+          change: `${lineCountResult.totalFiles} files`,
+          trend: 'up'
+        };
+      }
       
       // Calculate total vectorization percentage
       // Tasks: each task is 1 item
       const totalTasks = vectorStats.totalTasks || 0;
       const vectorizedTasks = vectorStats.vectorizedTasks || 0;
       
-      // Code elements: functions, classes, etc.
-      const totalCodeElements = preScanResult?.totalElements || codeVectorStats?.stats?.totalElements || 0;
-      const vectorizedCodeElements = codeVectorStats?.stats?.vectorizedElements || 0;
+      // Code elements: functions, classes, etc. - use single source of truth
+      const totalCodeElements = getTotalElements();
+      const vectorizedCodeElements = Math.min(codeVectorStats?.stats?.vectorizedElements || 0, totalCodeElements);
       
       // Combined totals
       const totalItems = totalTasks + totalCodeElements;
@@ -347,7 +374,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       
       setMetrics(newMetrics);
     }
-  }, [vectorStats, codeVectorStats, preScanResult]);
+  }, [vectorStats, codeVectorStats, preScanResult, lineCountResult]);
+
+  const loadLineCount = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Loading line count for folder:', currentFolder);
+
+    try {
+      const result = await window.electronAPI?.lineCounter?.count(currentFolder);
+      if (result?.success && result.result) {
+        setLineCountResult(result.result);
+        console.log('[Dashboard] Line count loaded:', result.result);
+      } else {
+        console.error('[Dashboard] Failed to load line count:', result?.error);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error loading line count:', error);
+    }
+  };
 
   const loadVectorStats = async () => {
     if (!currentFolder) return;
@@ -1143,7 +1188,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                   }`}
                 >
                   <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>{isSyncing ? 'Syncing...' : 'Force Resync'}</span>
+                  <span>{isSyncing ? 'Syncing...' : 'Sync Tasks'}</span>
                 </button>
               </div>
 
@@ -1179,22 +1224,36 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                 <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
                   <div className="flex items-center justify-between mb-2">
                     <Layers className="w-5 h-5 text-blue-400" />
-                    <span className="text-2xl font-bold text-white">{vectorStats.totalTasks}</span>
+                    <span className="text-2xl font-bold text-white">
+                      {(vectorStats.totalTasks || 0) + getTotalElements()}
+                    </span>
                   </div>
-                  <div className="text-sm text-gray-400">Total Tasks</div>
+                  <div className="text-sm text-gray-400">Total Elements</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {vectorStats.totalTasks || 0} tasks, {getTotalElements()} code
+                  </div>
                 </div>
 
                 <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
                   <div className="flex items-center justify-between mb-2">
                     <Database className="w-5 h-5 text-green-400" />
-                    <span className="text-2xl font-bold text-white">{vectorStats.vectorizedTasks}</span>
+                    <span className="text-2xl font-bold text-white">
+                      {(vectorStats.vectorizedTasks || 0) + Math.min(codeVectorStats?.stats?.vectorizedElements || 0, getTotalElements())}
+                    </span>
                   </div>
-                  <div className="text-sm text-gray-400">Vectorized Tasks</div>
+                  <div className="text-sm text-gray-400">Vectorized Elements</div>
                   <div className="mt-2">
                     <div className="w-full bg-gray-700 rounded-full h-2">
                       <div
                         className="bg-green-500 h-2 rounded-full transition-all"
-                        style={{ width: `${vectorStats.totalTasks > 0 ? (vectorStats.vectorizedTasks / vectorStats.totalTasks) * 100 : 0}%` }}
+                        style={{ 
+                          width: `${
+                            ((vectorStats.totalTasks || 0) + getTotalElements()) > 0 
+                              ? (((vectorStats.vectorizedTasks || 0) + Math.min(codeVectorStats?.stats?.vectorizedElements || 0, getTotalElements())) / 
+                                 ((vectorStats.totalTasks || 0) + getTotalElements())) * 100 
+                              : 0
+                          }%` 
+                        }}
                       />
                     </div>
                   </div>
@@ -1203,9 +1262,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                 <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
                   <div className="flex items-center justify-between mb-2">
                     <AlertCircle className="w-5 h-5 text-yellow-400" />
-                    <span className="text-2xl font-bold text-white">{vectorStats.missingVectors}</span>
+                    <span className="text-2xl font-bold text-white">
+                      {((vectorStats.totalTasks || 0) - (vectorStats.vectorizedTasks || 0)) + 
+                       (getTotalElements() - Math.min(codeVectorStats?.stats?.vectorizedElements || 0, getTotalElements()))}
+                    </span>
                   </div>
                   <div className="text-sm text-gray-400">Missing Vectors</div>
+                </div>
+              </div>
+
+              {/* Database Performance */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm text-gray-400">Avg. Search Time</div>
+                      <div className="text-lg font-semibold text-blue-400">~50ms</div>
+                    </div>
+                    <Activity className="w-5 h-5 text-blue-400" />
+                  </div>
+                </div>
+                <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm text-gray-400">Vector Dimensions</div>
+                      <div className="text-lg font-semibold text-purple-400">1536D</div>
+                    </div>
+                    <Network className="w-5 h-5 text-purple-400" />
+                  </div>
                 </div>
               </div>
 
@@ -1234,8 +1318,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-lg font-semibold text-white">{vectorStats.vectorizedTasks}</div>
-                    <div className="text-sm text-gray-400">vectors</div>
+                    <div className="text-lg font-semibold text-white">
+                      {vectorStats.totalTasks > 0 ? Math.round((vectorStats.vectorizedTasks / vectorStats.totalTasks) * 100) : 0}%
+                    </div>
+                    <div className="text-sm text-gray-400">
+                      {vectorStats.vectorizedTasks} / {vectorStats.totalTasks}
+                    </div>
                   </div>
                 </div>
 
@@ -1324,8 +1412,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                     <div className="text-right">
                       {codeVectorStats?.initialized ? (
                         <>
-                          <div className="text-lg font-semibold text-white">{codeVectorStats.stats.vectorizedFiles}</div>
-                          <div className="text-sm text-gray-400">files • {codeVectorStats.stats.vectorizedElements} elements</div>
+                          <div className="text-lg font-semibold text-white">
+                            {getTotalElements() > 0 
+                              ? Math.round((Math.min(codeVectorStats.stats.vectorizedElements, getTotalElements()) / getTotalElements()) * 100) 
+                              : 0}%
+                          </div>
+                          <div className="text-sm text-gray-400">
+                            {Math.min(codeVectorStats.stats.vectorizedElements, getTotalElements())} / {getTotalElements()} elements
+                          </div>
                         </>
                       ) : codeVectorizationEnabled ? (
                         codeVectorStats && !codeVectorStats.initialized ? (
@@ -1433,30 +1527,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
               </div>
             </div>
 
-            {/* Performance Metrics */}
-            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-              <h3 className="text-lg font-semibold text-white mb-6">Embedding Performance</h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-green-400 mb-2">
-                    {vectorStats.totalTasks > 0 ? Math.round((vectorStats.vectorizedTasks / vectorStats.totalTasks) * 100) : 0}%
-                  </div>
-                  <div className="text-gray-400">Coverage Rate</div>
-                  <div className="text-sm text-gray-500 mt-1">Tasks with vectors</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-blue-400 mb-2">~50ms</div>
-                  <div className="text-gray-400">Avg. Search Time</div>
-                  <div className="text-sm text-gray-500 mt-1">Semantic similarity search</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-purple-400 mb-2">1536D</div>
-                  <div className="text-gray-400">Vector Dimension</div>
-                  <div className="text-sm text-gray-500 mt-1">Embedding size</div>
-                </div>
-              </div>
-            </div>
 
             {/* Code File Type Distribution */}
             {codeVectorStats && Object.keys(codeVectorStats.stats.fileTypeDistribution).length > 0 && (
@@ -1535,8 +1605,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                   <div className="text-center">
                     <div className="text-3xl font-bold text-green-400 mb-2">
-                      {(preScanResult?.totalElements || codeVectorStats.stats.totalElements || 0) > 0 
-                        ? Math.round((codeVectorStats.stats.vectorizedElements / (preScanResult?.totalElements || codeVectorStats.stats.totalElements || 1)) * 100) 
+                      {getTotalElements() > 0 
+                        ? Math.round((Math.min(codeVectorStats.stats.vectorizedElements, getTotalElements()) / getTotalElements()) * 100) 
                         : 0}%
                     </div>
                     <div className="text-gray-400">Element Coverage</div>
@@ -1544,7 +1614,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                   </div>
                   <div className="text-center">
                     <div className="text-3xl font-bold text-purple-400 mb-2">
-                      {codeVectorStats.stats.vectorizedElements} / {preScanResult?.totalElements || codeVectorStats.stats.totalElements || '?'}
+                      {Math.min(codeVectorStats.stats.vectorizedElements, getTotalElements())} / {getTotalElements()}
                     </div>
                     <div className="text-gray-400">Code Elements</div>
                     <div className="text-sm text-gray-500 mt-1">Functions, classes, etc.</div>

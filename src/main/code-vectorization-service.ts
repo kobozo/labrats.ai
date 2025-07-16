@@ -87,14 +87,69 @@ export class CodeVectorizationService {
   }
 
   /**
+   * Calculate file hash for change detection
+   */
+  private async calculateFileHash(filePath: string): Promise<string> {
+    const content = await fs.promises.readFile(filePath, 'utf-8');
+    return crypto.createHash('sha256').update(content).digest('hex');
+  }
+
+  /**
+   * Check if file has changed by comparing hashes
+   */
+  private async hasFileChanged(filePath: string): Promise<{ changed: boolean; newHash: string; existingDocs?: VectorDocument[] }> {
+    const newHash = await this.calculateFileHash(filePath);
+    
+    // Get document IDs for this index
+    const docIds = await this.vectorStorage!.getDocumentIds(this.codeIndex!.id);
+    
+    // Find documents for this file
+    const fileDocuments: VectorDocument[] = [];
+    for (const docId of docIds) {
+      const doc = await this.vectorStorage!.getDocument(this.codeIndex!.id, docId);
+      if (doc && doc.metadata.filePath === filePath) {
+        fileDocuments.push(doc);
+      }
+    }
+    
+    if (fileDocuments.length === 0) {
+      // File not vectorized yet
+      return { changed: true, newHash };
+    }
+    
+    // Check if any document has the current hash
+    const existingHash = fileDocuments[0].metadata.fileHash;
+    return { 
+      changed: existingHash !== newHash, 
+      newHash,
+      existingDocs: fileDocuments 
+    };
+  }
+
+  /**
    * Vectorize a single file
    */
-  async vectorizeFile(filePath: string): Promise<VectorDocument[]> {
+  async vectorizeFile(filePath: string, forceReindex: boolean = false): Promise<VectorDocument[]> {
     if (!this.isReady()) {
       throw new Error('Code vectorization service not initialized');
     }
 
-    console.log('[CODE-VECTORIZATION] Vectorizing file:', filePath);
+    console.log('[CODE-VECTORIZATION] Processing file:', filePath);
+    
+    // Check if file has changed
+    const { changed, newHash, existingDocs } = await this.hasFileChanged(filePath);
+    if (!changed && !forceReindex) {
+      console.log('[CODE-VECTORIZATION] File unchanged, skipping:', path.basename(filePath));
+      // Return existing documents
+      return existingDocs || [];
+    }
+    
+    console.log('[CODE-VECTORIZATION] File changed or new, vectorizing:', path.basename(filePath));
+    
+    // Delete existing vectors for this file if it changed
+    if (!forceReindex && changed) {
+      await this.deleteFileVectors(filePath);
+    }
     
     // Parse the file
     const elements = await this.codeParser.parseFile(filePath);
@@ -138,6 +193,7 @@ export class CodeVectorizationService {
         metadata: {
           type: this.mapElementTypeToDocType(element.type),
           filePath: element.filePath,
+          fileHash: newHash,
           language: element.language,
           functionName: element.type === 'function' || element.type === 'method' ? element.name : undefined,
           className: element.type === 'class' ? element.name : undefined,
@@ -427,14 +483,14 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
   }
 
   /**
-   * Vectorize all code files in the project
+   * Vectorize all code files in the project (incremental - only changed files)
    */
   async vectorizeProject(filePatterns: string[] = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx']): Promise<void> {
     if (!this.projectPath || !this.isReady()) {
       throw new Error('Service not initialized');
     }
 
-    console.log('[CODE-VECTORIZATION] Starting project vectorization...');
+    console.log('[CODE-VECTORIZATION] Starting incremental project vectorization...');
     
     // First do a pre-scan to get total elements
     const preScan = await this.preScanProject(filePatterns);
@@ -442,7 +498,12 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     
     // Get all matching files
     const files = await this.findCodeFiles(this.projectPath, filePatterns);
-    console.log(`[CODE-VECTORIZATION] Found ${files.length} files with ${totalElements} total elements to vectorize`);
+    console.log(`[CODE-VECTORIZATION] Found ${files.length} files with ${totalElements} total elements`);
+    
+    // Track statistics
+    let filesChecked = 0;
+    let filesSkipped = 0;
+    let filesVectorized = 0;
     
     // Send initial progress
     this.sendProgress({
@@ -460,6 +521,32 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     for (const file of files) {
       try {
         const relativePath = path.relative(this.projectPath, file);
+        filesChecked++;
+        
+        // Check if file has changed before parsing
+        const { changed } = await this.hasFileChanged(file);
+        if (!changed) {
+          filesSkipped++;
+          console.log(`[CODE-VECTORIZATION] Skipping unchanged file ${filesSkipped}/${filesChecked}: ${relativePath}`);
+          
+          // Count elements in this file for progress tracking
+          const elements = await this.codeParser.parseFile(file);
+          elementsProcessed += elements.length;
+          
+          // Send progress update
+          this.sendProgress({
+            phase: 'processing',
+            current: elementsProcessed,
+            total: totalElements,
+            percentage: Math.round((elementsProcessed / totalElements) * 100),
+            currentFile: `[SKIPPED] ${relativePath}`,
+            elementsProcessed,
+            totalElements
+          });
+          continue;
+        }
+        
+        filesVectorized++;
         
         // Parse file to know how many elements it has
         const elements = await this.codeParser.parseFile(file);
@@ -478,7 +565,7 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
         const docs = await this.vectorizeFile(file);
         elementsProcessed += elements.length; // Count all elements, even if some failed to vectorize
       } catch (error) {
-        console.error(`[CODE-VECTORIZATION] Failed to vectorize ${file}:`, error);
+        console.error(`[CODE-VECTORIZATION] Failed to process ${file}:`, error);
       }
     }
     
@@ -493,7 +580,11 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
       totalElements
     });
     
-    console.log(`[CODE-VECTORIZATION] Vectorized ${elementsProcessed} code elements`);
+    console.log(`[CODE-VECTORIZATION] Incremental update complete:`);
+    console.log(`[CODE-VECTORIZATION] - Files checked: ${filesChecked}`);
+    console.log(`[CODE-VECTORIZATION] - Files skipped (unchanged): ${filesSkipped}`);
+    console.log(`[CODE-VECTORIZATION] - Files vectorized (new/changed): ${filesVectorized}`);
+    console.log(`[CODE-VECTORIZATION] - Total elements processed: ${elementsProcessed}`);
   }
 
   /**
@@ -555,11 +646,26 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
       }
     }
     
+    // Get total elements - if we don't have a recent pre-scan, do a quick count
+    let totalElements = this.lastPreScanResult?.totalElements || 0;
+    if (totalElements === 0 && this.projectPath) {
+      try {
+        console.log('[CODE-VECTORIZATION] No pre-scan result, doing quick element count...');
+        const quickScan = await this.preScanProject();
+        totalElements = quickScan.totalElements;
+      } catch (error) {
+        console.error('[CODE-VECTORIZATION] Failed to get total elements:', error);
+      }
+    }
+    
+    // Ensure vectorized elements never exceed total elements
+    const safeVectorizedElements = Math.min(vectorizedElements, totalElements);
+    
     return {
       totalFiles,
       vectorizedFiles: uniqueFiles.size,
-      totalElements: this.lastPreScanResult?.totalElements || 0,
-      vectorizedElements,
+      totalElements,
+      vectorizedElements: safeVectorizedElements,
       lastSync: this.codeIndex.metadata.updatedAt ? new Date(this.codeIndex.metadata.updatedAt) : null,
       indexId: this.codeIndex.id,
     };

@@ -217,6 +217,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     shutdown: () => ipcRenderer.invoke('code-orchestrator:shutdown'),
   },
 
+  // Line Counter API
+  lineCounter: {
+    count: (projectPath: string) => ipcRenderer.invoke('line-counter:count', projectPath),
+  },
+
   // IPC Renderer for event listening
   ipcRenderer: {
     on: (channel: string, listener: (event: any, ...args: any[]) => void) => ipcRenderer.on(channel, listener),

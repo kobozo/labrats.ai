@@ -323,19 +323,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       const newMetrics = [...defaultMetrics];
       
       // Calculate total vectorization percentage
-      const totalTaskElements = vectorStats.totalTasks || 0;
-      const totalCodeElements = preScanResult?.totalElements || codeVectorStats?.stats?.totalElements || 0;
-      const totalElements = totalTaskElements + totalCodeElements;
-      const vectorizedTaskElements = vectorStats.vectorizedTasks || 0;
-      const vectorizedCodeElements = codeVectorStats?.stats?.vectorizedElements || 0;
-      const totalVectorized = vectorizedTaskElements + vectorizedCodeElements;
+      // Tasks: each task is 1 item
+      const totalTasks = vectorStats.totalTasks || 0;
+      const vectorizedTasks = vectorStats.vectorizedTasks || 0;
       
-      if (totalElements > 0) {
-        const percentage = Math.round((totalVectorized / totalElements) * 100);
+      // Code elements: functions, classes, etc.
+      const totalCodeElements = preScanResult?.totalElements || codeVectorStats?.stats?.totalElements || 0;
+      const vectorizedCodeElements = codeVectorStats?.stats?.vectorizedElements || 0;
+      
+      // Combined totals
+      const totalItems = totalTasks + totalCodeElements;
+      const totalVectorized = vectorizedTasks + vectorizedCodeElements;
+      
+      if (totalItems > 0) {
+        const percentage = Math.min(100, Math.round((totalVectorized / totalItems) * 100));
         newMetrics[2] = {
           ...newMetrics[2],
           value: `${percentage}%`,
-          change: `${totalVectorized}/${totalElements}`,
+          change: `${totalVectorized}/${totalItems}`,
           trend: percentage > 50 ? 'up' : 'down'
         };
       }

@@ -194,18 +194,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
           try {
             await codeVectorizationOrchestrator.initialize(currentFolder);
             
+            // Get concurrency setting from Dexy
+            let concurrency = 4; // Default
+            try {
+              const dexyConfig = await window.electronAPI?.dexy?.getConfig();
+              if (dexyConfig && dexyConfig.concurrency) {
+                concurrency = dexyConfig.concurrency;
+              }
+            } catch (error) {
+              console.log('[Dashboard] Could not get concurrency from Dexy, using default:', concurrency);
+            }
+            
             // Check if project has been vectorized before
             const status = await codeVectorizationOrchestrator.getStatus();
             console.log('[Dashboard] Current vectorization status:', status);
             
             if (!status.isInitialized || status.stats.vectorizedFiles === 0) {
               console.log('[Dashboard] Project not vectorized yet, starting initial full vectorization...');
-              await codeVectorizationOrchestrator.vectorizeProject();
+              await codeVectorizationOrchestrator.vectorizeProject(undefined, concurrency);
               console.log('[Dashboard] Vectorization started, waiting for completion...');
             } else {
               console.log('[Dashboard] Project already vectorized, checking for changes since last run...');
               // Do an incremental update to catch files that changed while app was closed
-              await codeVectorizationOrchestrator.vectorizeProject();
+              await codeVectorizationOrchestrator.vectorizeProject(undefined, concurrency);
               console.log('[Dashboard] Incremental update started...');
             }
             
@@ -614,7 +625,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       const status = await codeVectorizationOrchestrator.getStatus();
       if (!status.isInitialized || status.stats.vectorizedFiles === 0) {
         console.log('[Dashboard] Starting fresh vectorization...');
-        await codeVectorizationOrchestrator.vectorizeProject();
+        
+        // Get concurrency setting from Dexy
+        let concurrency = 4; // Default
+        try {
+          const dexyConfig = await window.electronAPI?.dexy?.getConfig();
+          if (dexyConfig && dexyConfig.concurrency) {
+            concurrency = dexyConfig.concurrency;
+          }
+        } catch (error) {
+          console.log('[Dashboard] Could not get concurrency from Dexy, using default:', concurrency);
+        }
+        
+        await codeVectorizationOrchestrator.vectorizeProject(undefined, concurrency);
       } else {
         console.log('[Dashboard] Forcing complete reindex...');
         await codeVectorizationOrchestrator.forceReindex();
@@ -1178,18 +1201,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
             <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-white">Vector Database Overview</h3>
-                <button
-                  onClick={handleForceResync}
-                  disabled={isSyncing || !currentFolder}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                    isSyncing || !currentFolder
-                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}
-                >
-                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>{isSyncing ? 'Syncing...' : 'Sync Tasks'}</span>
-                </button>
               </div>
 
               {/* Status Indicator */}
@@ -1307,22 +1318,58 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
               
               <div className="space-y-4">
                 {/* Kanban Tasks */}
-                <div className="flex items-center justify-between p-4 bg-gray-700 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-blue-500/20 rounded">
-                      <FileText className="w-5 h-5 text-blue-400" />
+                <div className={`p-4 rounded-lg ${
+                  vectorStats.isDexyReady ? 'bg-gray-700' : 'bg-gray-700/50'
+                }`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-blue-500/20 rounded">
+                        <FileText className="w-5 h-5 text-blue-400" />
+                      </div>
+                      <div>
+                        <div className="text-white font-medium">Kanban Tasks</div>
+                        <div className="text-sm text-gray-400">Task titles, descriptions, and metadata</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-white font-medium">Kanban Tasks</div>
-                      <div className="text-sm text-gray-400">Task titles, descriptions, and metadata</div>
+                    <div className="flex items-center space-x-2">
+                      {vectorStats.isDexyReady && (
+                        <button
+                          onClick={handleForceResync}
+                          disabled={isSyncing}
+                          className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                            isSyncing
+                              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          }`}
+                        >
+                          {isSyncing ? 'Syncing...' : 'Sync Tasks'}
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-semibold text-white">
-                      {vectorStats.totalTasks > 0 ? Math.round((vectorStats.vectorizedTasks / vectorStats.totalTasks) * 100) : 0}%
+                  
+                  {/* Status and Stats */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      {vectorStats.isDexyReady ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-green-400" />
+                          <span className="text-sm text-green-400">Active</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-4 h-4 text-red-400" />
+                          <span className="text-sm text-red-400">Dexy Not Configured</span>
+                        </>
+                      )}
                     </div>
-                    <div className="text-sm text-gray-400">
-                      {vectorStats.vectorizedTasks} / {vectorStats.totalTasks}
+                    <div className="text-right">
+                      <div className="text-lg font-semibold text-white">
+                        {vectorStats.totalTasks > 0 ? Math.round((vectorStats.vectorizedTasks / vectorStats.totalTasks) * 100) : 0}%
+                      </div>
+                      <div className="text-sm text-gray-400">
+                        {vectorStats.vectorizedTasks} / {vectorStats.totalTasks}
+                      </div>
                     </div>
                   </div>
                 </div>

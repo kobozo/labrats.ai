@@ -1,5 +1,7 @@
-import { codeVectorizationService } from '../../code-vectorization-service';
+import { CodeVectorizationService } from '../../code-vectorization-service';
 import { getProjectPathService } from '../../../services/project-path-service';
+
+const codeVectorizationService = CodeVectorizationService.getInstance();
 
 export async function executeCodeSearchTool(args: any): Promise<string> {
   try {

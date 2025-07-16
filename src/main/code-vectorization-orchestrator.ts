@@ -94,7 +94,7 @@ export class CodeVectorizationOrchestrator extends EventEmitter {
   /**
    * Start initial project vectorization
    */
-  async vectorizeProject(filePatterns?: string[]): Promise<void> {
+  async vectorizeProject(filePatterns?: string[], concurrency: number = 4): Promise<void> {
     if (!this.isInitialized) {
       throw new Error('Orchestrator not initialized');
     }
@@ -116,8 +116,8 @@ export class CodeVectorizationOrchestrator extends EventEmitter {
         totalFiles: filesToProcess,
       });
 
-      // Vectorize the project
-      await this.vectorizationService.vectorizeProject(filePatterns);
+      // Vectorize the project with specified concurrency
+      await this.vectorizationService.vectorizeProject(filePatterns, concurrency);
 
       // Get final stats
       const stats = await this.vectorizationService.getStats();

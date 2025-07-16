@@ -11,6 +11,47 @@ import { DexyVectorizationService } from './dexy-vectorization-service';
 import { CentralizedAPIKeyService } from '../services/centralized-api-key-service';
 import { ReadmeContextService } from './readme-context-service';
 
+/**
+ * Simple semaphore for controlling concurrency
+ */
+class Semaphore {
+  private permits: number;
+  private queue: Array<() => void> = [];
+
+  constructor(permits: number) {
+    this.permits = permits;
+  }
+
+  async runExclusive<T>(task: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await task();
+    } finally {
+      this.release();
+    }
+  }
+
+  private async acquire(): Promise<void> {
+    if (this.permits > 0) {
+      this.permits--;
+      return;
+    }
+
+    return new Promise<void>((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+
+  private release(): void {
+    if (this.queue.length > 0) {
+      const resolve = this.queue.shift()!;
+      resolve();
+    } else {
+      this.permits++;
+    }
+  }
+}
+
 export interface CodeVectorizationStats {
   totalFiles: number;
   vectorizedFiles: number;
@@ -654,12 +695,12 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
   /**
    * Vectorize all code files in the project (incremental - only changed files)
    */
-  async vectorizeProject(filePatterns: string[] = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/README.md', '**/readme.md']): Promise<void> {
+  async vectorizeProject(filePatterns: string[] = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/README.md', '**/readme.md'], concurrency: number = 4): Promise<void> {
     if (!this.projectPath || !this.isReady()) {
       throw new Error('Service not initialized');
     }
 
-    console.log('[CODE-VECTORIZATION] Starting incremental project vectorization...');
+    console.log(`[CODE-VECTORIZATION] Starting incremental project vectorization with ${concurrency} concurrent workers...`);
     this.isCurrentlyVectorizing = true;
     
     try {
@@ -667,84 +708,120 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
       const preScan = await this.preScanProject(filePatterns);
       const totalElements = preScan.totalElements;
     
-    // Get all matching files
-    const files = await this.findCodeFiles(this.projectPath, filePatterns);
-    console.log(`[CODE-VECTORIZATION] Found ${files.length} files with ${totalElements} total elements`);
-    
-    // Track statistics
-    let filesChecked = 0;
-    let filesSkipped = 0;
-    let filesVectorized = 0;
-    
-    // Send initial progress
-    this.sendProgress({
-      phase: 'processing',
-      current: 0,
-      total: totalElements,
-      percentage: 0,
-      currentFile: '',
-      elementsProcessed: 0,
-      totalElements
-    });
-    
-    let elementsProcessed = 0;
-    
-    for (const file of files) {
-      try {
-        const relativePath = path.relative(this.projectPath, file);
-        filesChecked++;
-        
-        // Send progress update for current file
-        this.sendProgress({
-          phase: 'processing',
-          current: elementsProcessed,
-          total: totalElements,
-          percentage: Math.round((elementsProcessed / totalElements) * 100),
-          currentFile: relativePath,
-          elementsProcessed,
-          totalElements
-        });
-        
-        // Vectorize file (will handle element-level changes internally)
-        const docs = await this.vectorizeFile(file);
-        
-        // Count elements processed (from parsing for progress tracking)
-        const elements = await this.codeParser.parseFile(file);
-        elementsProcessed += elements.length;
-        
-        // File was processed (may have had some changes or not)
-        if (docs.length > 0) {
-          filesVectorized++;
-        }
-      } catch (error) {
-        console.error(`[CODE-VECTORIZATION] Failed to process ${file}:`, error);
-      }
-    }
-    
-    // Send completion progress
-    this.sendProgress({
-      phase: 'completed',
-      current: totalElements,
-      total: totalElements,
-      percentage: 100,
-      currentFile: '',
-      elementsProcessed,
-      totalElements
-    });
-    
-    console.log(`[CODE-VECTORIZATION] Incremental update complete:`);
-    console.log(`[CODE-VECTORIZATION] - Files checked: ${filesChecked}`);
-    console.log(`[CODE-VECTORIZATION] - Files skipped (unchanged): ${filesSkipped}`);
-    console.log(`[CODE-VECTORIZATION] - Files vectorized (new/changed): ${filesVectorized}`);
-    console.log(`[CODE-VECTORIZATION] - Total elements processed: ${elementsProcessed}`);
-    
-    this.isCurrentlyVectorizing = false;
+      // Get all matching files
+      const files = await this.findCodeFiles(this.projectPath, filePatterns);
+      console.log(`[CODE-VECTORIZATION] Found ${files.length} files with ${totalElements} total elements`);
+      
+      // Track statistics
+      const stats = {
+        filesChecked: 0,
+        filesSkipped: 0,
+        filesVectorized: 0,
+        elementsProcessed: 0,
+        errors: 0
+      };
+      
+      // Send initial progress
+      this.sendProgress({
+        phase: 'processing',
+        current: 0,
+        total: totalElements,
+        percentage: 0,
+        currentFile: '',
+        elementsProcessed: 0,
+        totalElements
+      });
+      
+      // Process files concurrently
+      await this.processFilesConcurrently(files, totalElements, stats, concurrency);
+      
+      // Send completion progress
+      this.sendProgress({
+        phase: 'completed',
+        current: totalElements,
+        total: totalElements,
+        percentage: 100,
+        currentFile: '',
+        elementsProcessed: stats.elementsProcessed,
+        totalElements
+      });
+      
+      console.log(`[CODE-VECTORIZATION] Incremental update complete:`);
+      console.log(`[CODE-VECTORIZATION] - Files checked: ${stats.filesChecked}`);
+      console.log(`[CODE-VECTORIZATION] - Files skipped (unchanged): ${stats.filesSkipped}`);
+      console.log(`[CODE-VECTORIZATION] - Files vectorized (new/changed): ${stats.filesVectorized}`);
+      console.log(`[CODE-VECTORIZATION] - Total elements processed: ${stats.elementsProcessed}`);
+      console.log(`[CODE-VECTORIZATION] - Errors: ${stats.errors}`);
+      
+      this.isCurrentlyVectorizing = false;
     } catch (error) {
       this.isCurrentlyVectorizing = false;
       throw error;
     }
   }
 
+  /**
+   * Process files concurrently with controlled concurrency
+   */
+  private async processFilesConcurrently(
+    files: string[],
+    totalElements: number,
+    stats: {
+      filesChecked: number;
+      filesSkipped: number;
+      filesVectorized: number;
+      elementsProcessed: number;
+      errors: number;
+    },
+    concurrency: number
+  ): Promise<void> {
+    const semaphore = new Semaphore(concurrency);
+    const promises: Promise<void>[] = [];
+    
+    for (const file of files) {
+      const promise = semaphore.runExclusive(async () => {
+        try {
+          const relativePath = path.relative(this.projectPath!, file);
+          
+          // Vectorize file (will handle element-level changes internally)
+          const docs = await this.vectorizeFile(file);
+          
+          // Count elements processed (from parsing for progress tracking)
+          const elements = await this.codeParser.parseFile(file);
+          
+          // Update stats (thread-safe updates)
+          stats.filesChecked++;
+          stats.elementsProcessed += elements.length;
+          
+          // File was processed (may have had some changes or not)
+          if (docs.length > 0) {
+            stats.filesVectorized++;
+          }
+          
+          // Send progress update
+          this.sendProgress({
+            phase: 'processing',
+            current: stats.elementsProcessed,
+            total: totalElements,
+            percentage: Math.round((stats.elementsProcessed / totalElements) * 100),
+            currentFile: relativePath,
+            elementsProcessed: stats.elementsProcessed,
+            totalElements
+          });
+          
+        } catch (error) {
+          stats.errors++;
+          console.error(`[CODE-VECTORIZATION] Failed to process ${file}:`, error);
+        }
+      });
+      
+      promises.push(promise);
+    }
+    
+    // Wait for all files to be processed
+    await Promise.all(promises);
+  }
+  
   /**
    * Find all code files matching patterns
    */
@@ -1014,14 +1091,27 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
       throw new Error('Dexy service not initialized');
     }
 
-    // Call the private method through reflection (temporary solution)
-    const embedding = await (this.dexyService as any).callEmbeddingAPI(text);
-    
-    if (!embedding || embedding.length === 0) {
-      throw new Error('Failed to generate embedding');
+    // Check if Dexy is ready
+    if (!this.dexyService.isReady()) {
+      throw new Error('Dexy service is not ready. Please configure Dexy with a provider and embedding model.');
     }
 
-    return embedding;
+    try {
+      console.log('[CODE-VECTORIZATION] Generating embedding for text of length:', text.length);
+      
+      // Call the private method through reflection (temporary solution)
+      const embedding = await (this.dexyService as any).callEmbeddingAPI(text);
+      
+      if (!embedding || embedding.length === 0) {
+        throw new Error('Failed to generate embedding - empty response from Dexy');
+      }
+
+      console.log('[CODE-VECTORIZATION] Successfully generated embedding with', embedding.length, 'dimensions');
+      return embedding;
+    } catch (error) {
+      console.error('[CODE-VECTORIZATION] Failed to generate embedding:', error);
+      throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**

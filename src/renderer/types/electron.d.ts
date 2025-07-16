@@ -201,7 +201,7 @@ export interface KanbanAPI {
 export interface DexyAPI {
   initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
   isReady: () => Promise<boolean>;
-  getConfig: () => Promise<{ providerId: string; modelId: string } | null>;
+  getConfig: () => Promise<{ providerId: string; modelId: string; concurrency?: number } | null>;
   vectorizeTask: (params: { task: any; boardId: string }) => Promise<{ success: boolean; error?: string }>;
   updateTaskVector: (params: { task: any; boardId: string }) => Promise<{ success: boolean; error?: string }>;
   deleteTaskVector: (taskId: string) => Promise<{ success: boolean; error?: string }>;
@@ -306,7 +306,7 @@ export interface CodeVectorizationAPI {
 
 export interface CodeOrchestratorAPI {
   initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
-  vectorizeProject: (filePatterns?: string[]) => Promise<{ success: boolean; error?: string }>;
+  vectorizeProject: (filePatterns?: string[], concurrency?: number) => Promise<{ success: boolean; error?: string }>;
   startWatching: () => Promise<{ success: boolean; error?: string }>;
   stopWatching: () => Promise<{ success: boolean; error?: string }>;
   getStatus: () => Promise<{ success: boolean; status?: any; error?: string }>;

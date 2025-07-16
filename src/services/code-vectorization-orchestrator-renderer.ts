@@ -70,8 +70,8 @@ class CodeVectorizationOrchestratorRenderer extends BrowserEventEmitter {
   /**
    * Start project vectorization
    */
-  async vectorizeProject(filePatterns?: string[]): Promise<void> {
-    const result = await window.electronAPI.codeOrchestrator!.vectorizeProject(filePatterns);
+  async vectorizeProject(filePatterns?: string[], concurrency?: number): Promise<void> {
+    const result = await window.electronAPI.codeOrchestrator!.vectorizeProject(filePatterns, concurrency);
     if (!result.success) {
       throw new Error(result.error || 'Failed to vectorize project');
     }

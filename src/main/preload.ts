@@ -209,7 +209,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Code Vectorization Orchestrator API
   codeOrchestrator: {
     initialize: (projectPath: string) => ipcRenderer.invoke('code-orchestrator:initialize', projectPath),
-    vectorizeProject: (filePatterns?: string[]) => ipcRenderer.invoke('code-orchestrator:vectorizeProject', filePatterns),
+    vectorizeProject: (filePatterns?: string[], concurrency?: number) => ipcRenderer.invoke('code-orchestrator:vectorizeProject', filePatterns, concurrency),
     startWatching: () => ipcRenderer.invoke('code-orchestrator:startWatching'),
     stopWatching: () => ipcRenderer.invoke('code-orchestrator:stopWatching'),
     getStatus: () => ipcRenderer.invoke('code-orchestrator:getStatus'),

@@ -11,6 +11,7 @@ import { CentralizedAPIKeyService } from '../services/centralized-api-key-servic
 export interface DexyConfig {
   providerId: string;
   modelId: string;
+  concurrency?: number;
 }
 
 export class DexyVectorizationService {
@@ -98,9 +99,16 @@ export class DexyVectorizationService {
         }
         
         if (providerId && modelId) {
+          // Get concurrency setting (default to 4 if not specified)
+          let concurrency = dexyConfig?.concurrency;
+          if (concurrency === undefined || concurrency === null) {
+            concurrency = 4; // Default concurrency
+          }
+          
           this.config = {
             providerId,
-            modelId
+            modelId,
+            concurrency
           };
           console.log('[DEXY] Loaded configuration from YAML:', this.config);
         } else {
@@ -458,6 +466,10 @@ export class DexyVectorizationService {
 
   getConfig(): DexyConfig | null {
     return this.config;
+  }
+
+  getConcurrency(): number {
+    return this.config?.concurrency || 4;
   }
 
   async hasTaskVector(taskId: string): Promise<boolean> {

@@ -18,9 +18,9 @@ export function setupCodeVectorizationOrchestratorHandlers(): void {
   });
 
   // Start project vectorization
-  ipcMain.handle('code-orchestrator:vectorizeProject', async (event, filePatterns?: string[]) => {
+  ipcMain.handle('code-orchestrator:vectorizeProject', async (event, filePatterns?: string[], concurrency: number = 4) => {
     try {
-      await orchestrator.vectorizeProject(filePatterns);
+      await orchestrator.vectorizeProject(filePatterns, concurrency);
       return { success: true };
     } catch (error) {
       console.error('[CODE-ORCHESTRATOR-IPC] Failed to vectorize project:', error);

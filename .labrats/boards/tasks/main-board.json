@@ -620,5 +620,97 @@
         "content": "report or issue detection"
       }
     ]
+  },
+  {
+    "id": "TASK-1752675021963424",
+    "title": "TODO: This service runs in the main process, so we need to get the provider differently",
+    "description": "**Code TODO**: This service runs in the main process, so we need to get the provider differently\n\n**Location**: src/main/dexy-vectorization-service.ts:46\n**Type**: NOTE\n**Priority**: medium\n\n**Context**:\n```\n   44:     if (this.config && this.config.providerId && this.config.modelId) {\n   45:       // Initialize the embedding provider\n>  46:       // Note: This service runs in the main process, so we need to get the provider differently\n   47:       // For now, we'll set the provider when calling the embedding API\n   48:       this.provider = { id: this.config.providerId } as AIProvider;\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "medium",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T14:10:21.963Z",
+    "updatedAt": "2025-07-16T14:10:21.963Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-5d4f3fd2",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/main/dexy-vectorization-service.ts",
+        "lineNumber": 46,
+        "content": "This service runs in the main process, so we need to get the provider differently"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752675021964272",
+    "title": "TODO: Overview",
+    "description": "**Code TODO**: Overview\n\n**Location**: src/renderer/components/Dashboard.tsx:1033\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  1031:             ) : (\n  1032:               <>\n> 1033:                 {/* TODO Overview */}\n  1034:                 <div className=\"bg-gray-800 rounded-lg p-6 border border-gray-700\">\n  1035:                   <div className=\"flex items-center justify-between mb-6\">\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T14:10:21.964Z",
+    "updatedAt": "2025-07-16T14:10:21.964Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-5d1230a1",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/Dashboard.tsx",
+        "lineNumber": 1033,
+        "content": "Overview"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752675021964152",
+    "title": "TODO: Types Distribution",
+    "description": "**Code TODO**: Types Distribution\n\n**Location**: src/renderer/components/Dashboard.tsx:1100\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  1098:                   </div>\n  1099: \n> 1100:                   {/* TODO Types Distribution */}\n  1101:                   {todoStats && Object.keys(todoStats.byType).length > 0 && (\n  1102:                     <div className=\"mb-6\">\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T14:10:21.965Z",
+    "updatedAt": "2025-07-16T14:10:21.965Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-65f8ee72",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/Dashboard.tsx",
+        "lineNumber": 1100,
+        "content": "Types Distribution"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752675021965869",
+    "title": "TODO: Selected file restoration moved to separate useEffect",
+    "description": "**Code TODO**: Selected file restoration moved to separate useEffect\n\n**Location**: src/renderer/components/FileExplorer.tsx:230\n**Type**: NOTE\n**Priority**: low\n\n**Context**:\n```\n  228:       setFileTree(processedFiles);\n  229:       \n> 230:       // Note: Selected file restoration moved to separate useEffect\n  231:     } catch (error) {\n  232:       setError(`Failed to load directory: ${error}`);\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T14:10:21.965Z",
+    "updatedAt": "2025-07-16T14:10:21.965Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-069ac1ff",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/FileExplorer.tsx",
+        "lineNumber": 230,
+        "content": "Selected file restoration moved to separate useEffect"
+      }
+    ]
   }
 ]

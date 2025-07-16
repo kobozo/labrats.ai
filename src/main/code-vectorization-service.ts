@@ -998,7 +998,7 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
       throw new Error('Service not initialized');
     }
 
-    const { limit = 10, type, language, minSimilarity = 0.7 } = options;
+    const { limit = 10, type, language, minSimilarity = 0.5 } = options;
     
     // Generate embedding for query
     const queryEmbedding = await this.generateEmbedding(query);

@@ -9,6 +9,7 @@ import { VectorStorageService, VectorDocument, VectorIndex } from './vector-stor
 import { CodeParserService, ParsedCodeElement } from './code-parser-service';
 import { DexyVectorizationService } from './dexy-vectorization-service';
 import { CentralizedAPIKeyService } from '../services/centralized-api-key-service';
+import { ReadmeContextService } from './readme-context-service';
 
 export interface CodeVectorizationStats {
   totalFiles: number;
@@ -31,6 +32,7 @@ export class CodeVectorizationService {
   private vectorStorage: VectorStorageService | null = null;
   private codeParser: CodeParserService;
   private dexyService: DexyVectorizationService | null = null;
+  private readmeContextService: ReadmeContextService;
   private projectPath: string | null = null;
   private codeIndex: VectorIndex | null = null;
   private lastPreScanResult: PreScanResult | null = null;
@@ -38,6 +40,7 @@ export class CodeVectorizationService {
 
   private constructor() {
     this.codeParser = CodeParserService.getInstance();
+    this.readmeContextService = ReadmeContextService.getInstance();
   }
 
   static getInstance(): CodeVectorizationService {
@@ -60,6 +63,9 @@ export class CodeVectorizationService {
     // Initialize Dexy service
     this.dexyService = DexyVectorizationService.getInstance();
     await this.dexyService.initialize(projectPath);
+    
+    // Initialize README context service
+    await this.readmeContextService.initialize(projectPath);
     
     // Get or create code index
     const config = await this.dexyService.getConfig();
@@ -234,7 +240,7 @@ export class CodeVectorizationService {
       }
       
       // Create content for embedding
-      const embeddingContent = this.createEmbeddingContent(element, aiDescription);
+      const embeddingContent = await this.createEmbeddingContent(element, aiDescription);
       
       // Generate embedding
       const embedding = await this.generateEmbedding(embeddingContent);
@@ -306,7 +312,7 @@ export class CodeVectorizationService {
   /**
    * Create content for embedding generation
    */
-  private createEmbeddingContent(element: ParsedCodeElement, aiDescription?: string): string {
+  private async createEmbeddingContent(element: ParsedCodeElement, aiDescription?: string): Promise<string> {
     const parts: string[] = [];
     
     // Add file path context
@@ -368,6 +374,12 @@ export class CodeVectorizationService {
     
     // Add semantic context about the element's purpose
     parts.push(this.generateSemanticContext(element));
+    
+    // Add README context
+    const readmeContext = await this.readmeContextService.createContextualDescription(element.filePath);
+    if (readmeContext) {
+      parts.push(`Folder Context: ${readmeContext}`);
+    }
     
     // Add a snippet of the actual code (first 500 chars)
     const codeSnippet = element.content.slice(0, 500);
@@ -573,7 +585,7 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
   /**
    * Pre-scan project to count total elements without vectorizing
    */
-  async preScanProject(filePatterns: string[] = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx']): Promise<PreScanResult> {
+  async preScanProject(filePatterns: string[] = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/README.md', '**/readme.md']): Promise<PreScanResult> {
     if (!this.projectPath) {
       throw new Error('Project path not set');
     }
@@ -642,7 +654,7 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
   /**
    * Vectorize all code files in the project (incremental - only changed files)
    */
-  async vectorizeProject(filePatterns: string[] = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx']): Promise<void> {
+  async vectorizeProject(filePatterns: string[] = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/README.md', '**/readme.md']): Promise<void> {
     if (!this.projectPath || !this.isReady()) {
       throw new Error('Service not initialized');
     }
@@ -750,6 +762,85 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     }
     
     return [...new Set(files)]; // Remove duplicates
+  }
+  
+  /**
+   * Vectorize README files separately to provide project context
+   */
+  async vectorizeReadmeFiles(): Promise<void> {
+    if (!this.projectPath || !this.isReady()) {
+      return;
+    }
+    
+    const readmeContexts = this.readmeContextService.getAllContexts();
+    
+    for (const context of readmeContexts) {
+      try {
+        await this.vectorizeReadmeFile(context);
+      } catch (error) {
+        console.error(`[CODE-VECTORIZATION] Failed to vectorize README ${context.filePath}:`, error);
+      }
+    }
+  }
+  
+  /**
+   * Vectorize a single README file
+   */
+  private async vectorizeReadmeFile(context: any): Promise<void> {
+    const elementId = this.generateElementId(context.filePath, {
+      type: 'function', // Use 'function' as generic type for documentation
+      name: path.basename(context.filePath),
+      startLine: 1,
+      endLine: context.content.split('\n').length
+    } as any);
+    
+    // Check if already vectorized
+    const exists = await this.vectorStorage!.hasDocument(this.codeIndex!.id, elementId);
+    if (exists) {
+      return;
+    }
+    
+    // Create embedding content for README
+    const embeddingContent = [
+      `Documentation: ${path.basename(context.filePath)}`,
+      `Path: ${path.relative(this.projectPath!, context.filePath)}`,
+      `Folder Coverage: ${context.coversFolders.join(', ')}`,
+      `Summary: ${context.summary}`,
+      `Content: ${context.content.slice(0, 1000)}${context.content.length > 1000 ? '...' : ''}`
+    ].join('\n\n');
+    
+    // Generate embedding
+    const embedding = await this.generateEmbedding(embeddingContent);
+    
+    // Get file stats
+    const stats = await fs.promises.stat(context.filePath);
+    const gitBranch = await this.getCurrentGitBranch();
+    
+    // Create vector document
+    const vectorDoc: VectorDocument = {
+      id: elementId,
+      content: context.content,
+      metadata: {
+        type: 'code-documentation',
+        filePath: context.filePath,
+        fileHash: await this.calculateFileHash(context.filePath),
+        language: 'markdown',
+        lineStart: 1,
+        lineEnd: context.content.split('\n').length,
+        aiDescription: context.summary,
+        lastModified: stats.mtime.toISOString(),
+        gitBranch,
+        codeType: 'function', // Use 'function' as generic type for documentation
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        readmeDepth: context.depth,
+        coversFolders: context.coversFolders
+      },
+      embedding,
+    };
+    
+    await this.vectorStorage!.addDocument(this.codeIndex!.id, vectorDoc);
+    console.log(`[CODE-VECTORIZATION] Vectorized README: ${path.basename(context.filePath)}`);
   }
 
   /**

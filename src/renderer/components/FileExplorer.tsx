@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Folder, File, ChevronRight, ChevronDown, Search, Plus, Eye, AlertCircle, FolderOpen, ChevronUp, Minimize2 } from 'lucide-react';
+import { Folder, File, ChevronRight, ChevronDown, Search, Plus, Eye, AlertCircle, FolderOpen, ChevronUp, Minimize2, Zap, FileText } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { FileNode } from '../types/electron';
 import { getFileIconInfo } from '../utils/fileIcons';
@@ -22,6 +22,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVis
   const [searchTerm, setSearchTerm] = useState('');
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [detailsCollapsed, setDetailsCollapsed] = useState(false);
+  const [isVectorSearch, setIsVectorSearch] = useState(false);
+  const [vectorSearchResults, setVectorSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Debug mode flag
   const [isDebugMode, setIsDebugMode] = useState(false);
@@ -73,6 +76,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVis
       stateManager.setFileExplorerState(stateToSave);
     }
   }, [searchTerm, detailsCollapsed, selectedFile, fileTree, currentFolder, isRestoringState]);
+
+  // Clear vector search results when switching modes or clearing search
+  useEffect(() => {
+    if (!isVectorSearch || !searchTerm.trim()) {
+      setVectorSearchResults([]);
+    }
+  }, [isVectorSearch, searchTerm]);
 
   // Helper function to get expanded folder paths
   const getExpandedFolders = (nodes: FileNode[]): string[] => {
@@ -330,6 +340,32 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVis
     }
   };
 
+  const performVectorSearch = async () => {
+    if (!searchTerm.trim() || !currentFolder) return;
+    
+    setIsSearching(true);
+    setVectorSearchResults([]);
+    
+    try {
+      const results = await window.electronAPI.codeVectorization?.searchCode(searchTerm, {
+        limit: 20,
+        minSimilarity: 0.5
+      });
+      
+      if (results?.success && results?.results) {
+        setVectorSearchResults(results.results);
+      } else {
+        console.error('Vector search failed:', results?.error || 'API not available');
+        setVectorSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Error performing vector search:', error);
+      setVectorSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const renderFileNode = (node: FileNode, depth: number = 0) => {
     const isFolder = node.type === 'folder';
     const hasChildren = node.children && node.children.length > 0;
@@ -441,15 +477,43 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVis
           </div>
           
           {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search files..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setIsVectorSearch(!isVectorSearch)}
+                className={`p-2 rounded-lg transition-colors ${
+                  isVectorSearch ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-white'
+                }`}
+                title={isVectorSearch ? 'Vector Search Mode' : 'Regular Search Mode'}
+              >
+                {isVectorSearch ? <Zap className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+              </button>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={isVectorSearch ? "Search code by meaning..." : "Search files..."}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && isVectorSearch && searchTerm.trim()) {
+                      performVectorSearch();
+                    }
+                  }}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            {isVectorSearch && (
+              <div className="text-xs text-gray-400 pl-11">
+                Press Enter to search using AI-powered semantic search
+              </div>
+            )}
+            {isVectorSearch && !isSearching && vectorSearchResults.length > 0 && (
+              <div className="text-xs text-gray-400 pl-11 mt-1">
+                Found {vectorSearchResults.length} results
+              </div>
+            )}
           </div>
         </div>
 
@@ -475,8 +539,96 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVis
           ) : searchTerm ? (
             // Show search results
             <div>
-              <h3 className="text-sm font-medium text-gray-400 mb-2">Search Results</h3>
-              {filteredFiles.map(file => (
+              <h3 className="text-sm font-medium text-gray-400 mb-2">
+                {isVectorSearch ? 'Vector Search Results' : 'Search Results'}
+                {isSearching && ' (Searching...)'}
+              </h3>
+              {isVectorSearch ? (
+                // Vector search results
+                vectorSearchResults.length > 0 ? (
+                  <div className="space-y-2">
+                    {vectorSearchResults.map((result, index) => {
+                      const { document, similarity } = result;
+                      const metadata = document.metadata || {};
+                      return (
+                        <div
+                          key={document.id || index}
+                          className={`p-3 rounded-lg bg-gray-700 hover:bg-gray-600 cursor-pointer transition-colors ${
+                            selectedFile?.path === metadata.filePath ? 'ring-2 ring-blue-500' : ''
+                          }`}
+                          onClick={async () => {
+                            if (metadata.filePath) {
+                              try {
+                                const stats = await window.electronAPI.getFileStats(metadata.filePath);
+                                const fileNode: FileNode = {
+                                  id: metadata.filePath,
+                                  name: metadata.filePath.split('/').pop() || '',
+                                  type: 'file',
+                                  path: metadata.filePath,
+                                  size: stats.size,
+                                  lastModified: stats.modifiedTime,
+                                  isExpanded: false
+                                };
+                                setSelectedFile(fileNode);
+                                await loadFileContent(metadata.filePath);
+                              } catch (error) {
+                                console.error('Failed to load file:', error);
+                              }
+                            }
+                          }}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2">
+                                {getFileIcon(metadata.filePath || '', false)}
+                                <span className="text-sm font-medium text-gray-200">
+                                  {metadata.functionName || metadata.className || 'Code Element'}
+                                </span>
+                                <span className="text-xs px-2 py-0.5 bg-gray-600 rounded-full text-gray-300">
+                                  {metadata.codeType || metadata.type}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-400 mt-1">
+                                {metadata.filePath?.split('/').pop() || 'Unknown file'}
+                                {metadata.lineStart && metadata.lineEnd && (
+                                  <span className="ml-2">Lines {metadata.lineStart}-{metadata.lineEnd}</span>
+                                )}
+                              </div>
+                              {metadata.aiDescription && (
+                                <div className="text-xs text-gray-300 mt-2 italic">
+                                  {metadata.aiDescription}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-xs text-blue-400 font-medium ml-2">
+                              {(similarity * 100).toFixed(0)}%
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : isSearching ? (
+                  <div className="text-center py-4 text-gray-400">
+                    <div className="animate-spin w-6 h-6 border-2 border-gray-400 border-t-transparent rounded-full mx-auto mb-2"></div>
+                    Searching through code vectors...
+                  </div>
+                ) : searchTerm.trim() ? (
+                  <div className="text-center py-4 text-gray-400">
+                    <Zap className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p>No results found</p>
+                    <p className="text-xs mt-1">Try a different search query</p>
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-gray-400">
+                    <Zap className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p>Enter a search query</p>
+                    <p className="text-xs mt-1">Search by meaning, not just keywords</p>
+                  </div>
+                )
+              ) : (
+                // Regular file search results
+                filteredFiles.map(file => (
                 <div
                   key={file.id}
                   className={`flex items-center space-x-2 p-2 rounded cursor-pointer hover:bg-gray-700 transition-colors ${
@@ -495,7 +647,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVis
                     <div className="text-xs text-gray-500">{file.path}</div>
                   </div>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           ) : (
             // Show file tree

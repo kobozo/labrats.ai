@@ -199,6 +199,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     searchCode: (query: string, options?: any) => ipcRenderer.invoke('code-vectorization:searchCode', query, options),
     findSimilarCode: (codeSnippet: string, options?: any) => ipcRenderer.invoke('code-vectorization:findSimilarCode', codeSnippet, options),
     deleteFileVectors: (filePath: string) => ipcRenderer.invoke('code-vectorization:deleteFileVectors', filePath),
+    preScanProject: (filePatterns?: string[]) => ipcRenderer.invoke('code-vectorization:preScanProject', filePatterns),
     onProgress: (callback: (progress: any) => void) => {
       ipcRenderer.on('code-vectorization:progress', (_event, progress) => callback(progress));
       return () => ipcRenderer.removeAllListeners('code-vectorization:progress');

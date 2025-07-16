@@ -19,6 +19,13 @@ export interface CodeVectorizationStats {
   indexId: string | null;
 }
 
+export interface PreScanResult {
+  totalFiles: number;
+  totalElements: number;
+  fileTypes: { [ext: string]: number };
+  elementTypes: { [type: string]: number };
+}
+
 export class CodeVectorizationService {
   private static instance: CodeVectorizationService;
   private vectorStorage: VectorStorageService | null = null;
@@ -350,6 +357,71 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
   }
 
   /**
+   * Pre-scan project to count total elements without vectorizing
+   */
+  async preScanProject(filePatterns: string[] = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx']): Promise<PreScanResult> {
+    if (!this.projectPath) {
+      throw new Error('Project path not set');
+    }
+
+    console.log('[CODE-VECTORIZATION] Pre-scanning project...');
+    
+    const files = await this.findCodeFiles(this.projectPath, filePatterns);
+    const result: PreScanResult = {
+      totalFiles: files.length,
+      totalElements: 0,
+      fileTypes: {},
+      elementTypes: {}
+    };
+
+    // Send scanning progress
+    this.sendProgress({
+      phase: 'scanning',
+      current: 0,
+      total: files.length,
+      percentage: 0,
+      currentFile: 'Pre-scanning files...',
+      elementsProcessed: 0,
+      totalElements: 0
+    });
+
+    let filesScanned = 0;
+    for (const file of files) {
+      try {
+        const ext = path.extname(file).toLowerCase();
+        result.fileTypes[ext] = (result.fileTypes[ext] || 0) + 1;
+
+        const elements = await this.codeParser.parseFile(file);
+        result.totalElements += elements.length;
+
+        for (const element of elements) {
+          result.elementTypes[element.type] = (result.elementTypes[element.type] || 0) + 1;
+        }
+
+        filesScanned++;
+        
+        // Update progress every 10 files to avoid too many updates
+        if (filesScanned % 10 === 0 || filesScanned === files.length) {
+          this.sendProgress({
+            phase: 'scanning',
+            current: filesScanned,
+            total: files.length,
+            percentage: Math.round((filesScanned / files.length) * 100),
+            currentFile: `Pre-scanning: ${path.basename(file)}`,
+            elementsProcessed: 0,
+            totalElements: result.totalElements
+          });
+        }
+      } catch (error) {
+        console.error(`[CODE-VECTORIZATION] Failed to pre-scan ${file}:`, error);
+      }
+    }
+
+    console.log(`[CODE-VECTORIZATION] Pre-scan complete: ${result.totalFiles} files, ${result.totalElements} elements`);
+    return result;
+  }
+
+  /**
    * Vectorize all code files in the project
    */
   async vectorizeProject(filePatterns: string[] = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx']): Promise<void> {
@@ -359,57 +431,64 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
 
     console.log('[CODE-VECTORIZATION] Starting project vectorization...');
     
+    // First do a pre-scan to get total elements
+    const preScan = await this.preScanProject(filePatterns);
+    const totalElements = preScan.totalElements;
+    
     // Get all matching files
     const files = await this.findCodeFiles(this.projectPath, filePatterns);
-    console.log(`[CODE-VECTORIZATION] Found ${files.length} files to vectorize`);
+    console.log(`[CODE-VECTORIZATION] Found ${files.length} files with ${totalElements} total elements to vectorize`);
     
     // Send initial progress
     this.sendProgress({
-      phase: 'scanning',
+      phase: 'processing',
       current: 0,
-      total: files.length,
+      total: totalElements,
       percentage: 0,
       currentFile: '',
-      elementsProcessed: 0
+      elementsProcessed: 0,
+      totalElements
     });
     
-    let vectorizedCount = 0;
-    let filesProcessed = 0;
+    let elementsProcessed = 0;
     
     for (const file of files) {
       try {
         const relativePath = path.relative(this.projectPath, file);
         
+        // Parse file to know how many elements it has
+        const elements = await this.codeParser.parseFile(file);
+        
         // Send progress update
         this.sendProgress({
           phase: 'processing',
-          current: filesProcessed,
-          total: files.length,
-          percentage: Math.round((filesProcessed / files.length) * 100),
+          current: elementsProcessed,
+          total: totalElements,
+          percentage: Math.round((elementsProcessed / totalElements) * 100),
           currentFile: relativePath,
-          elementsProcessed: vectorizedCount
+          elementsProcessed,
+          totalElements
         });
         
         const docs = await this.vectorizeFile(file);
-        vectorizedCount += docs.length;
-        filesProcessed++;
+        elementsProcessed += elements.length; // Count all elements, even if some failed to vectorize
       } catch (error) {
         console.error(`[CODE-VECTORIZATION] Failed to vectorize ${file}:`, error);
-        filesProcessed++;
       }
     }
     
     // Send completion progress
     this.sendProgress({
       phase: 'completed',
-      current: files.length,
-      total: files.length,
+      current: totalElements,
+      total: totalElements,
       percentage: 100,
       currentFile: '',
-      elementsProcessed: vectorizedCount
+      elementsProcessed,
+      totalElements
     });
     
-    console.log(`[CODE-VECTORIZATION] Vectorized ${vectorizedCount} code elements`);
+    console.log(`[CODE-VECTORIZATION] Vectorized ${elementsProcessed} code elements`);
   }
 
   /**
@@ -474,7 +553,7 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     return {
       totalFiles,
       vectorizedFiles: uniqueFiles.size,
-      totalElements: 0, // Would need to parse all files to get accurate count
+      totalElements: 0, // Call preScanProject to get accurate count
       vectorizedElements,
       lastSync: this.codeIndex.metadata.updatedAt ? new Date(this.codeIndex.metadata.updatedAt) : null,
       indexId: this.codeIndex.id,
@@ -607,6 +686,7 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     percentage: number;
     currentFile: string;
     elementsProcessed: number;
+    totalElements?: number;
   }): void {
     const windows = BrowserWindow.getAllWindows();
     windows.forEach(window => {

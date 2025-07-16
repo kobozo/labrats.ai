@@ -25,7 +25,7 @@ interface TimelineEvent {
   agentColor?: string;
 }
 
-const metrics: Metric[] = [
+const defaultMetrics: Metric[] = [
   {
     label: 'Lines of Code',
     value: '24,567',
@@ -41,11 +41,11 @@ const metrics: Metric[] = [
     icon: GitCommit
   },
   {
-    label: 'Code Reviews',
-    value: 89,
-    change: '+7',
+    label: 'Total Vectorized',
+    value: '0%',
+    change: '',
     trend: 'up',
-    icon: FileText
+    icon: Database
   },
   {
     label: 'Agent Actions',
@@ -174,6 +174,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   const [isVectorizing, setIsVectorizing] = useState(false);
   const [codeVectorizationEnabled, setCodeVectorizationEnabled] = useState(true);
   const [vectorizationProgress, setVectorizationProgress] = useState<CodeVectorizationProgress | null>(null);
+  const [preScanResult, setPreScanResult] = useState<PreScanResult | null>(null);
+  const [metrics, setMetrics] = useState<Metric[]>(defaultMetrics);
 
   // Load config and auto-start code vectorization
   useEffect(() => {
@@ -314,6 +316,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       window.removeEventListener('task-deleted', handleTaskUpdate);
     };
   }, [activeView, currentFolder]);
+
+  // Update metrics when stats change
+  useEffect(() => {
+    if (vectorStats || codeVectorStats || preScanResult) {
+      const newMetrics = [...defaultMetrics];
+      
+      // Calculate total vectorization percentage
+      const totalTaskElements = vectorStats.totalTasks || 0;
+      const totalCodeElements = preScanResult?.totalElements || codeVectorStats?.stats?.totalElements || 0;
+      const totalElements = totalTaskElements + totalCodeElements;
+      const vectorizedTaskElements = vectorStats.vectorizedTasks || 0;
+      const vectorizedCodeElements = codeVectorStats?.stats?.vectorizedElements || 0;
+      const totalVectorized = vectorizedTaskElements + vectorizedCodeElements;
+      
+      if (totalElements > 0) {
+        const percentage = Math.round((totalVectorized / totalElements) * 100);
+        newMetrics[2] = {
+          ...newMetrics[2],
+          value: `${percentage}%`,
+          change: `${totalVectorized}/${totalElements}`,
+          trend: percentage > 50 ? 'up' : 'down'
+        };
+      }
+      
+      setMetrics(newMetrics);
+    }
+  }, [vectorStats, codeVectorStats, preScanResult]);
 
   const loadVectorStats = async () => {
     if (!currentFolder) return;
@@ -1487,15 +1516,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                   <div className="text-center">
                     <div className="text-3xl font-bold text-green-400 mb-2">
-                      {codeVectorStats.stats.totalFiles > 0 
-                        ? Math.round((codeVectorStats.stats.vectorizedFiles / codeVectorStats.stats.totalFiles) * 100) 
+                      {(preScanResult?.totalElements || codeVectorStats.stats.totalElements || 0) > 0 
+                        ? Math.round((codeVectorStats.stats.vectorizedElements / (preScanResult?.totalElements || codeVectorStats.stats.totalElements || 1)) * 100) 
                         : 0}%
                     </div>
-                    <div className="text-gray-400">File Coverage</div>
-                    <div className="text-sm text-gray-500 mt-1">Files with vectors</div>
+                    <div className="text-gray-400">Element Coverage</div>
+                    <div className="text-sm text-gray-500 mt-1">Elements with vectors</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-3xl font-bold text-purple-400 mb-2">{codeVectorStats.stats.vectorizedElements}</div>
+                    <div className="text-3xl font-bold text-purple-400 mb-2">
+                      {codeVectorStats.stats.vectorizedElements} / {preScanResult?.totalElements || codeVectorStats.stats.totalElements || '?'}
+                    </div>
                     <div className="text-gray-400">Code Elements</div>
                     <div className="text-sm text-gray-500 mt-1">Functions, classes, etc.</div>
                   </div>

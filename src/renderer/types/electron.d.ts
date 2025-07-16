@@ -280,6 +280,14 @@ export interface CodeVectorizationProgress {
   percentage: number;
   currentFile: string;
   elementsProcessed: number;
+  totalElements?: number;
+}
+
+export interface PreScanResult {
+  totalFiles: number;
+  totalElements: number;
+  fileTypes: { [ext: string]: number };
+  elementTypes: { [type: string]: number };
 }
 
 export interface CodeVectorizationAPI {
@@ -291,6 +299,7 @@ export interface CodeVectorizationAPI {
   searchCode: (query: string, options?: any) => Promise<{ success: boolean; results?: Array<{ document: any; similarity: number }>; error?: string }>;
   findSimilarCode: (codeSnippet: string, options?: any) => Promise<{ success: boolean; results?: Array<{ document: any; similarity: number }>; error?: string }>;
   deleteFileVectors: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  preScanProject: (filePatterns?: string[]) => Promise<{ success: boolean; result?: PreScanResult; error?: string }>;
   onProgress: (callback: (progress: CodeVectorizationProgress) => void) => () => void;
 }
 

@@ -87,4 +87,15 @@ export function setupCodeVectorizationIpcHandlers(): void {
       return { success: false, error: (error as Error).message };
     }
   });
+
+  // Pre-scan project
+  ipcMain.handle('code-vectorization:preScanProject', async (event, filePatterns?: string[]) => {
+    try {
+      const result = await codeVectorizationService.preScanProject(filePatterns);
+      return { success: true, result };
+    } catch (error) {
+      console.error('[CODE-VECTORIZATION-IPC] Failed to pre-scan project:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
 }

@@ -303,11 +303,26 @@ export class CodeVectorizationService {
   private createEmbeddingContent(element: ParsedCodeElement, aiDescription?: string): string {
     const parts: string[] = [];
     
+    // Add file path context
+    const relativePath = this.projectPath ? path.relative(this.projectPath, element.filePath) : element.filePath;
+    const fileName = path.basename(element.filePath);
+    const dirPath = path.dirname(relativePath);
+    parts.push(`File: ${fileName}`);
+    parts.push(`Path: ${relativePath}`);
+    if (dirPath !== '.') {
+      parts.push(`Directory: ${dirPath}`);
+    }
+    
     // Add element type and name
     parts.push(`${element.type}: ${element.name}`);
     
     // Add language
     parts.push(`Language: ${element.language}`);
+    
+    // Add modifiers (public, private, static, async, etc.)
+    if (element.modifiers && element.modifiers.length > 0) {
+      parts.push(`Modifiers: ${element.modifiers.join(', ')}`);
+    }
     
     // Add JSDoc if available
     if (element.jsdoc) {
@@ -325,16 +340,104 @@ export class CodeVectorizationService {
       parts.push(`Returns: ${element.returnType}`);
     }
     
+    // Add complexity metric
+    if (element.complexity !== undefined) {
+      parts.push(`Complexity: ${element.complexity}`);
+    }
+    
+    // Add imports/dependencies context
+    if (element.imports && element.imports.length > 0) {
+      parts.push(`Imports: ${element.imports.join(', ')}`);
+    }
+    
+    // Add exports context
+    if (element.exports && element.exports.length > 0) {
+      parts.push(`Exports: ${element.exports.join(', ')}`);
+    }
+    
     // Add AI description
     if (aiDescription) {
       parts.push(`Description: ${aiDescription}`);
     }
+    
+    // Add semantic context about the element's purpose
+    parts.push(this.generateSemanticContext(element));
     
     // Add a snippet of the actual code (first 500 chars)
     const codeSnippet = element.content.slice(0, 500);
     parts.push(`Code: ${codeSnippet}${element.content.length > 500 ? '...' : ''}`);
     
     return parts.join('\n\n');
+  }
+
+  /**
+   * Generate semantic context for better search
+   */
+  private generateSemanticContext(element: ParsedCodeElement): string {
+    const contexts: string[] = [];
+    
+    // Add context based on naming patterns
+    const nameLower = element.name.toLowerCase();
+    
+    // Common patterns in function/method names
+    if (element.type === 'function' || element.type === 'method') {
+      if (nameLower.startsWith('get') || nameLower.startsWith('fetch')) {
+        contexts.push('Retrieves or fetches data');
+      } else if (nameLower.startsWith('set') || nameLower.startsWith('update')) {
+        contexts.push('Updates or modifies data');
+      } else if (nameLower.startsWith('create') || nameLower.startsWith('new')) {
+        contexts.push('Creates new instances or resources');
+      } else if (nameLower.startsWith('delete') || nameLower.startsWith('remove')) {
+        contexts.push('Deletes or removes data');
+      } else if (nameLower.startsWith('is') || nameLower.startsWith('has') || nameLower.startsWith('can')) {
+        contexts.push('Checks conditions or permissions');
+      } else if (nameLower.includes('handler') || nameLower.includes('listener')) {
+        contexts.push('Event handler or listener');
+      } else if (nameLower.includes('validate') || nameLower.includes('verify')) {
+        contexts.push('Validation or verification logic');
+      } else if (nameLower.includes('parse') || nameLower.includes('process')) {
+        contexts.push('Data parsing or processing');
+      } else if (nameLower.includes('render') || nameLower.includes('display')) {
+        contexts.push('UI rendering or display logic');
+      }
+    }
+    
+    // Common patterns in class names
+    if (element.type === 'class') {
+      if (nameLower.includes('service')) {
+        contexts.push('Service layer component');
+      } else if (nameLower.includes('controller')) {
+        contexts.push('Controller component');
+      } else if (nameLower.includes('component')) {
+        contexts.push('UI component');
+      } else if (nameLower.includes('model')) {
+        contexts.push('Data model or entity');
+      } else if (nameLower.includes('manager')) {
+        contexts.push('Resource manager');
+      } else if (nameLower.includes('provider')) {
+        contexts.push('Provider or factory');
+      } else if (nameLower.includes('helper') || nameLower.includes('util')) {
+        contexts.push('Helper or utility class');
+      }
+    }
+    
+    // Add file-based context
+    const filePath = element.filePath.toLowerCase();
+    if (filePath.includes('/api/') || filePath.includes('/routes/')) {
+      contexts.push('API endpoint or route');
+    } else if (filePath.includes('/components/')) {
+      contexts.push('UI component');
+    } else if (filePath.includes('/services/')) {
+      contexts.push('Service layer');
+    } else if (filePath.includes('/utils/') || filePath.includes('/helpers/')) {
+      contexts.push('Utility or helper function');
+    } else if (filePath.includes('/models/')) {
+      contexts.push('Data model');
+    } else if (filePath.includes('/tests/') || filePath.includes('.test.') || filePath.includes('.spec.')) {
+      contexts.push('Test file');
+    }
+    
+    return contexts.length > 0 ? `Context: ${contexts.join(', ')}` : '';
   }
 
   /**

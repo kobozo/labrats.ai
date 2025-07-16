@@ -176,7 +176,7 @@ export class CodeVectorizationOrchestrator extends EventEmitter {
 
     return {
       isInitialized: this.isInitialized,
-      isVectorizing: this.progress.phase === 'vectorizing',
+      isVectorizing: this.vectorizationService.isVectorizing() || this.progress.phase === 'vectorizing',
       isWatching: watcherStatus.isWatching,
       progress: { ...this.progress },
       stats: {

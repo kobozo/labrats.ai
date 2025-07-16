@@ -34,6 +34,7 @@ export class CodeVectorizationService {
   private projectPath: string | null = null;
   private codeIndex: VectorIndex | null = null;
   private lastPreScanResult: PreScanResult | null = null;
+  private isCurrentlyVectorizing: boolean = false;
 
   private constructor() {
     this.codeParser = CodeParserService.getInstance();
@@ -84,6 +85,13 @@ export class CodeVectorizationService {
    */
   getProjectPath(): string | null {
     return this.projectPath;
+  }
+
+  /**
+   * Check if currently vectorizing
+   */
+  isVectorizing(): boolean {
+    return this.isCurrentlyVectorizing;
   }
 
   /**
@@ -491,10 +499,12 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     }
 
     console.log('[CODE-VECTORIZATION] Starting incremental project vectorization...');
+    this.isCurrentlyVectorizing = true;
     
-    // First do a pre-scan to get total elements
-    const preScan = await this.preScanProject(filePatterns);
-    const totalElements = preScan.totalElements;
+    try {
+      // First do a pre-scan to get total elements
+      const preScan = await this.preScanProject(filePatterns);
+      const totalElements = preScan.totalElements;
     
     // Get all matching files
     const files = await this.findCodeFiles(this.projectPath, filePatterns);
@@ -585,6 +595,12 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     console.log(`[CODE-VECTORIZATION] - Files skipped (unchanged): ${filesSkipped}`);
     console.log(`[CODE-VECTORIZATION] - Files vectorized (new/changed): ${filesVectorized}`);
     console.log(`[CODE-VECTORIZATION] - Total elements processed: ${elementsProcessed}`);
+    
+    this.isCurrentlyVectorizing = false;
+    } catch (error) {
+      this.isCurrentlyVectorizing = false;
+      throw error;
+    }
   }
 
   /**

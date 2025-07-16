@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle } from 'lucide-react';
-import { CodeVectorizationProgress } from '../types/electron';
+import { CodeVectorizationProgress, PreScanResult } from '../types/electron';
 import { dexyService } from '../../services/dexy-service-renderer';
 import { kanbanService } from '../../services/kanban-service';
 import { todoService, TodoStats } from '../../services/todo-service-renderer';

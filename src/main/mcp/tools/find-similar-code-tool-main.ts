@@ -1,13 +1,38 @@
 import { codeVectorizationService } from '../../code-vectorization-service';
+import { getProjectPathService } from '../../../services/project-path-service';
 
 export async function executeFindSimilarCodeTool(args: any): Promise<string> {
   try {
-    // Check if service is ready
+    // Check if service is ready, and initialize if not
     if (!codeVectorizationService.isReady()) {
-      return JSON.stringify({
-        success: false,
-        error: 'Code vectorization service is not initialized. Please ensure a project is open and vectorized.'
-      });
+      const projectPathService = getProjectPathService();
+      const projectPath = projectPathService.getProjectPath();
+      
+      if (!projectPath) {
+        return JSON.stringify({
+          success: false,
+          error: 'No project is currently open. Please open a project first.'
+        });
+      }
+      
+      console.log('[FIND-SIMILAR-CODE-TOOL-MAIN] Initializing code vectorization service for project:', projectPath);
+      try {
+        await codeVectorizationService.initialize(projectPath);
+      } catch (initError) {
+        console.error('[FIND-SIMILAR-CODE-TOOL-MAIN] Failed to initialize code vectorization service:', initError);
+        return JSON.stringify({
+          success: false,
+          error: 'Failed to initialize code vectorization service. Please ensure the project is properly set up and vectorized.'
+        });
+      }
+      
+      // Check again after initialization
+      if (!codeVectorizationService.isReady()) {
+        return JSON.stringify({
+          success: false,
+          error: 'Code vectorization service is not ready. Please ensure the project is vectorized using the code_vectorization_status tool.'
+        });
+      }
     }
 
     // Find similar code

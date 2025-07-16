@@ -75,7 +75,7 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private busActive = false;
   private agentsActive = true; // New: Controls whether agents can respond
   private lastActivityTime: Date = new Date();
-  private stallDetectionTimer: NodeJS.Timeout | null = null;
+  private stallDetectionTimer: number | null = null;
   private readonly stallTimeoutMs = 10000; // 10 seconds
   private sessionTokenUsage: TokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
   private responseQueue: Array<{agentId: string, triggerMessage: BusMessage, contextSnapshot: BusMessage[]}> = []; // Queue with context snapshots
@@ -2208,7 +2208,7 @@ START YOUR REVIEW NOW!`;
 
   private resetStallDetection(): void {
     if (this.stallDetectionTimer) {
-      clearTimeout(this.stallDetectionTimer);
+      window.clearTimeout(this.stallDetectionTimer);
       this.stallDetectionTimer = null;
     }
   }
@@ -2218,7 +2218,7 @@ START YOUR REVIEW NOW!`;
     
     this.resetStallDetection();
     
-    this.stallDetectionTimer = setTimeout(async () => {
+    this.stallDetectionTimer = window.setTimeout(async () => {
       console.log('[AGENT-BUS] Conversation stall detected - nudging Cortex');
       await this.handleConversationStall();
     }, this.stallTimeoutMs);

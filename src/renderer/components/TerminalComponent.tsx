@@ -374,10 +374,10 @@ export const TerminalComponent: React.FC<TerminalComponentProps> = ({ currentFol
 
   // Handle window resize with debouncing
   useEffect(() => {
-    let resizeTimeout: NodeJS.Timeout;
+    let resizeTimeout: number;
     const handleResize = () => {
-      clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(() => {
+      window.clearTimeout(resizeTimeout);
+      resizeTimeout = window.setTimeout(() => {
         terminals.forEach(terminal => {
           if (terminal.fitAddon && terminal.terminal) {
             try {

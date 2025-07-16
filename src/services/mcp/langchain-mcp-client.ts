@@ -72,6 +72,59 @@ class LangChainMcpClient {
             required: ['cmd', 'cwd', 'timeoutSec'],
           },
         },
+        {
+          name: 'search_code',
+          description: 'Search for code using natural language queries. Find functions, classes, methods, and other code elements semantically.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Natural language search query' },
+              limit: { type: 'number', description: 'Maximum number of results (default: 10, max: 50)' },
+              type: { type: 'string', description: 'Filter by code element type', enum: ['function', 'class', 'method', 'interface', 'type', 'variable', 'import', 'export'] },
+              language: { type: 'string', description: 'Filter by programming language' },
+            },
+            required: ['query'],
+          },
+        },
+        {
+          name: 'find_similar_code',
+          description: 'Find code similar to a given code snippet. Useful for finding duplicates, similar implementations, or related code patterns.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              codeSnippet: { type: 'string', description: 'The code snippet to find similar code for' },
+              limit: { type: 'number', description: 'Maximum number of results (default: 10, max: 50)' },
+              minSimilarity: { type: 'number', description: 'Minimum similarity score (0-1, default: 0.8)' },
+            },
+            required: ['codeSnippet'],
+          },
+        },
+        {
+          name: 'explore_codebase',
+          description: 'Explore and navigate the codebase structure. Get information about files, classes, functions, and their relationships.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', description: 'The exploration action', enum: ['list_files', 'list_functions', 'list_classes', 'get_file_structure', 'get_imports', 'get_exports'] },
+              filePath: { type: 'string', description: 'File path to explore (required for file-specific actions)' },
+              pattern: { type: 'string', description: 'Filter pattern for listing' },
+              language: { type: 'string', description: 'Filter by programming language' },
+            },
+            required: ['action'],
+          },
+        },
+        {
+          name: 'code_vectorization_status',
+          description: 'Get the status of code vectorization including progress, statistics, and control operations.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', description: 'The action to perform', enum: ['get_status', 'start_vectorization', 'stop_watching', 'force_reindex'] },
+              filePatterns: { type: 'array', description: 'File patterns to vectorize (only for start_vectorization)' },
+            },
+            required: ['action'],
+          },
+        },
       ];
       
       console.log('[LANGCHAIN-MCP] Connected. Available tools:', this.tools.map(t => t.name));
@@ -115,6 +168,27 @@ class LangChainMcpClient {
         cmd: z.string().describe('Command to execute'),
         cwd: z.string().describe('Working directory relative to workspace'),
         timeoutSec: z.number().max(600).describe('Timeout in seconds'),
+      }),
+      search_code: z.object({
+        query: z.string().describe('Natural language search query'),
+        limit: z.number().optional().describe('Maximum number of results'),
+        type: z.enum(['function', 'class', 'method', 'interface', 'type', 'variable', 'import', 'export']).optional().describe('Filter by code element type'),
+        language: z.string().optional().describe('Filter by programming language'),
+      }),
+      find_similar_code: z.object({
+        codeSnippet: z.string().describe('The code snippet to find similar code for'),
+        limit: z.number().optional().describe('Maximum number of results'),
+        minSimilarity: z.number().min(0).max(1).optional().describe('Minimum similarity score'),
+      }),
+      explore_codebase: z.object({
+        action: z.enum(['list_files', 'list_functions', 'list_classes', 'get_file_structure', 'get_imports', 'get_exports']).describe('The exploration action'),
+        filePath: z.string().optional().describe('File path to explore'),
+        pattern: z.string().optional().describe('Filter pattern for listing'),
+        language: z.string().optional().describe('Filter by programming language'),
+      }),
+      code_vectorization_status: z.object({
+        action: z.enum(['get_status', 'start_vectorization', 'stop_watching', 'force_reindex']).describe('The action to perform'),
+        filePatterns: z.array(z.string()).optional().describe('File patterns to vectorize'),
       }),
     };
 

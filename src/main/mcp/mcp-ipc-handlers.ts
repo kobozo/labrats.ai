@@ -12,6 +12,11 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { commandApprovalManager } from './command-approval';
 import { getProjectPathService } from '../../services/project-path-service';
+// Code vectorization tool imports for main process
+import { executeCodeSearchTool } from './tools/code-search-tool-main';
+import { executeFindSimilarCodeTool } from './tools/find-similar-code-tool-main';
+import { executeCodeExplorerTool } from './tools/code-explorer-tool-main';
+import { executeCodeVectorizationStatusTool } from './tools/code-vectorization-status-tool-main';
 
 // Declare global to access windowProjects from main.ts
 declare global {
@@ -119,6 +124,14 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
           return await handleReplaceText(workspaceRoot, args);
         case 'execCommand':
           return await handleExecCommand(workspaceRoot, args);
+        case 'search_code':
+          return await executeCodeSearchTool(args);
+        case 'find_similar_code':
+          return await executeFindSimilarCodeTool(args);
+        case 'explore_codebase':
+          return await executeCodeExplorerTool(args);
+        case 'code_vectorization_status':
+          return await executeCodeVectorizationStatusTool(args);
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }

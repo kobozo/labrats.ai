@@ -25,7 +25,7 @@ export class StateManager {
   private static instance: StateManager;
   private currentProjectPath: string | null = null;
   private currentState: AppState = this.getDefaultState();
-  private debounceTimer: NodeJS.Timeout | null = null;
+  private debounceTimer: number | null = null;
 
   private constructor() {}
 
@@ -73,9 +73,9 @@ export class StateManager {
 
   private debounceStateUpdate() {
     if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
+      window.clearTimeout(this.debounceTimer);
     }
-    this.debounceTimer = setTimeout(() => {
+    this.debounceTimer = window.setTimeout(() => {
       this.persistState();
     }, 500); // Save state 500ms after last change
   }
@@ -242,7 +242,7 @@ export class StateManager {
   // Force immediate state save
   async forceSave() {
     if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
+      window.clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
     await this.persistState();

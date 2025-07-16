@@ -188,4 +188,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
     requestCommandApproval: (cmd: string, cwd: string) => ipcRenderer.invoke('mcp:requestCommandApproval', cmd, cwd),
     getAllowedCommands: () => ipcRenderer.invoke('mcp:getAllowedCommands'),
   },
+
+  // Code Vectorization API
+  codeVectorization: {
+    initialize: (projectPath: string) => ipcRenderer.invoke('code-vectorization:initialize', projectPath),
+    isReady: () => ipcRenderer.invoke('code-vectorization:isReady'),
+    vectorizeFile: (filePath: string) => ipcRenderer.invoke('code-vectorization:vectorizeFile', filePath),
+    vectorizeProject: (filePatterns?: string[]) => ipcRenderer.invoke('code-vectorization:vectorizeProject', filePatterns),
+    getStats: () => ipcRenderer.invoke('code-vectorization:getStats'),
+    searchCode: (query: string, options?: any) => ipcRenderer.invoke('code-vectorization:searchCode', query, options),
+    findSimilarCode: (codeSnippet: string, options?: any) => ipcRenderer.invoke('code-vectorization:findSimilarCode', codeSnippet, options),
+    deleteFileVectors: (filePath: string) => ipcRenderer.invoke('code-vectorization:deleteFileVectors', filePath),
+    onProgress: (callback: (progress: any) => void) => {
+      ipcRenderer.on('code-vectorization:progress', (_event, progress) => callback(progress));
+      return () => ipcRenderer.removeAllListeners('code-vectorization:progress');
+    },
+  },
+
+  // Code Vectorization Orchestrator API
+  codeOrchestrator: {
+    initialize: (projectPath: string) => ipcRenderer.invoke('code-orchestrator:initialize', projectPath),
+    vectorizeProject: (filePatterns?: string[]) => ipcRenderer.invoke('code-orchestrator:vectorizeProject', filePatterns),
+    startWatching: () => ipcRenderer.invoke('code-orchestrator:startWatching'),
+    stopWatching: () => ipcRenderer.invoke('code-orchestrator:stopWatching'),
+    getStatus: () => ipcRenderer.invoke('code-orchestrator:getStatus'),
+    forceReindex: () => ipcRenderer.invoke('code-orchestrator:forceReindex'),
+    shutdown: () => ipcRenderer.invoke('code-orchestrator:shutdown'),
+  },
+
+  // IPC Renderer for event listening
+  ipcRenderer: {
+    on: (channel: string, listener: (event: any, ...args: any[]) => void) => ipcRenderer.on(channel, listener),
+    removeListener: (channel: string, listener: (event: any, ...args: any[]) => void) => ipcRenderer.removeListener(channel, listener),
+  },
 });

@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { DexyVectorizationService } from '../services/dexy-vectorization-service';
+import { DexyVectorizationService } from './dexy-vectorization-service';
 import { VectorStorageService } from './vector-storage-service';
 import { Task } from '../types/kanban';
 

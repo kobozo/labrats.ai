@@ -26,7 +26,7 @@ export class LabRatsBackendService {
   private timeout: number;
   private isAvailable: boolean = false;
   private statusListeners: Set<(isOnline: boolean) => void> = new Set();
-  private statusCheckInterval: NodeJS.Timeout | null = null;
+  private statusCheckInterval: number | null = null;
   private conversationStates: Map<string, Map<string, any>> = new Map();
 
   constructor(backendUrl?: string, model?: string, timeout?: number) {
@@ -267,7 +267,7 @@ export class LabRatsBackendService {
     });
     
     // Set up periodic checks
-    this.statusCheckInterval = setInterval(async () => {
+    this.statusCheckInterval = window.setInterval(async () => {
       const wasAvailable = this.isAvailable;
       await this.checkAvailability();
       
@@ -281,7 +281,7 @@ export class LabRatsBackendService {
   // Stop health checks
   stopHealthChecks(): void {
     if (this.statusCheckInterval) {
-      clearInterval(this.statusCheckInterval);
+      window.clearInterval(this.statusCheckInterval);
       this.statusCheckInterval = null;
     }
   }

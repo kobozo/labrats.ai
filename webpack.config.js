@@ -102,7 +102,8 @@ module.exports = [
         "https": false,
         "url": false,
         "buffer": false,
-        "util": false
+        "util": false,
+        "events": false
       },
     },
     plugins: [

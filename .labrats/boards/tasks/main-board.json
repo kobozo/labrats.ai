@@ -209,15 +209,15 @@
   {
     "id": "TASK-1752562924279611",
     "title": "TODO: report or issue detection",
-    "description": "**Code TODO**: report or issue detection\n\n**Location**: src/services/agent-message-bus.ts:1544\n**Type**: BUG\n**Priority**: low\n\n**Context**:\n```\n  1542:     }\n  1543: \n> 1544:     // Bug report or issue detection\n  1545:     if (this.isBugReport(messageContent, senderAgent, receivingAgent)) {\n  1546:       return `This message reports a bug or issue from ${senderAgent.name}. You should investigate and fix the reported problem. Acknowledge the issue and provide a solution or workaround.`;\n```\n\n*This task was automatically created from a TODO comment in the code.*",
-    "assignee": "Cortex",
+    "description": "**Code TODO**: report or issue detection **Location**: src/services/agent-message-bus.ts:1544 **Type**: BUG **Priority**: low **Context**: ``` 1542: } 1543: > 1544: // Bug report or issue detection 1545: if (this.isBugReport(messageContent, senderAgent, receivingAgent)) { 1546: return `This message reports a bug or issue from ${senderAgent.name}. You should investigate and fix the reported problem. Acknowledge the issue and provide a solution or workaround.`; ``` *This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Quill",
     "priority": "low",
     "type": "todo",
-    "status": "backlog",
+    "status": "retro-docs",
     "createdBy": "user",
     "primaryRats": [],
     "createdAt": "2025-07-15T07:02:04.279Z",
-    "updatedAt": "2025-07-15T07:02:04.279Z",
+    "updatedAt": "2025-07-16T03:26:49.708Z",
     "projectPath": "/Users/yannick/Kobozo/labrats.ai",
     "todoId": "TODO-0d098788",
     "todoType": "BUG",
@@ -227,30 +227,8 @@
         "lineNumber": 1544,
         "content": "report or issue detection"
       }
-    ]
-  },
-  {
-    "id": "TASK-1752562924279639",
-    "title": "TODO: This service runs in the main process, so we need to get the provider differently",
-    "description": "**Code TODO**: This service runs in the main process, so we need to get the provider differently\n\n**Location**: src/services/dexy-vectorization-service.ts:39\n**Type**: NOTE\n**Priority**: medium\n\n**Context**:\n```\n   37:     if (this.config && this.config.providerId && this.config.modelId) {\n   38:       // Initialize the embedding provider\n>  39:       // Note: This service runs in the main process, so we need to get the provider differently\n   40:       // For now, we'll set the provider when calling the embedding API\n   41:       this.provider = { id: this.config.providerId } as AIProvider;\n```\n\n*This task was automatically created from a TODO comment in the code.*",
-    "assignee": "Cortex",
-    "priority": "medium",
-    "type": "todo",
-    "status": "backlog",
-    "createdBy": "user",
-    "primaryRats": [],
-    "createdAt": "2025-07-15T07:02:04.279Z",
-    "updatedAt": "2025-07-15T07:02:04.279Z",
-    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
-    "todoId": "TODO-07360245",
-    "todoType": "NOTE",
-    "fileReferences": [
-      {
-        "filePath": "src/services/dexy-vectorization-service.ts",
-        "lineNumber": 39,
-        "content": "This service runs in the main process, so we need to get the provider differently"
-      }
-    ]
+    ],
+    "hasBranch": false
   },
   {
     "id": "TASK-1752562924280601",
@@ -455,6 +433,190 @@
       {
         "filePath": "src/services/agent-message-bus.ts",
         "lineNumber": 1571,
+        "content": "report or issue detection"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752636192603381",
+    "title": "TODO: Implement language-specific parsing using tree-sitter",
+    "description": "**Code TODO**: Implement language-specific parsing using tree-sitter\n\n**Location**: src/main/code-parser-service.ts:323\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  321:     \n  322:     // For now, just return the whole file as a single element\n> 323:     // TODO: Implement language-specific parsing using tree-sitter\n  324:     return [{\n  325:       type: 'function',\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T03:23:12.603Z",
+    "updatedAt": "2025-07-16T03:23:12.603Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-6b4bf02d",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/main/code-parser-service.ts",
+        "lineNumber": 323,
+        "content": "Implement language-specific parsing using tree-sitter"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752636192604606",
+    "title": "TODO: This service runs in the main process, so we need to get the provider differently",
+    "description": "**Code TODO**: This service runs in the main process, so we need to get the provider differently\n\n**Location**: src/main/dexy-vectorization-service.ts:39\n**Type**: NOTE\n**Priority**: medium\n\n**Context**:\n```\n   37:     if (this.config && this.config.providerId && this.config.modelId) {\n   38:       // Initialize the embedding provider\n>  39:       // Note: This service runs in the main process, so we need to get the provider differently\n   40:       // For now, we'll set the provider when calling the embedding API\n   41:       this.provider = { id: this.config.providerId } as AIProvider;\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "medium",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T03:23:12.604Z",
+    "updatedAt": "2025-07-16T03:23:12.604Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-78b6db36",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/main/dexy-vectorization-service.ts",
+        "lineNumber": 39,
+        "content": "This service runs in the main process, so we need to get the provider differently"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752636192605165",
+    "title": "TODO: Gradually enable for other services",
+    "description": "**Code TODO**: Gradually enable for other services\n\n**Location**: src/main/file-watcher-adapter.ts:14\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n   12:   static shouldUseUnifiedWatcher(): boolean {\n   13:     // For now, enable unified watcher for code vectorization only\n>  14:     // TODO: Gradually enable for other services\n   15:     return process.env.USE_UNIFIED_WATCHER === 'true' || false;\n   16:   }\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T03:23:12.605Z",
+    "updatedAt": "2025-07-16T03:23:12.605Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-7a3947c9",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/main/file-watcher-adapter.ts",
+        "lineNumber": 14,
+        "content": "Gradually enable for other services"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752636192605621",
+    "title": "TODO: Scanning IPC handlers",
+    "description": "**Code TODO**: Scanning IPC handlers\n\n**Location**: src/main/main.ts:1640\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  1638: // MCP server is now started when projects are opened\n  1639: \n> 1640: // TODO Scanning IPC handlers\n  1641: import { setupTodoIpcHandlers } from './todo-ipc-handlers';\n  1642: import { todoAutoScanner } from '../services/todo-auto-scanner';\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T03:23:12.606Z",
+    "updatedAt": "2025-07-16T03:23:12.606Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-05167592",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/main/main.ts",
+        "lineNumber": 1640,
+        "content": "Scanning IPC handlers"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752636192606974",
+    "title": "TODO: loadIndices is async, so it won't complete in constructor",
+    "description": "**Code TODO**: loadIndices is async, so it won't complete in constructor\n\n**Location**: src/main/vector-storage-service.ts:63\n**Type**: NOTE\n**Priority**: low\n\n**Context**:\n```\n   61:     this.projectPath = projectPath;\n   62:     this.ensureVectorDirectories();\n>  63:     // Note: loadIndices is async, so it won't complete in constructor\n   64:     // We'll need to ensure it's loaded before use\n   65:   }\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T03:23:12.606Z",
+    "updatedAt": "2025-07-16T03:23:12.606Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-74e56ae7",
+    "todoType": "NOTE",
+    "fileReferences": [
+      {
+        "filePath": "src/main/vector-storage-service.ts",
+        "lineNumber": 63,
+        "content": "loadIndices is async, so it won't complete in constructor"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752636192607795",
+    "title": "TODO: Overview",
+    "description": "**Code TODO**: Overview\n\n**Location**: src/renderer/components/Dashboard.tsx:884\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  882:             ) : (\n  883:               <>\n> 884:                 {/* TODO Overview */}\n  885:                 <div className=\"bg-gray-800 rounded-lg p-6 border border-gray-700\">\n  886:                   <div className=\"flex items-center justify-between mb-6\">\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T03:23:12.607Z",
+    "updatedAt": "2025-07-16T03:23:12.607Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-3a63ede6",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/Dashboard.tsx",
+        "lineNumber": 884,
+        "content": "Overview"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752636192607116",
+    "title": "TODO: Types Distribution",
+    "description": "**Code TODO**: Types Distribution\n\n**Location**: src/renderer/components/Dashboard.tsx:951\n**Type**: TODO\n**Priority**: low\n\n**Context**:\n```\n  949:                   </div>\n  950: \n> 951:                   {/* TODO Types Distribution */}\n  952:                   {todoStats && Object.keys(todoStats.byType).length > 0 && (\n  953:                     <div className=\"mb-6\">\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T03:23:12.608Z",
+    "updatedAt": "2025-07-16T03:23:12.608Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-0c842fc7",
+    "todoType": "TODO",
+    "fileReferences": [
+      {
+        "filePath": "src/renderer/components/Dashboard.tsx",
+        "lineNumber": 951,
+        "content": "Types Distribution"
+      }
+    ]
+  },
+  {
+    "id": "TASK-1752636192608616",
+    "title": "TODO: report or issue detection",
+    "description": "**Code TODO**: report or issue detection\n\n**Location**: src/services/agent-message-bus.ts:1557\n**Type**: BUG\n**Priority**: low\n\n**Context**:\n```\n  1555:     }\n  1556: \n> 1557:     // Bug report or issue detection\n  1558:     if (this.isBugReport(messageContent, senderAgent, receivingAgent)) {\n  1559:       return `This message reports a bug or issue from ${senderAgent.name}. You should investigate and fix the reported problem. Acknowledge the issue and provide a solution or workaround.`;\n```\n\n*This task was automatically created from a TODO comment in the code.*",
+    "assignee": "Cortex",
+    "priority": "low",
+    "type": "todo",
+    "status": "backlog",
+    "createdBy": "user",
+    "primaryRats": [],
+    "createdAt": "2025-07-16T03:23:12.608Z",
+    "updatedAt": "2025-07-16T03:23:12.608Z",
+    "projectPath": "/Users/yannick/Kobozo/labrats.ai",
+    "todoId": "TODO-4be691a6",
+    "todoType": "BUG",
+    "fileReferences": [
+      {
+        "filePath": "src/services/agent-message-bus.ts",
+        "lineNumber": 1557,
         "content": "report or issue detection"
       }
     ]

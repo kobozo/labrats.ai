@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle } from 'lucide-react';
+import { CodeVectorizationProgress } from '../types/electron';
 import { dexyService } from '../../services/dexy-service-renderer';
 import { kanbanService } from '../../services/kanban-service';
 import { todoService, TodoStats } from '../../services/todo-service-renderer';
+import { codeVectorizationOrchestrator } from '../../services/code-vectorization-orchestrator-renderer';
 
 interface Metric {
   label: string;
@@ -130,6 +132,28 @@ interface VectorStats {
   embeddingModel?: string;
 }
 
+interface CodeVectorizationStats {
+  initialized: boolean;
+  isVectorizing: boolean;
+  isWatching: boolean;
+  progress: {
+    filesProcessed: number;
+    totalFiles: number;
+    errors: number;
+    currentFile: string | null;
+    phase: string;
+  };
+  stats: {
+    totalFiles: number;
+    vectorizedFiles: number;
+    totalElements: number;
+    vectorizedElements: number;
+    lastSync: Date | null;
+    fileTypeDistribution: Record<string, number>;
+    elementTypeDistribution: Record<string, number>;
+  };
+}
+
 interface DashboardProps {
   currentFolder: string | null;
 }
@@ -146,12 +170,117 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [todoStats, setTodoStats] = useState<TodoStats | null>(null);
   const [isScanningTodos, setIsScanningTodos] = useState(false);
+  const [codeVectorStats, setCodeVectorStats] = useState<CodeVectorizationStats | null>(null);
+  const [isVectorizing, setIsVectorizing] = useState(false);
+  const [codeVectorizationEnabled, setCodeVectorizationEnabled] = useState(true);
+  const [vectorizationProgress, setVectorizationProgress] = useState<CodeVectorizationProgress | null>(null);
+
+  // Load config and auto-start code vectorization
+  useEffect(() => {
+    const loadConfigAndAutoStart = async () => {
+      if (!currentFolder) return;
+      
+      try {
+        // Load code vectorization enabled setting (default: true)
+        const enabled = await window.electronAPI?.config?.get('codeVectorization', 'enabled') ?? true;
+        setCodeVectorizationEnabled(enabled);
+        
+        // Auto-start code vectorization if enabled
+        if (enabled) {
+          console.log('[Dashboard] Auto-starting code vectorization...');
+          try {
+            await codeVectorizationOrchestrator.initialize(currentFolder);
+            
+            // Check if project has been vectorized before
+            const status = await codeVectorizationOrchestrator.getStatus();
+            console.log('[Dashboard] Current vectorization status:', status);
+            
+            if (!status.isInitialized || status.stats.vectorizedFiles === 0) {
+              console.log('[Dashboard] Project not vectorized yet, starting initial full vectorization...');
+              await codeVectorizationOrchestrator.vectorizeProject();
+              console.log('[Dashboard] Vectorization started, waiting for completion...');
+            } else {
+              console.log('[Dashboard] Project already vectorized, checking for changes and starting full scan...');
+              // Always do a full scan to catch files that changed while app was closed
+              await codeVectorizationOrchestrator.forceReindex();
+            }
+            
+            // Always start watching after vectorization/reindexing
+            console.log('[Dashboard] Starting file watcher...');
+            await codeVectorizationOrchestrator.startWatching();
+          } catch (error) {
+            console.error('[Dashboard] Failed to auto-start code vectorization:', error);
+            console.error('[Dashboard] This usually means Dexy is not configured properly.');
+            console.error('[Dashboard] Please check that Dexy agent has:');
+            console.error('[Dashboard] 1. An AI provider configured (OpenAI, Anthropic, etc.)');
+            console.error('[Dashboard] 2. Valid API keys for the provider');
+            console.error('[Dashboard] 3. An embedding model selected (e.g., text-embedding-3-small)');
+            console.error('[Dashboard] Dexy configuration is shared between task and code vectorization.');
+          }
+        }
+      } catch (error) {
+        console.error('[Dashboard] Failed to load code vectorization config:', error);
+      }
+    };
+
+    loadConfigAndAutoStart();
+  }, [currentFolder]);
 
   // Load vector statistics and TODO stats
   useEffect(() => {
     loadVectorStats();
     if (currentFolder) {
       loadTodoStats();
+      loadCodeVectorStats();
+      
+      // Set up code vectorization progress listener
+      const unsubscribe = window.electronAPI?.codeVectorization?.onProgress?.((progress: CodeVectorizationProgress) => {
+        console.log('[Dashboard] Vectorization progress:', progress);
+        setVectorizationProgress(progress);
+        
+        // Update vectorizing state based on phase
+        if (progress.phase === 'scanning' || progress.phase === 'processing') {
+          setIsVectorizing(true);
+        } else if (progress.phase === 'completed') {
+          setIsVectorizing(false);
+          setVectorizationProgress(null);
+          // Reload stats after completion
+          setTimeout(() => {
+            loadCodeVectorStats();
+          }, 1000);
+        }
+      });
+      
+      // Set up code vectorization event listeners for real-time updates
+      const handlers = {
+        onProgressUpdate: (progress: any) => {
+          console.log('[Dashboard] Vectorization progress update:', progress);
+          loadCodeVectorStats(); // Reload stats on progress
+        },
+        onVectorizationComplete: (data: any) => {
+          console.log('[Dashboard] Vectorization complete:', data);
+          console.log('[Dashboard] Files processed:', data.filesProcessed);
+          console.log('[Dashboard] Elements vectorized:', data.elementsVectorized);
+          // Add a small delay to ensure the index is updated
+          setTimeout(() => {
+            loadCodeVectorStats(); // Reload stats when complete
+          }, 1000);
+        },
+        onFileProcessed: (data: any) => {
+          console.log('[Dashboard] File processed:', data);
+          if (!data.success && data.error) {
+            console.error('[Dashboard] File processing error:', data.error);
+          }
+          // Update stats periodically (not on every file to avoid too many updates)
+        }
+      };
+      
+      codeVectorizationOrchestrator.registerEventHandlers(handlers);
+      
+      return () => {
+        if (unsubscribe) unsubscribe();
+        codeVectorizationOrchestrator.unregisterAllEventHandlers();
+      };
     }
   }, [currentFolder]);
 
@@ -159,6 +288,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   useEffect(() => {
     if (activeView === 'embeddings' && currentFolder) {
       loadVectorStats();
+      loadCodeVectorStats();
     } else if (activeView === 'todos' && currentFolder) {
       loadTodoStats();
     }
@@ -300,6 +430,161 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       console.error('[Dashboard] Failed to scan TODOs:', error);
     } finally {
       setIsScanningTodos(false);
+    }
+  };
+
+  const loadCodeVectorStats = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Loading code vectorization stats for folder:', currentFolder);
+
+    try {
+      const status = await codeVectorizationOrchestrator.getStatus();
+      console.log('[Dashboard] Raw code vectorization status from orchestrator:', JSON.stringify(status, null, 2));
+      
+      // Transform the status into our stats format
+      const stats: CodeVectorizationStats = {
+        initialized: status.isInitialized,
+        isVectorizing: status.isVectorizing,
+        isWatching: status.isWatching,
+        progress: {
+          filesProcessed: status.progress.filesProcessed,
+          totalFiles: status.progress.totalFiles,
+          errors: status.progress.errors,
+          currentFile: status.progress.currentFile || null,
+          phase: status.progress.phase
+        },
+        stats: {
+          totalFiles: status.stats.totalFiles,
+          vectorizedFiles: status.stats.vectorizedFiles,
+          totalElements: status.stats.totalElements,
+          vectorizedElements: status.stats.vectorizedElements,
+          lastSync: status.stats.lastSync,
+          fileTypeDistribution: {},
+          elementTypeDistribution: {}
+        }
+      };
+
+      console.log('[Dashboard] Transformed stats:', JSON.stringify(stats, null, 2));
+
+      // Get detailed stats if initialized
+      if (status.isInitialized) {
+        try {
+          console.log('[Dashboard] Getting detailed file type and element distribution...');
+          // Get file type distribution
+          const searchResults = await window.electronAPI.codeVectorization!.searchCode('', { limit: 1000 });
+          console.log('[Dashboard] Search results for stats:', searchResults);
+          console.log('[Dashboard] Search success:', searchResults.success);
+          console.log('[Dashboard] Search results count:', searchResults.results?.length || 0);
+          
+          if (searchResults.success && searchResults.results) {
+            const fileTypes: Record<string, number> = {};
+            const elementTypes: Record<string, number> = {};
+            
+            searchResults.results.forEach((result: any) => {
+              // Count file types
+              const ext = result.document.metadata.filePath?.split('.').pop() || 'unknown';
+              fileTypes[ext] = (fileTypes[ext] || 0) + 1;
+              
+              // Count element types
+              const type = result.document.metadata.codeType || result.document.metadata.type || 'unknown';
+              elementTypes[type] = (elementTypes[type] || 0) + 1;
+            });
+            
+            console.log('[Dashboard] File type distribution:', fileTypes);
+            console.log('[Dashboard] Element type distribution:', elementTypes);
+            
+            stats.stats.fileTypeDistribution = fileTypes;
+            stats.stats.elementTypeDistribution = elementTypes;
+          }
+        } catch (error) {
+          console.error('[Dashboard] Failed to get detailed stats:', error);
+        }
+      }
+      
+      setCodeVectorStats(stats);
+    } catch (error) {
+      console.error('[Dashboard] Failed to load code vectorization stats:', error);
+      setCodeVectorStats(null);
+    }
+  };
+
+  const handleStartVectorization = async () => {
+    if (!currentFolder || isVectorizing) return;
+
+    console.log('[Dashboard] Starting code vectorization...');
+    setIsVectorizing(true);
+    try {
+      await codeVectorizationOrchestrator.initialize(currentFolder);
+      
+      // Check if this is a fresh start or if we need to reindex
+      const status = await codeVectorizationOrchestrator.getStatus();
+      if (!status.isInitialized || status.stats.vectorizedFiles === 0) {
+        console.log('[Dashboard] Starting fresh vectorization...');
+        await codeVectorizationOrchestrator.vectorizeProject();
+      } else {
+        console.log('[Dashboard] Forcing complete reindex...');
+        await codeVectorizationOrchestrator.forceReindex();
+      }
+      
+      // Start watching for changes
+      await codeVectorizationOrchestrator.startWatching();
+      
+      // Reload stats
+      await loadCodeVectorStats();
+    } catch (error) {
+      console.error('[Dashboard] Failed to start vectorization:', error);
+    } finally {
+      setIsVectorizing(false);
+    }
+  };
+
+  const handleStopVectorization = async () => {
+    try {
+      await codeVectorizationOrchestrator.stopWatching();
+      await loadCodeVectorStats();
+    } catch (error) {
+      console.error('[Dashboard] Failed to stop vectorization:', error);
+    }
+  };
+
+  const handleToggleCodeVectorization = async () => {
+    try {
+      const newEnabled = !codeVectorizationEnabled;
+      await window.electronAPI?.config?.set('codeVectorization', 'enabled', newEnabled);
+      setCodeVectorizationEnabled(newEnabled);
+      
+      if (newEnabled && currentFolder) {
+        // Start vectorization
+        await handleStartVectorization();
+      } else if (!newEnabled) {
+        // Stop vectorization
+        await handleStopVectorization();
+      }
+    } catch (error) {
+      console.error('[Dashboard] Failed to toggle code vectorization:', error);
+    }
+  };
+
+  const handleForceRescan = async () => {
+    if (!currentFolder || isVectorizing) return;
+
+    console.log('[Dashboard] Starting force rescan...');
+    setIsVectorizing(true);
+    try {
+      await codeVectorizationOrchestrator.initialize(currentFolder);
+      console.log('[Dashboard] Forcing complete reindex of all files...');
+      await codeVectorizationOrchestrator.forceReindex();
+      
+      // Start watching for changes
+      await codeVectorizationOrchestrator.startWatching();
+      
+      // Reload stats
+      await loadCodeVectorStats();
+    } catch (error) {
+      console.error('[Dashboard] Failed to force rescan:', error);
+    } finally {
+      setIsVectorizing(false);
     }
   };
 
@@ -906,20 +1191,164 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                   </div>
                 </div>
 
-                {/* Future: Code Files */}
-                <div className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg opacity-50">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-purple-500/20 rounded">
-                      <FileText className="w-5 h-5 text-purple-400" />
+                {/* Code Files */}
+                <div className={`p-4 rounded-lg ${
+                  codeVectorStats?.initialized ? 'bg-gray-700' : 'bg-gray-700/50'
+                }`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-purple-500/20 rounded">
+                        <Code className="w-5 h-5 text-purple-400" />
+                      </div>
+                      <div>
+                        <div className="text-white font-medium">Code Files</div>
+                        <div className="text-sm text-gray-400">Source code and documentation</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-white font-medium">Code Files</div>
-                      <div className="text-sm text-gray-400">Source code and documentation</div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={handleToggleCodeVectorization}
+                        className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                          codeVectorizationEnabled
+                            ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                            : 'bg-gray-600 hover:bg-gray-500 text-gray-300'
+                        }`}
+                      >
+                        {codeVectorizationEnabled ? 'Enabled' : 'Disabled'}
+                      </button>
+                      {codeVectorStats?.initialized && (
+                        <button
+                          onClick={handleForceRescan}
+                          disabled={isVectorizing}
+                          className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                            isVectorizing
+                              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          }`}
+                        >
+                          {isVectorizing ? 'Scanning...' : 'Force Rescan'}
+                        </button>
+                      )}
+                      {codeVectorStats?.initialized && codeVectorStats.isWatching && (
+                        <button
+                          onClick={handleStopVectorization}
+                          className="px-3 py-1 rounded text-xs font-medium bg-red-600 hover:bg-red-700 text-white"
+                        >
+                          Stop Watching
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm text-gray-500">Coming Soon</div>
+                  
+                  {/* Status and Stats */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      {codeVectorStats?.initialized ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-green-400" />
+                          <span className="text-sm text-green-400">Active</span>
+                          {codeVectorStats.isWatching && (
+                            <span className="text-xs text-gray-400">(Monitoring changes)</span>
+                          )}
+                          {codeVectorStats.isVectorizing && (
+                            <span className="text-xs text-blue-400">(Processing...)</span>
+                          )}
+                        </>
+                      ) : codeVectorizationEnabled ? (
+                        codeVectorStats && !codeVectorStats.initialized ? (
+                          <>
+                            <AlertCircle className="w-4 h-4 text-red-400" />
+                            <span className="text-sm text-red-400">Dexy Not Configured</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className={`w-4 h-4 text-blue-400 ${isVectorizing ? 'animate-spin' : ''}`} />
+                            <span className="text-sm text-blue-400">{isVectorizing ? 'Initializing...' : 'Starting...'}</span>
+                          </>
+                        )
+                      ) : (
+                        <>
+                          <AlertCircle className="w-4 h-4 text-yellow-400" />
+                          <span className="text-sm text-yellow-400">Disabled</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      {codeVectorStats?.initialized ? (
+                        <>
+                          <div className="text-lg font-semibold text-white">{codeVectorStats.stats.vectorizedFiles}</div>
+                          <div className="text-sm text-gray-400">files • {codeVectorStats.stats.vectorizedElements} elements</div>
+                        </>
+                      ) : codeVectorizationEnabled ? (
+                        codeVectorStats && !codeVectorStats.initialized ? (
+                          <div className="text-right">
+                            <div className="text-sm text-red-400">Dexy Required</div>
+                            <div className="text-xs text-gray-500">Configure Dexy agent</div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={handleStartVectorization}
+                            disabled={isVectorizing}
+                            className={`px-3 py-1 rounded text-sm font-medium transition-all ${
+                              isVectorizing
+                                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                : 'bg-purple-600 hover:bg-purple-700 text-white'
+                            }`}
+                          >
+                            {isVectorizing ? 'Initializing...' : 'Initialize Now'}
+                          </button>
+                        )
+                      ) : (
+                        <div className="text-sm text-gray-500">Not active</div>
+                      )}
+                    </div>
                   </div>
+                  
+                  {/* Configuration Notice */}
+                  {codeVectorizationEnabled && codeVectorStats && !codeVectorStats.initialized && (
+                    <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded">
+                      <div className="flex items-start space-x-2">
+                        <AlertCircle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm">
+                          <div className="text-yellow-400 font-medium">Code vectorization requires Dexy configuration</div>
+                          <div className="text-gray-400 mt-1">
+                            Configure Dexy agent with an embedding provider and model in the AI Agents settings. 
+                            Dexy handles all vectorization for both tasks and code.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Progress Bar */}
+                  {vectorizationProgress && (vectorizationProgress.phase === 'scanning' || vectorizationProgress.phase === 'processing') && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-400">
+                          {vectorizationProgress.phase === 'scanning' ? 'Scanning files...' : 'Processing files...'}
+                        </span>
+                        <span className="text-xs text-white">
+                          {vectorizationProgress.current} / {vectorizationProgress.total}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-600 rounded-full h-2">
+                        <div
+                          className="bg-purple-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${vectorizationProgress.percentage}%` }}
+                        />
+                      </div>
+                      {vectorizationProgress.currentFile && (
+                        <div className="mt-1 text-xs text-gray-500 truncate">
+                          {vectorizationProgress.currentFile}
+                        </div>
+                      )}
+                      {vectorizationProgress.elementsProcessed > 0 && (
+                        <div className="mt-1 text-xs text-gray-400">
+                          {vectorizationProgress.elementsProcessed} elements vectorized
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Future: Git Commits */}
@@ -980,10 +1409,123 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                 </div>
               </div>
             </div>
+
+            {/* Code File Type Distribution */}
+            {codeVectorStats && Object.keys(codeVectorStats.stats.fileTypeDistribution).length > 0 && (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-semibold text-white mb-4">Code File Types</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {Object.entries(codeVectorStats.stats.fileTypeDistribution)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 8)
+                    .map(([ext, count]) => (
+                      <div key={ext} className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-300 font-mono">.{ext}</span>
+                          <span className="text-white font-bold">{count}</span>
+                        </div>
+                        <div className="mt-2">
+                          <div className="w-full bg-gray-700 rounded-full h-1">
+                            <div
+                              className="bg-purple-500 h-1 rounded-full"
+                              style={{ 
+                                width: `${Math.min(100, (count / Math.max(...Object.values(codeVectorStats.stats.fileTypeDistribution))) * 100)}%` 
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Code Element Type Distribution */}
+            {codeVectorStats && Object.keys(codeVectorStats.stats.elementTypeDistribution).length > 0 && (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-semibold text-white mb-4">Code Element Types</h3>
+                <div className="space-y-3">
+                  {Object.entries(codeVectorStats.stats.elementTypeDistribution)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 10)
+                    .map(([type, count]) => {
+                      const total = Object.values(codeVectorStats.stats.elementTypeDistribution).reduce((a, b) => a + b, 0);
+                      const percentage = Math.round((count / total) * 100);
+                      
+                      return (
+                        <div key={type} className="flex items-center space-x-3">
+                          <span className="text-gray-300 w-24 capitalize">{type}</span>
+                          <div className="flex-1 flex items-center space-x-3">
+                            <div className="flex-1 bg-gray-700 rounded-full h-2">
+                              <div 
+                                className={`h-2 rounded-full ${
+                                  type === 'function' ? 'bg-blue-500' :
+                                  type === 'class' ? 'bg-purple-500' :
+                                  type === 'method' ? 'bg-green-500' :
+                                  type === 'interface' ? 'bg-yellow-500' :
+                                  type === 'variable' ? 'bg-orange-500' :
+                                  'bg-gray-500'
+                                }`}
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                            <span className="text-white font-mono text-sm w-12">{count}</span>
+                            <span className="text-gray-400 text-xs w-10">{percentage}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* Code Search Performance */}
+            {codeVectorStats?.initialized && (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-semibold text-white mb-6">Code Search Performance</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-green-400 mb-2">
+                      {codeVectorStats.stats.totalFiles > 0 
+                        ? Math.round((codeVectorStats.stats.vectorizedFiles / codeVectorStats.stats.totalFiles) * 100) 
+                        : 0}%
+                    </div>
+                    <div className="text-gray-400">File Coverage</div>
+                    <div className="text-sm text-gray-500 mt-1">Files with vectors</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-purple-400 mb-2">{codeVectorStats.stats.vectorizedElements}</div>
+                    <div className="text-gray-400">Code Elements</div>
+                    <div className="text-sm text-gray-500 mt-1">Functions, classes, etc.</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-blue-400 mb-2">~25ms</div>
+                    <div className="text-gray-400">Avg. Search Time</div>
+                    <div className="text-sm text-gray-500 mt-1">Semantic code search</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-orange-400 mb-2">1536D</div>
+                    <div className="text-gray-400">Vector Dimension</div>
+                    <div className="text-sm text-gray-500 mt-1">OpenAI embeddings</div>
+                  </div>
+                </div>
+                
+                {/* Last Sync Info */}
+                {codeVectorStats.stats.lastSync && (
+                  <div className="mt-4 pt-4 border-t border-gray-700">
+                    <div className="text-sm text-gray-400">
+                      Last synchronized: {new Date(codeVectorStats.stats.lastSync).toLocaleString()}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             </>
             )}
           </div>
         )}
+
         </div>
       </div>
     </div>

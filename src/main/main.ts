@@ -1644,6 +1644,14 @@ console.log('[MAIN] Registering TODO handlers...');
 setupTodoIpcHandlers();
 console.log('[MAIN] TODO handlers registered successfully');
 
+// Code Vectorization IPC handlers
+import { setupCodeVectorizationIpcHandlers } from './code-vectorization-ipc-handlers';
+import { setupCodeVectorizationOrchestratorHandlers } from './code-vectorization-orchestrator-ipc';
+console.log('[MAIN] Registering Code Vectorization handlers...');
+setupCodeVectorizationIpcHandlers();
+setupCodeVectorizationOrchestratorHandlers();
+console.log('[MAIN] Code Vectorization handlers registered successfully');
+
 // Chat History IPC handlers
 ipcMain.handle('chat-history-save', async (event, projectPath: string, messages: any[]) => {
   try {

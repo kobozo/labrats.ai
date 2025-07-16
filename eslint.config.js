@@ -62,7 +62,9 @@ module.exports = [
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'react/prop-types': 'off',
       'react/react-in-jsx-scope': 'off',
-      'no-console': ['warn', { allow: ['warn', 'error', 'log'] }]
+      'no-console': ['warn', { allow: ['warn', 'error', 'log'] }],
+      '@typescript-eslint/no-var-requires': 'error',
+      '@typescript-eslint/no-require-imports': 'error'
     },
     settings: {
       react: {

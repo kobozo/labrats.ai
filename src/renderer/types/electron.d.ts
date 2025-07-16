@@ -260,11 +260,48 @@ export interface ElectronAPI {
   dexy?: DexyAPI;
   todo?: TodoAPI;
   mcp?: McpAPI;
+  codeVectorization?: CodeVectorizationAPI;
+  codeOrchestrator?: CodeOrchestratorAPI;
+  ipcRenderer?: {
+    on: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
+    removeListener: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
+  };
 }
 
 export interface McpAPI {
   callTool: (toolName: string, args: any) => Promise<{ success: boolean; result?: any; error?: string }>;
   getStatus: () => Promise<{ ready: boolean; serverInfo?: { name: string; version: string } }>;
+}
+
+export interface CodeVectorizationProgress {
+  phase: 'scanning' | 'processing' | 'completed';
+  current: number;
+  total: number;
+  percentage: number;
+  currentFile: string;
+  elementsProcessed: number;
+}
+
+export interface CodeVectorizationAPI {
+  initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  isReady: () => Promise<boolean>;
+  vectorizeFile: (filePath: string) => Promise<{ success: boolean; documents?: any[]; error?: string }>;
+  vectorizeProject: (filePatterns?: string[]) => Promise<{ success: boolean; error?: string }>;
+  getStats: () => Promise<{ success: boolean; stats?: any; error?: string }>;
+  searchCode: (query: string, options?: any) => Promise<{ success: boolean; results?: Array<{ document: any; similarity: number }>; error?: string }>;
+  findSimilarCode: (codeSnippet: string, options?: any) => Promise<{ success: boolean; results?: Array<{ document: any; similarity: number }>; error?: string }>;
+  deleteFileVectors: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  onProgress: (callback: (progress: CodeVectorizationProgress) => void) => () => void;
+}
+
+export interface CodeOrchestratorAPI {
+  initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  vectorizeProject: (filePatterns?: string[]) => Promise<{ success: boolean; error?: string }>;
+  startWatching: () => Promise<{ success: boolean; error?: string }>;
+  stopWatching: () => Promise<{ success: boolean; error?: string }>;
+  getStatus: () => Promise<{ success: boolean; status?: any; error?: string }>;
+  forceReindex: () => Promise<{ success: boolean; error?: string }>;
+  shutdown: () => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {

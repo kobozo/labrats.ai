@@ -107,7 +107,9 @@ export class CodeVectorizationService {
    */
   private calculateElementHash(element: ParsedCodeElement): string {
     // Create a unique hash based on element content and metadata
+    // Include embedding version to force re-vectorization when format changes
     const hashInput = JSON.stringify({
+      embeddingVersion: 'v2', // Increment this when embedding format changes
       type: element.type,
       name: element.name,
       content: element.content,
@@ -115,7 +117,11 @@ export class CodeVectorizationService {
       endLine: element.endLine,
       parameters: element.parameters,
       returnType: element.returnType,
-      jsdoc: element.jsdoc
+      jsdoc: element.jsdoc,
+      modifiers: element.modifiers,
+      imports: element.imports,
+      exports: element.exports,
+      complexity: element.complexity
     });
     return crypto.createHash('sha256').update(hashInput).digest('hex');
   }

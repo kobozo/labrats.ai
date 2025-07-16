@@ -33,6 +33,7 @@ export class CodeVectorizationService {
   private dexyService: DexyVectorizationService | null = null;
   private projectPath: string | null = null;
   private codeIndex: VectorIndex | null = null;
+  private lastPreScanResult: PreScanResult | null = null;
 
   private constructor() {
     this.codeParser = CodeParserService.getInstance();
@@ -418,6 +419,10 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     }
 
     console.log(`[CODE-VECTORIZATION] Pre-scan complete: ${result.totalFiles} files, ${result.totalElements} elements`);
+    
+    // Store the pre-scan result for stats
+    this.lastPreScanResult = result;
+    
     return result;
   }
 
@@ -553,7 +558,7 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     return {
       totalFiles,
       vectorizedFiles: uniqueFiles.size,
-      totalElements: 0, // Call preScanProject to get accurate count
+      totalElements: this.lastPreScanResult?.totalElements || 0,
       vectorizedElements,
       lastSync: this.codeIndex.metadata.updatedAt ? new Date(this.codeIndex.metadata.updatedAt) : null,
       indexId: this.codeIndex.id,

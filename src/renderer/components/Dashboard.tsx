@@ -537,6 +537,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       }
       
       setCodeVectorStats(stats);
+      
+      // If we don't have total elements in stats and no pre-scan result, do a pre-scan
+      if (stats.initialized && (!stats.stats.totalElements || stats.stats.totalElements === 0) && !preScanResult && codeVectorizationEnabled) {
+        try {
+          console.log('[Dashboard] Running pre-scan to get total elements...');
+          const scanResult = await window.electronAPI?.codeVectorization?.preScanProject();
+          if (scanResult?.success && scanResult.result) {
+            setPreScanResult(scanResult.result);
+            console.log('[Dashboard] Pre-scan complete:', scanResult.result);
+          }
+        } catch (error) {
+          console.error('[Dashboard] Pre-scan failed:', error);
+        }
+      }
     } catch (error) {
       console.error('[Dashboard] Failed to load code vectorization stats:', error);
       setCodeVectorStats(null);

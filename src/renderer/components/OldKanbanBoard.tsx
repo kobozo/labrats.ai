@@ -449,39 +449,23 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
         <WorkflowVisualization onClose={() => setShowWorkflow(false)} />
       )}
       
+      {/* TODO: Fix CreateTaskDialog compatibility with old kanban system */}
       {showCreateDialog && (
-        <CreateTaskDialog
-          defaultStatus={createTaskStatus}
-          allTasks={tasks}
-          open={showCreateDialog}
-          onClose={() => setShowCreateDialog(false)}
-          onCreate={async (newTask: any) => {
-            try {
-              // Check for duplicates before creating
-              setCheckingDuplicates(newTask);
-              setShowSearchDialog(true);
-              
-              setTasks([...tasks, newTask]);
-              await kanbanService.updateTask(boardId, newTask);
-              
-              // Vectorize with Dexy
-              if (dexyReady) {
-                await dexyService.vectorizeTask(newTask, boardId);
-              }
-              
-              // Dispatch event for Dashboard to update vector stats
-              const taskCreatedEvent = new CustomEvent('task-created', { 
-                detail: { task: newTask, boardId } 
-              });
-              window.dispatchEvent(taskCreatedEvent);
-              
-              // Reload tasks to ensure we have the latest data from storage
-              await loadTasks();
-            } catch (error) {
-              console.error('Error saving task:', error);
-            }
-          }}
-        />
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg">
+            <h3 className="text-lg font-semibold mb-4">Create Task</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              Task creation temporarily disabled while migrating to new kanban system.
+              Please use the new simplified kanban board in the Dashboard.
+            </p>
+            <button
+              onClick={() => setShowCreateDialog(false)}
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
       
       {showAssignDialog && assignDialogData && (

@@ -6,6 +6,7 @@ import { kanbanService } from '../../services/kanban-service';
 import { todoService, TodoStats } from '../../services/todo-service-renderer';
 import { codeVectorizationOrchestrator } from '../../services/code-vectorization-orchestrator-renderer';
 import Graph from 'react-graph-vis';
+import 'devicons/css/devicons.min.css';
 
 interface Metric {
   label: string;
@@ -464,29 +465,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
         console.log('[Dashboard] Dependency graph loaded:', graph);
         
         // Convert graph to react-graph-vis format
-        const visNodes = graph.nodes.map((node) => ({
-          id: node.id,
-          label: node.name,
-          title: `${node.name}\nLanguage: ${node.language}\nImports: ${node.imports.length}\nExports: ${node.exports.length}\nDependents: ${node.dependents.length}`,
-          color: {
-            background: getNodeColor(node.language),
-            border: '#555555',
-            highlight: {
-              background: lightenColor(getNodeColor(node.language), 0.2),
-              border: '#ffffff'
+        const visNodes = graph.nodes.map((node) => {
+          const iconClass = getLanguageIcon(node.language);
+          return {
+            id: node.id,
+            label: `<i class="${iconClass}" style="font-size: 16px; margin-right: 4px;"></i>${node.name}`,
+            title: `${node.name}\nLanguage: ${node.language}\nImports: ${node.imports.length}\nExports: ${node.exports.length}\nDependents: ${node.dependents.length}`,
+            color: {
+              background: getNodeColor(node.language),
+              border: '#555555',
+              highlight: {
+                background: lightenColor(getNodeColor(node.language), 0.2),
+                border: '#ffffff'
+              }
+            },
+            font: {
+              color: 'white',
+              size: 12,
+              multi: 'html'
+            },
+            shape: 'box',
+            margin: 10,
+            widthConstraint: {
+              minimum: 120,
+              maximum: 180
             }
-          },
-          font: {
-            color: 'white',
-            size: 12
-          },
-          shape: 'box',
-          margin: 10,
-          widthConstraint: {
-            minimum: 100,
-            maximum: 150
-          }
-        }));
+          };
+        });
 
         const visEdges = graph.edges.map((edge) => ({
           id: edge.id,
@@ -573,6 +578,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
     return colors[language] || colors.unknown;
   };
 
+  const getLanguageIcon = (language: string): string => {
+    const icons: { [key: string]: string } = {
+      typescript: 'devicons devicons-javascript', // TypeScript uses JS icon in devicons
+      javascript: 'devicons devicons-javascript',
+      python: 'devicons devicons-python',
+      java: 'devicons devicons-java',
+      go: 'devicons devicons-go',
+      rust: 'devicons devicons-rust',
+      cpp: 'devicons devicons-code', // C++ uses generic code icon
+      c: 'devicons devicons-code',
+      csharp: 'devicons devicons-dotnet',
+      ruby: 'devicons devicons-ruby',
+      php: 'devicons devicons-php',
+      swift: 'devicons devicons-swift',
+      kotlin: 'devicons devicons-java', // Kotlin uses Java icon as fallback
+      unknown: 'devicons devicons-code'
+    };
+    return icons[language] || icons.unknown;
+  };
+
   const lightenColor = (color: string, percent: number): string => {
     const num = parseInt(color.replace("#", ""), 16);
     const amt = Math.round(2.55 * percent * 100);
@@ -601,15 +626,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       });
 
       // Update node colors to highlight connections
-      const updatedNodes = graphData.nodes.map(node => ({
-        ...node,
-        color: {
-          ...node.color,
-          background: connectedNodes.has(node.id) 
-            ? lightenColor(getNodeColor(getNodeLanguage(node.id)), 0.3)
-            : node.color.background
-        }
-      }));
+      const updatedNodes = graphData.nodes.map(node => {
+        const nodeLanguage = getNodeLanguage(node.id);
+        const iconClass = getLanguageIcon(nodeLanguage);
+        const fileName = node.id.split('/').pop();
+        return {
+          ...node,
+          label: `<i class="${iconClass}" style="font-size: 16px; margin-right: 4px;"></i>${fileName}`,
+          color: {
+            ...node.color,
+            background: connectedNodes.has(node.id) 
+              ? lightenColor(getNodeColor(nodeLanguage), 0.3)
+              : getNodeColor(nodeLanguage)
+          }
+        };
+      });
 
       const updatedEdges = graphData.edges.map(edge => ({
         ...edge,
@@ -665,11 +696,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       shape: 'box',
       margin: 10,
       widthConstraint: {
-        minimum: 100,
-        maximum: 150
+        minimum: 120,
+        maximum: 180
       },
       heightConstraint: {
-        minimum: 30
+        minimum: 35
+      },
+      font: {
+        multi: 'html'
       }
     },
     edges: {
@@ -2073,21 +2107,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
               {/* Language Legend */}
               {dependencyGraph && graphData.nodes.length > 0 && (
                 <div className="mb-4 p-3 bg-gray-700 rounded-lg">
-                  <div className="text-sm text-gray-300 mb-2">Language Colors:</div>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="text-sm text-gray-300 mb-2">Languages:</div>
+                  <div className="flex flex-wrap gap-4">
                     {Object.entries({
-                      typescript: '#3178c6',
-                      javascript: '#f7df1e',
-                      python: '#3776ab',
-                      java: '#ed8b00',
-                      go: '#00add8',
-                      rust: '#ce422b'
-                    }).map(([lang, color]) => (
+                      typescript: { color: '#3178c6', icon: 'devicons devicons-javascript' },
+                      javascript: { color: '#f7df1e', icon: 'devicons devicons-javascript' },
+                      python: { color: '#3776ab', icon: 'devicons devicons-python' },
+                      java: { color: '#ed8b00', icon: 'devicons devicons-java' },
+                      go: { color: '#00add8', icon: 'devicons devicons-go' },
+                      rust: { color: '#ce422b', icon: 'devicons devicons-rust' }
+                    }).map(([lang, { color, icon }]) => (
                       <div key={lang} className="flex items-center space-x-2">
                         <div 
-                          className="w-3 h-3 rounded-sm" 
+                          className="w-4 h-4 rounded-sm flex items-center justify-center" 
                           style={{ backgroundColor: color }}
-                        />
+                        >
+                          <i className={icon} style={{ fontSize: '10px', color: 'white' }} />
+                        </div>
                         <span className="text-xs text-gray-300 capitalize">{lang}</span>
                       </div>
                     ))}

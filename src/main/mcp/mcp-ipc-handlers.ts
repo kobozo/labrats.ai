@@ -17,6 +17,11 @@ import { executeCodeSearchTool } from './tools/code-search-tool-main';
 import { executeFindSimilarCodeTool } from './tools/find-similar-code-tool-main';
 import { executeCodeExplorerTool } from './tools/code-explorer-tool-main';
 import { executeCodeVectorizationStatusTool } from './tools/code-vectorization-status-tool-main';
+import { executeFileSearchTool } from './tools/file-search-tool-main';
+import { executeInFileSearchTool } from './tools/infile-search-tool-main';
+import { executeReplaceTextTool } from './tools/replace-text-tool-main';
+import { executeReadCodeElementTool } from './tools/read-code-element-tool-main';
+import { executeSearchWithContextTool } from './tools/search-with-context-tool-main';
 
 // Declare global to access windowProjects from main.ts
 declare global {
@@ -132,6 +137,16 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
           return await executeCodeExplorerTool(args);
         case 'code_vectorization_status':
           return await executeCodeVectorizationStatusTool(args);
+        case 'search_files':
+          return await executeFileSearchTool(args);
+        case 'search_in_files':
+          return await executeInFileSearchTool(args);
+        case 'replace_in_file':
+          return await executeReplaceTextTool(args);
+        case 'read_code_element':
+          return await executeReadCodeElementTool(args);
+        case 'search_with_context':
+          return await executeSearchWithContextTool(args);
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }

@@ -125,6 +125,85 @@ class LangChainMcpClient {
             required: ['action'],
           },
         },
+        {
+          name: 'search_files',
+          description: 'Search for files by name and path. Returns files that match the search query in their filename or path.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Search query to match against file names and paths (case-insensitive)' },
+              limit: { type: 'number', description: 'Maximum number of results to return (default: 50, max: 200)' },
+              includePatterns: { type: 'string', description: 'Comma-separated patterns to include (e.g., "src/, *.js, component")' },
+              excludePatterns: { type: 'string', description: 'Comma-separated patterns to exclude (e.g., "node_modules/, *.min.js, test/")' },
+            },
+            required: ['query'],
+          },
+        },
+        {
+          name: 'search_in_files',
+          description: 'Search for text content within files. Supports case sensitivity, regex patterns, and include/exclude filters. Returns matches with line numbers and context.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Search query to find within file contents' },
+              caseSensitive: { type: 'boolean', description: 'Whether the search should be case sensitive (default: false)' },
+              useRegex: { type: 'boolean', description: 'Whether to treat the query as a regular expression (default: false)' },
+              limit: { type: 'number', description: 'Maximum number of files to search (default: 100, max: 500)' },
+              maxMatchesPerFile: { type: 'number', description: 'Maximum number of matches to return per file (default: 10, max: 50)' },
+              includePatterns: { type: 'string', description: 'Comma-separated patterns to include files (e.g., "src/, *.js, component")' },
+              excludePatterns: { type: 'string', description: 'Comma-separated patterns to exclude files (e.g., "node_modules/, *.min.js, test/")' },
+            },
+            required: ['query'],
+          },
+        },
+        {
+          name: 'replace_in_file',
+          description: 'Replace text content within a specific file. Supports case sensitivity, regex patterns, and replace all or first occurrence only.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              filePath: { type: 'string', description: 'Path to the file (relative to project root)' },
+              searchText: { type: 'string', description: 'Text to search for and replace' },
+              replaceText: { type: 'string', description: 'Text to replace with (default: empty string)' },
+              caseSensitive: { type: 'boolean', description: 'Whether the search should be case sensitive (default: false)' },
+              useRegex: { type: 'boolean', description: 'Whether to treat searchText as a regular expression (default: false)' },
+              replaceAll: { type: 'boolean', description: 'Whether to replace all occurrences (true) or just the first one (false, default: true)' },
+            },
+            required: ['filePath', 'searchText'],
+          },
+        },
+        {
+          name: 'read_code_element',
+          description: 'Read the specific code element (function, class, method) that contains a given line number. More efficient than reading entire files.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              filePath: { type: 'string', description: 'Path to the file (relative to project root)' },
+              lineNumber: { type: 'number', description: 'Line number to find the containing code element for' },
+              searchQuery: { type: 'string', description: 'Optional search query to highlight within the code element' },
+              contextLines: { type: 'number', description: 'Number of context lines if no element found (default: 5)' },
+            },
+            required: ['filePath', 'lineNumber'],
+          },
+        },
+        {
+          name: 'search_with_context',
+          description: 'Search for text within files and get the containing code element context. Combines search with code parsing for better understanding.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Search query to find within file contents' },
+              caseSensitive: { type: 'boolean', description: 'Whether the search should be case sensitive (default: false)' },
+              useRegex: { type: 'boolean', description: 'Whether to treat the query as a regular expression (default: false)' },
+              limit: { type: 'number', description: 'Maximum number of files to search (default: 50)' },
+              maxMatchesPerFile: { type: 'number', description: 'Maximum matches per file (default: 5)' },
+              includeCodeContext: { type: 'boolean', description: 'Whether to include code element context (default: true)' },
+              includePatterns: { type: 'string', description: 'Comma-separated patterns to include files' },
+              excludePatterns: { type: 'string', description: 'Comma-separated patterns to exclude files' },
+            },
+            required: ['query'],
+          },
+        },
       ];
       
       console.log('[LANGCHAIN-MCP] Connected. Available tools:', this.tools.map(t => t.name));
@@ -189,6 +268,45 @@ class LangChainMcpClient {
       code_vectorization_status: z.object({
         action: z.enum(['get_status', 'start_vectorization', 'stop_watching', 'force_reindex']).describe('The action to perform'),
         filePatterns: z.array(z.string()).optional().describe('File patterns to vectorize'),
+      }),
+      search_files: z.object({
+        query: z.string().describe('Search query to match against file names and paths (case-insensitive)'),
+        limit: z.number().optional().describe('Maximum number of results to return'),
+        includePatterns: z.string().optional().describe('Comma-separated patterns to include'),
+        excludePatterns: z.string().optional().describe('Comma-separated patterns to exclude'),
+      }),
+      search_in_files: z.object({
+        query: z.string().describe('Search query to find within file contents'),
+        caseSensitive: z.boolean().optional().describe('Whether the search should be case sensitive'),
+        useRegex: z.boolean().optional().describe('Whether to treat the query as a regular expression'),
+        limit: z.number().optional().describe('Maximum number of files to search'),
+        maxMatchesPerFile: z.number().optional().describe('Maximum number of matches to return per file'),
+        includePatterns: z.string().optional().describe('Comma-separated patterns to include files'),
+        excludePatterns: z.string().optional().describe('Comma-separated patterns to exclude files'),
+      }),
+      replace_in_file: z.object({
+        filePath: z.string().describe('Path to the file (relative to project root)'),
+        searchText: z.string().describe('Text to search for and replace'),
+        replaceText: z.string().optional().describe('Text to replace with'),
+        caseSensitive: z.boolean().optional().describe('Whether the search should be case sensitive'),
+        useRegex: z.boolean().optional().describe('Whether to treat searchText as a regular expression'),
+        replaceAll: z.boolean().optional().describe('Whether to replace all occurrences'),
+      }),
+      read_code_element: z.object({
+        filePath: z.string().describe('Path to the file (relative to project root)'),
+        lineNumber: z.number().describe('Line number to find the containing code element for'),
+        searchQuery: z.string().optional().describe('Optional search query to highlight'),
+        contextLines: z.number().optional().describe('Number of context lines if no element found'),
+      }),
+      search_with_context: z.object({
+        query: z.string().describe('Search query to find within file contents'),
+        caseSensitive: z.boolean().optional().describe('Whether the search should be case sensitive'),
+        useRegex: z.boolean().optional().describe('Whether to treat the query as a regular expression'),
+        limit: z.number().optional().describe('Maximum number of files to search'),
+        maxMatchesPerFile: z.number().optional().describe('Maximum matches per file'),
+        includeCodeContext: z.boolean().optional().describe('Whether to include code element context'),
+        includePatterns: z.string().optional().describe('Comma-separated patterns to include files'),
+        excludePatterns: z.string().optional().describe('Comma-separated patterns to exclude files'),
       }),
     };
 

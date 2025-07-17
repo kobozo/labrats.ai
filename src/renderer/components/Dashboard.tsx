@@ -257,6 +257,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
         // Update vectorizing state based on phase
         if (progress.phase === 'scanning' || progress.phase === 'processing') {
           setIsVectorizing(true);
+          // Also update the pre-scan result if we have total elements
+          if (progress.totalElements && progress.phase === 'processing') {
+            setPreScanResult(prev => ({
+              totalFiles: prev?.totalFiles || 0,
+              totalElements: progress.totalElements || 0,
+              fileTypes: prev?.fileTypes || {},
+              elementTypes: prev?.elementTypes || {}
+            }));
+          }
         } else if (progress.phase === 'completed') {
           setIsVectorizing(false);
           setVectorizationProgress(null);
@@ -339,10 +348,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
     if (preScanResult) {
       return preScanResult.totalElements;
     }
+    // Use vectorization progress if active
+    if (vectorizationProgress && vectorizationProgress.totalElements) {
+      return vectorizationProgress.totalElements;
+    }
     if (codeVectorStats?.stats?.totalElements) {
       return codeVectorStats.stats.totalElements;
     }
     return 0;
+  };
+
+  // Get current vectorized elements count (including in-progress)
+  const getVectorizedElements = () => {
+    // If actively vectorizing, use the progress count
+    if (vectorizationProgress && vectorizationProgress.elementsProcessed > 0) {
+      return vectorizationProgress.elementsProcessed;
+    }
+    // Otherwise use the stats
+    return Math.min(codeVectorStats?.stats?.vectorizedElements || 0, getTotalElements());
   };
 
   // Update metrics when stats change
@@ -367,7 +390,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       
       // Code elements: functions, classes, etc. - use single source of truth
       const totalCodeElements = getTotalElements();
-      const vectorizedCodeElements = Math.min(codeVectorStats?.stats?.vectorizedElements || 0, totalCodeElements);
+      const vectorizedCodeElements = getVectorizedElements();
       
       // Combined totals
       const totalItems = totalTasks + totalCodeElements;
@@ -1249,7 +1272,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                   <div className="flex items-center justify-between mb-2">
                     <Database className="w-5 h-5 text-green-400" />
                     <span className="text-2xl font-bold text-white">
-                      {(vectorStats.vectorizedTasks || 0) + Math.min(codeVectorStats?.stats?.vectorizedElements || 0, getTotalElements())}
+                      {(vectorStats.vectorizedTasks || 0) + getVectorizedElements()}
                     </span>
                   </div>
                   <div className="text-sm text-gray-400">Vectorized Elements</div>
@@ -1260,7 +1283,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                         style={{ 
                           width: `${
                             ((vectorStats.totalTasks || 0) + getTotalElements()) > 0 
-                              ? (((vectorStats.vectorizedTasks || 0) + Math.min(codeVectorStats?.stats?.vectorizedElements || 0, getTotalElements())) / 
+                              ? (((vectorStats.vectorizedTasks || 0) + getVectorizedElements()) / 
                                  ((vectorStats.totalTasks || 0) + getTotalElements())) * 100 
                               : 0
                           }%` 
@@ -1275,7 +1298,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                     <AlertCircle className="w-5 h-5 text-yellow-400" />
                     <span className="text-2xl font-bold text-white">
                       {((vectorStats.totalTasks || 0) - (vectorStats.vectorizedTasks || 0)) + 
-                       (getTotalElements() - Math.min(codeVectorStats?.stats?.vectorizedElements || 0, getTotalElements()))}
+                       (getTotalElements() - getVectorizedElements())}
                     </span>
                   </div>
                   <div className="text-sm text-gray-400">Missing Vectors</div>
@@ -1461,11 +1484,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                         <>
                           <div className="text-lg font-semibold text-white">
                             {getTotalElements() > 0 
-                              ? Math.round((Math.min(codeVectorStats.stats.vectorizedElements, getTotalElements()) / getTotalElements()) * 100) 
+                              ? Math.round((getVectorizedElements() / getTotalElements()) * 100) 
                               : 0}%
                           </div>
                           <div className="text-sm text-gray-400">
-                            {Math.min(codeVectorStats.stats.vectorizedElements, getTotalElements())} / {getTotalElements()} elements
+                            {getVectorizedElements()} / {getTotalElements()} elements
                           </div>
                         </>
                       ) : codeVectorizationEnabled ? (
@@ -1653,7 +1676,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                   <div className="text-center">
                     <div className="text-3xl font-bold text-green-400 mb-2">
                       {getTotalElements() > 0 
-                        ? Math.round((Math.min(codeVectorStats.stats.vectorizedElements, getTotalElements()) / getTotalElements()) * 100) 
+                        ? Math.round((getVectorizedElements() / getTotalElements()) * 100) 
                         : 0}%
                     </div>
                     <div className="text-gray-400">Element Coverage</div>
@@ -1661,7 +1684,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                   </div>
                   <div className="text-center">
                     <div className="text-3xl font-bold text-purple-400 mb-2">
-                      {Math.min(codeVectorStats.stats.vectorizedElements, getTotalElements())} / {getTotalElements()}
+                      {getVectorizedElements()} / {getTotalElements()}
                     </div>
                     <div className="text-gray-400">Code Elements</div>
                     <div className="text-sm text-gray-500 mt-1">Functions, classes, etc.</div>

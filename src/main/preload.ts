@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: () => ipcRenderer.invoke('open-folder'),
   readDirectory: (dirPath: string) => ipcRenderer.invoke('read-directory', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+  writeFile: (filePath: string, content: string) => ipcRenderer.invoke('write-file', filePath, content),
   getFileStats: (filePath: string) => ipcRenderer.invoke('get-file-stats', filePath),
   onFolderOpened: (callback: (folderPath: string) => void) => 
     ipcRenderer.on('folder-opened', (_event, folderPath) => callback(folderPath)),
@@ -220,6 +221,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Line Counter API
   lineCounter: {
     count: (projectPath: string) => ipcRenderer.invoke('line-counter:count', projectPath),
+  },
+
+  // AI Description API
+  aiDescription: {
+    getHumanReadable: (filePath: string) => ipcRenderer.invoke('ai-description:get-human-readable', filePath),
+    getFileDescriptions: (filePath: string) => ipcRenderer.invoke('ai-description:get-file-descriptions', filePath),
+    hasDescriptions: (filePath: string) => ipcRenderer.invoke('ai-description:has-descriptions', filePath),
+    getFilesWithDescriptions: () => ipcRenderer.invoke('ai-description:get-files-with-descriptions'),
+    getStats: () => ipcRenderer.invoke('ai-description:get-stats'),
   },
 
   // IPC Renderer for event listening

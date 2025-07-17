@@ -1,0 +1,118 @@
+# Tool Output Handling Guidelines
+
+When using MCP tools, follow these guidelines to provide the best user experience:
+
+## 1. Understanding User Intent
+
+### When users ask "where is X?"
+- If asking about code functionality (e.g., "where is the OpenAI API key set?"):
+  - Use `search_code` or `search_in_files` to find the location
+  - Use `read_code_element` to show the actual code
+  - Present the code block directly, not just the file location
+
+- If asking about file locations (e.g., "where is the config file?"):
+  - Use `search_files` to find the file
+  - Show the file path and brief description
+
+### When users ask "show me X"
+- Always show the actual content, not just location information
+- Use appropriate read tools to get the content
+- Format as code blocks with proper syntax highlighting
+
+## 2. Tool Result Processing
+
+### For search results:
+- `search_code`: Shows semantic search results with code snippets
+- `search_files`: Shows file paths and locations
+- `search_in_files`: Shows matches with line context
+- `read_code_element`: Shows the actual code implementation
+
+### Best practices:
+1. When a search returns a location, follow up by reading the actual code
+2. Use `read_code_element` instead of `readFile` when you need specific functions/classes
+3. Present code in formatted code blocks, not as JSON
+4. Provide context about what the code does
+
+## 3. Response Formatting
+
+### DO:
+- Show code directly in code blocks
+- Include file path and line numbers for reference
+- Explain what the code does if relevant
+- Use markdown formatting for clarity
+
+### DON'T:
+- Show raw JSON tool outputs
+- Stop at just showing file locations when code was requested
+- Present unformatted tool results
+
+## 4. Example Patterns
+
+### Pattern 1: Finding code implementation
+User: "Where is the OpenAI API key configured?"
+
+Good response:
+```
+I found where the OpenAI API key is configured. It's set in the environment service:
+
+📄 **File:** `src/services/env-service.ts` (line 45)
+
+```typescript
+export function getOpenAIKey(): string {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    throw new Error('OPENAI_API_KEY environment variable is not set');
+  }
+  return key;
+}
+```
+
+The API key is read from the `OPENAI_API_KEY` environment variable. You'll need to set this in your `.env` file or system environment.
+```
+
+Bad response:
+```
+Tool Result (search_code):
+```json
+{
+  "success": true,
+  "results": [{
+    "file": "src/services/env-service.ts",
+    "line": 45,
+    "type": "function",
+    "name": "getOpenAIKey"
+  }]
+}
+```
+```
+
+### Pattern 2: Multiple related items
+When finding multiple related items, organize them clearly:
+
+```
+I found 3 places where the API key is used:
+
+1. **Configuration** - `src/services/env-service.ts:45`
+   ```typescript
+   export function getOpenAIKey(): string { ... }
+   ```
+
+2. **Initialization** - `src/services/openai-client.ts:12`
+   ```typescript
+   const client = new OpenAI({ apiKey: getOpenAIKey() });
+   ```
+
+3. **Validation** - `src/utils/validate-config.ts:23`
+   ```typescript
+   if (!process.env.OPENAI_API_KEY) { ... }
+   ```
+```
+
+## 5. Tool Chaining
+
+When you need to find and show code:
+1. First use search tools to locate the code
+2. Then use `read_code_element` to get the specific implementation
+3. Present the formatted result to the user
+
+Remember: Users want to see the actual code or content, not just know where it is. Always follow through to show what they're looking for.

@@ -11,6 +11,7 @@ import { DexyVectorizationService } from './dexy-vectorization-service';
 import { CentralizedAPIKeyService } from '../services/centralized-api-key-service';
 import { ReadmeContextService } from './readme-context-service';
 import { fileTrackingService } from './file-tracking-service';
+import { aiDescriptionService } from './ai-description-service';
 
 /**
  * Simple semaphore for controlling concurrency
@@ -125,6 +126,9 @@ export class CodeVectorizationService {
     
     // Initialize file tracking service
     await fileTrackingService.initialize(projectPath);
+    
+    // Initialize AI description service
+    await aiDescriptionService.initialize(projectPath);
     
     // Get or create code index
     const config = await this.dexyService.getConfig();
@@ -495,6 +499,23 @@ export class CodeVectorizationService {
         lastVectorized: new Date().toISOString()
       };
       
+      // Save AI description if available
+      if (aiDescription) {
+        await aiDescriptionService.addElementDescription(
+          filePath,
+          elementId,
+          {
+            type: element.type,
+            name: element.name,
+            description: aiDescription,
+            lineStart: element.startLine,
+            lineEnd: element.endLine
+          },
+          fileHash,
+          element.language
+        );
+      }
+      
       console.log(`[CODE-VECTORIZATION] Vectorized: ${element.type} ${element.name}`);
     }
     
@@ -604,7 +625,85 @@ export class CodeVectorizationService {
     const codeSnippet = element.content.slice(0, 500);
     parts.push(`Code: ${codeSnippet}${element.content.length > 500 ? '...' : ''}`);
     
+    // Add keywords from the element name and code for better search matching
+    // This helps with substring matching in vector search
+    const keywords = this.extractKeywords(element);
+    if (keywords.length > 0) {
+      parts.push(`Keywords: ${keywords.join(', ')}`);
+    }
+    
     return parts.join('\n\n');
+  }
+
+  /**
+   * Extract keywords from code element for better search
+   */
+  private extractKeywords(element: ParsedCodeElement): string[] {
+    const keywords: Set<string> = new Set();
+    
+    // Split various naming conventions:
+    // - camelCase: apiKey -> [api, key]
+    // - PascalCase: APIKey -> [API, Key]
+    // - snake_case: api_key -> [api, key]
+    // - kebab-case: api-key -> [api, key]
+    // - SCREAMING_SNAKE_CASE: API_KEY -> [API, KEY]
+    // - Mixed: getAPIKey_v2 -> [get, API, Key, v2]
+    const nameWords = element.name
+      // First, handle transitions between lowercase and uppercase
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      // Handle multiple uppercase letters followed by lowercase (e.g., APIKey -> API Key)
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      // Now split on spaces, underscores, hyphens, and dots
+      .split(/[\s_\-\.]+/)
+      // Filter out empty strings and single characters (but keep 2-letter words like "id", "io", "ui")
+      .filter(w => w.length >= 2)
+      .map(w => w.toLowerCase());
+    
+    nameWords.forEach(w => keywords.add(w));
+    
+    // Also add the original full name in lowercase (helps with exact matches)
+    keywords.add(element.name.toLowerCase());
+    
+    // Extract common programming terms from the code
+    const codeWords = element.content
+      .match(/\b[a-zA-Z]{3,}\b/g) || [];
+    
+    // Focus on important terms that appear in the first 200 chars
+    const importantCode = element.content.slice(0, 200);
+    const importantWords = importantCode
+      .match(/\b(api|key|token|auth|config|service|client|server|database|query|request|response|error|data|user|admin|get|set|update|create|delete|find|search)\w*\b/gi) || [];
+    
+    importantWords.forEach(w => keywords.add(w.toLowerCase()));
+    
+    // Add type-specific keywords
+    if (element.type === 'class' || element.type === 'interface') {
+      keywords.add(element.type);
+    }
+    
+    // Extract identifiers from the code that might contain our search terms
+    // This regex finds potential identifiers (variable names, function calls, etc.)
+    const identifiers = element.content
+      .match(/\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/g) || [];
+    
+    // Process identifiers the same way we process the element name
+    identifiers.slice(0, 50).forEach(id => {  // Limit to first 50 to avoid too many keywords
+      const idWords = id
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+        .split(/[\s_\-\.]+/)
+        .filter(w => w.length >= 2 && w.length <= 20)  // Avoid very long strings
+        .map(w => w.toLowerCase());
+      
+      idWords.forEach(w => {
+        // Only add if it's a meaningful word (contains vowels or is a known abbreviation)
+        if (/[aeiou]/i.test(w) || ['api', 'url', 'id', 'db', 'ui', 'io'].includes(w)) {
+          keywords.add(w);
+        }
+      });
+    });
+    
+    // Limit to most relevant keywords (increased from 20 to 30 for better coverage)
+    return Array.from(keywords).slice(0, 30);
   }
 
   /**
@@ -1170,7 +1269,152 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
   }
 
   /**
-   * Search for code by natural language query
+   * Hybrid search combining semantic similarity and substring matching
+   */
+  async hybridSearchCode(query: string, options: {
+    limit?: number;
+    type?: string;
+    language?: string;
+    minSimilarity?: number;
+    enableSubstringMatch?: boolean;
+  } = {}): Promise<Array<{ document: VectorDocument; similarity: number; matchType: 'semantic' | 'substring' | 'both' }>> {
+    console.log(`[CODE-VECTORIZATION] hybridSearchCode called with query: "${query}"`);
+    
+    if (!this.isReady()) {
+      throw new Error('Service not initialized');
+    }
+
+    const { limit = 20, type, language, minSimilarity = 0.3, enableSubstringMatch = true } = options;
+    
+    // Get semantic results
+    const semanticResults = await this.searchCode(query, { limit, type, language, minSimilarity });
+    
+    // Get substring results if enabled
+    let substringResults: Array<{ document: VectorDocument; similarity: number }> = [];
+    if (enableSubstringMatch) {
+      substringResults = await this.substringSearchCode(query, { limit, type, language });
+    }
+    
+    // Combine and deduplicate results
+    const combinedResults = new Map<string, { document: VectorDocument; similarity: number; matchType: 'semantic' | 'substring' | 'both' }>();
+    
+    // Add semantic results
+    semanticResults.forEach(result => {
+      combinedResults.set(result.document.id, {
+        ...result,
+        matchType: 'semantic'
+      });
+    });
+    
+    // Add substring results (boost similarity for substring matches)
+    substringResults.forEach(result => {
+      const existing = combinedResults.get(result.document.id);
+      if (existing) {
+        // If already found by semantic search, mark as both and boost similarity
+        existing.matchType = 'both';
+        existing.similarity = Math.max(existing.similarity, result.similarity * 1.2); // Boost combined matches
+      } else {
+        combinedResults.set(result.document.id, {
+          ...result,
+          matchType: 'substring'
+        });
+      }
+    });
+    
+    // Sort by similarity and limit results
+    const finalResults = Array.from(combinedResults.values())
+      .sort((a, b) => {
+        // Prioritize 'both' matches, then by similarity
+        if (a.matchType === 'both' && b.matchType !== 'both') return -1;
+        if (b.matchType === 'both' && a.matchType !== 'both') return 1;
+        return b.similarity - a.similarity;
+      })
+      .slice(0, limit);
+    
+    console.log(`[CODE-VECTORIZATION] Hybrid search found ${finalResults.length} results (${semanticResults.length} semantic, ${substringResults.length} substring)`);
+    return finalResults;
+  }
+
+  /**
+   * Substring search through vectorized code elements
+   */
+  private async substringSearchCode(query: string, options: {
+    limit?: number;
+    type?: string;
+    language?: string;
+  } = {}): Promise<Array<{ document: VectorDocument; similarity: number }>> {
+    if (!this.isReady() || !this.codeIndex) {
+      return [];
+    }
+
+    const { limit = 20, type, language } = options;
+    const queryLower = query.toLowerCase();
+    const results: Array<{ document: VectorDocument; similarity: number }> = [];
+    
+    // Get all document IDs
+    const docIds = await this.vectorStorage!.getDocumentIds(this.codeIndex.id);
+    
+    for (const docId of docIds) {
+      const doc = await this.vectorStorage!.getDocument(this.codeIndex.id, docId);
+      if (!doc) continue;
+      
+      // Apply filters
+      if (type && doc.metadata.codeType !== type) continue;
+      if (language && doc.metadata.language !== language) continue;
+      
+      // Calculate substring match score
+      const similarity = this.calculateSubstringMatchScore(queryLower, doc);
+      
+      if (similarity > 0) {
+        results.push({ document: doc, similarity });
+      }
+    }
+    
+    // Sort by similarity and return top results
+    return results
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+  }
+
+  /**
+   * Calculate substring match score for a document
+   */
+  private calculateSubstringMatchScore(queryLower: string, doc: VectorDocument): number {
+    let score = 0;
+    const metadata = doc.metadata;
+    
+    // Check function/class name (highest weight)
+    const name = (metadata.functionName || metadata.className || '').toLowerCase();
+    if (name.includes(queryLower)) {
+      score += name === queryLower ? 1.0 : 0.8; // Exact match gets highest score
+    }
+    
+    // Check file path (medium weight)
+    const filePath = (metadata.filePath || '').toLowerCase();
+    if (filePath.includes(queryLower)) {
+      score += 0.6;
+    }
+    
+    // Check content (lower weight, but still important)
+    const content = doc.content.toLowerCase();
+    if (content.includes(queryLower)) {
+      // Score based on frequency and position
+      const matches = (content.match(new RegExp(queryLower, 'g')) || []).length;
+      const firstIndex = content.indexOf(queryLower);
+      const early = firstIndex < 100 ? 0.1 : 0; // Bonus for early appearance
+      score += Math.min(matches * 0.2, 0.5) + early;
+    }
+    
+    // Check AI description (medium weight)
+    if (metadata.aiDescription && metadata.aiDescription.toLowerCase().includes(queryLower)) {
+      score += 0.4;
+    }
+    
+    return Math.min(score, 1.0); // Cap at 1.0
+  }
+
+  /**
+   * Search for code by natural language query (semantic only)
    */
   async searchCode(query: string, options: {
     limit?: number;
@@ -1197,9 +1441,17 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     const stats = await this.getStats();
     console.log(`[CODE-VECTORIZATION] Index has ${stats.vectorizedElements} vectorized elements`);
     
+    // Enhance short queries with context for better semantic matching
+    let enhancedQuery = query;
+    if (query.length <= 5) {
+      // For very short queries, add context to help the embedding model
+      enhancedQuery = `Find code related to: ${query}. This includes functions, variables, classes, methods, or any code elements containing or related to ${query}`;
+    }
+    
     // Generate embedding for query
-    const queryEmbedding = await this.generateEmbedding(query);
+    const queryEmbedding = await this.generateEmbedding(enhancedQuery);
     console.log(`[CODE-VECTORIZATION] Generated query embedding with ${queryEmbedding.length} dimensions`);
+    console.log(`[CODE-VECTORIZATION] Enhanced query: "${enhancedQuery}"`);
     
     // Search with filters
     const results = await this.vectorStorage!.searchSimilar(this.codeIndex!.id, queryEmbedding, {
@@ -1264,6 +1516,9 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     
     // Remove from vectorization state
     this.vectorizationState.delete(filePath);
+    
+    // Remove AI descriptions
+    await aiDescriptionService.removeFileDescriptions(filePath);
     
     // Save both tracking files
     await this.saveFileHashCache();

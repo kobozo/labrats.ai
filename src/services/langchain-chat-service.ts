@@ -35,6 +35,7 @@ export class LangChainChatService {
   private conversationHistory: LangChainChatMessage[] = [];
   private currentProjectPath: string | null = null;
   private sessionTokenUsage: TokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
+  private toolStatusCallback: ((status: string, toolName?: string) => void) | null = null;
 
   async sendMessage(
     content: string,
@@ -182,6 +183,9 @@ export class LangChainChatService {
           
           for (const toolCall of aiMsg.tool_calls) {
             console.log('[LANGCHAIN] Executing tool:', toolCall.name, 'with args:', toolCall.args);
+            
+            // Emit tool status
+            this.emitToolStatus(`🔧 Using ${this.formatToolName(toolCall.name)}...`, toolCall.name);
             
             const tool = mcpTools.find(t => t.name === toolCall.name);
             if (tool) {
@@ -496,6 +500,16 @@ export class LangChainChatService {
     this.sessionTokenUsage = { completionTokens: 0, promptTokens: 0, totalTokens: 0 };
   }
 
+  setToolStatusCallback(callback: ((status: string, toolName?: string) => void) | null) {
+    this.toolStatusCallback = callback;
+  }
+
+  private emitToolStatus(status: string, toolName?: string) {
+    if (this.toolStatusCallback) {
+      this.toolStatusCallback(status, toolName);
+    }
+  }
+
 
   // Private method to persist conversation history
   private async persistConversationHistory(): Promise<void> {
@@ -551,6 +565,24 @@ export class LangChainChatService {
           return this.formatReplaceTextResult(parsed, args);
         case 'execCommand':
           return this.formatExecCommandResult(parsed, args);
+        case 'search_code':
+          return this.formatSearchCodeResult(parsed, args);
+        case 'search_files':
+          return this.formatSearchFilesResult(parsed, args);
+        case 'search_in_files':
+          return this.formatSearchInFilesResult(parsed, args);
+        case 'read_code_element':
+          return this.formatReadCodeElementResult(parsed, args);
+        case 'search_with_context':
+          return this.formatSearchWithContextResult(parsed, args);
+        case 'replace_in_file':
+          return this.formatReplaceInFileResult(parsed, args);
+        case 'find_similar_code':
+          return this.formatFindSimilarCodeResult(parsed, args);
+        case 'explore_codebase':
+          return this.formatExploreCodebaseResult(parsed, args);
+        case 'code_vectorization_status':
+          return this.formatCodeVectorizationStatusResult(parsed, args);
         default:
           return `\n\n**Tool Result (${toolName}):**\n\`\`\`json\n${result}\n\`\`\``;
       }
@@ -746,6 +778,398 @@ export class LangChainChatService {
     };
     
     return langMap[extension] || 'text';
+  }
+
+  private formatSearchCodeResult(parsed: any, args: any): string {
+    if (!parsed.success) {
+      return `\n\n### ❌ Search Code Error\n\n${parsed.error || 'Unknown error occurred'}`;
+    }
+
+    let output = `\n\n### 🔍 Code Search Results for "${args.query}"\n\n`;
+    
+    if (!parsed.results || parsed.results.length === 0) {
+      output += '*No results found*';
+      return output;
+    }
+
+    output += `Found ${parsed.totalResults} matches:\n\n`;
+
+    for (const result of parsed.results) {
+      const icon = this.getFileIcon(result.file);
+      output += `#### ${icon} \`${result.file}\` (${result.lines})\n`;
+      
+      if (result.type && result.name) {
+        output += `**${result.type}:** \`${result.name}\``;
+        if (result.score) {
+          output += ` *(similarity: ${result.score})*`;
+        }
+        output += '\n';
+      }
+      
+      if (result.description) {
+        output += `*${result.description}*\n`;
+      }
+      
+      output += `\`\`\`${result.language || 'text'}\n${result.content}\n\`\`\`\n\n`;
+    }
+
+    return output;
+  }
+
+  private formatSearchFilesResult(parsed: any, args: any): string {
+    if (!parsed.success) {
+      return `\n\n### ❌ File Search Error\n\n${parsed.error || 'Unknown error occurred'}`;
+    }
+
+    let output = `\n\n### 📂 File Search Results for "${args.query}"\n\n`;
+    
+    if (!parsed.results || parsed.results.length === 0) {
+      output += '*No files found*';
+      return output;
+    }
+
+    output += `Found ${parsed.totalResults} files`;
+    if (parsed.totalMatched && parsed.totalMatched !== parsed.totalResults) {
+      output += ` (showing first ${parsed.totalResults})`;
+    }
+    output += ':\n\n';
+
+    for (const file of parsed.results) {
+      const icon = file.type === 'directory' ? '📁' : this.getFileIcon(file.name);
+      output += `- ${icon} \`${file.path}\``;
+      
+      if (file.size) {
+        output += ` *(${file.size})*`;
+      }
+      
+      output += '\n';
+    }
+
+    if (parsed.filesSearched) {
+      output += `\n*Searched ${parsed.filesSearched} files*`;
+    }
+
+    return output;
+  }
+
+  private formatSearchInFilesResult(parsed: any, args: any): string {
+    if (!parsed.success) {
+      return `\n\n### ❌ In-File Search Error\n\n${parsed.error || 'Unknown error occurred'}`;
+    }
+
+    let output = `\n\n### 🔎 In-File Search Results for "${args.query}"\n`;
+    
+    if (args.caseSensitive) output += `*(case sensitive)*\n`;
+    if (args.useRegex) output += `*(regex mode)*\n`;
+    output += '\n';
+    
+    if (!parsed.results || parsed.results.length === 0) {
+      output += '*No matches found*';
+      return output;
+    }
+
+    output += `Found ${parsed.totalMatches} matches in ${parsed.totalFiles} files:\n\n`;
+
+    for (const result of parsed.results) {
+      const icon = this.getFileIcon(result.file.name);
+      output += `#### ${icon} \`${result.file.path}\` (${result.matches.length} matches)\n\n`;
+      
+      for (const match of result.matches) {
+        output += `Line ${match.lineNumber}: `;
+        
+        // Highlight the match in the line
+        const before = match.lineContent.substring(0, match.matchStart);
+        const matchText = match.matchText || match.lineContent.substring(match.matchStart, match.matchEnd);
+        const after = match.lineContent.substring(match.matchEnd);
+        
+        output += `\`${before}**${matchText}**${after}\`\n`;
+      }
+      
+      output += '\n';
+    }
+
+    if (parsed.filesSearched) {
+      output += `*Searched ${parsed.filesSearched} files*`;
+    }
+
+    return output;
+  }
+
+  private formatReadCodeElementResult(parsed: any, args: any): string {
+    if (!parsed.success) {
+      return `\n\n### ❌ Read Code Element Error\n\n${parsed.error || 'Unknown error occurred'}`;
+    }
+
+    const icon = this.getFileIcon(parsed.filePath);
+    let output = `\n\n### ${icon} Code from \`${parsed.filePath}\``;
+    
+    if (parsed.element) {
+      output += `\n\n**${parsed.element.type}:** \`${parsed.element.name}\` (lines ${parsed.element.startLine}-${parsed.element.endLine})`;
+      
+      if (parsed.element.parameters && parsed.element.parameters.length > 0) {
+        output += `\n**Parameters:** ${parsed.element.parameters.join(', ')}`;
+      }
+      
+      if (parsed.element.returnType) {
+        output += `\n**Returns:** ${parsed.element.returnType}`;
+      }
+      
+      if (parsed.element.jsdoc) {
+        output += `\n\n*${parsed.element.jsdoc}*`;
+      }
+      
+      output += `\n\n\`\`\`${parsed.element.language || 'text'}\n${parsed.element.content}\n\`\`\``;
+      
+      if (parsed.relatedElements && parsed.relatedElements.length > 0) {
+        output += '\n\n**Related elements:**\n';
+        for (const related of parsed.relatedElements) {
+          if (related.type === 'parent') {
+            output += `- Parent ${related.element.type}: \`${related.element.name}\`\n`;
+          }
+        }
+      }
+    } else if (parsed.context) {
+      output += ` (context around line ${parsed.lineNumber})\n\n`;
+      output += `\`\`\`${this.getLanguageFromExtension(parsed.filePath.split('.').pop() || '')}\n${parsed.context.content}\n\`\`\``;
+    }
+
+    return output;
+  }
+
+  private formatSearchWithContextResult(parsed: any, args: any): string {
+    if (!parsed.success) {
+      return `\n\n### ❌ Search with Context Error\n\n${parsed.error || 'Unknown error occurred'}`;
+    }
+
+    let output = `\n\n### 🔍 Context-Aware Search Results for "${args.query}"\n\n`;
+    
+    if (!parsed.results || parsed.results.length === 0) {
+      output += '*No matches found*';
+      return output;
+    }
+
+    output += `Found ${parsed.totalMatches} matches in ${parsed.totalFiles} files`;
+    
+    if (parsed.codeElementTypes) {
+      const types = Object.entries(parsed.codeElementTypes)
+        .map(([type, count]) => `${count} ${type}${(count as number) > 1 ? 's' : ''}`)
+        .join(', ');
+      output += ` (${types})`;
+    }
+    
+    output += ':\n\n';
+
+    for (const result of parsed.results) {
+      const icon = this.getFileIcon(result.file.name);
+      output += `#### ${icon} \`${result.file.path}\`\n\n`;
+      
+      for (const match of result.matches) {
+        if (match.codeElement) {
+          output += `**${match.codeElement.type}:** \`${match.codeElement.name}\` `;
+          output += `(lines ${match.codeElement.startLine}-${match.codeElement.endLine})\n`;
+        }
+        
+        output += `Line ${match.lineNumber}: \`${match.lineContent}\`\n\n`;
+      }
+    }
+
+    return output;
+  }
+
+  private formatReplaceInFileResult(parsed: any, args: any): string {
+    if (!parsed.success) {
+      return `\n\n### ❌ Replace in File Error\n\n${parsed.error || 'Unknown error occurred'}`;
+    }
+
+    const icon = this.getFileIcon(parsed.filePath);
+    let output = `\n\n### ✏️ Text Replacement in ${icon} \`${parsed.filePath}\`\n\n`;
+    
+    if (parsed.modified) {
+      output += `✅ **Successfully replaced ${parsed.replacementCount} occurrence${parsed.replacementCount !== 1 ? 's' : ''}**\n\n`;
+      output += `**Search text:** \`${parsed.searchText}\`\n`;
+      output += `**Replace text:** \`${parsed.replaceText || '(empty)'}\`\n`;
+      
+      if (args.caseSensitive) output += `**Case sensitive:** Yes\n`;
+      if (args.useRegex) output += `**Regex mode:** Yes\n`;
+      output += `**Replace all:** ${parsed.replaceAll ? 'Yes' : 'No'}\n`;
+    } else {
+      output += `ℹ️ **No replacements made** - text not found\n`;
+    }
+
+    return output;
+  }
+
+  private formatFindSimilarCodeResult(parsed: any, args: any): string {
+    if (!parsed.success) {
+      return `\n\n### ❌ Find Similar Code Error\n\n${parsed.error || 'Unknown error occurred'}`;
+    }
+
+    let output = `\n\n### 🔍 Similar Code Results\n\n`;
+    
+    if (!parsed.results || parsed.results.length === 0) {
+      output += '*No similar code found*';
+      return output;
+    }
+
+    output += `Found ${parsed.totalResults} similar code snippets:\n\n`;
+    
+    // Show the original snippet
+    output += `**Original snippet:**\n\`\`\`\n${args.codeSnippet}\n\`\`\`\n\n`;
+    
+    output += `**Similar code:**\n\n`;
+
+    for (const result of parsed.results) {
+      const icon = this.getFileIcon(result.file);
+      output += `#### ${icon} \`${result.file}\` (${result.lines})`;
+      
+      if (result.score) {
+        output += ` - *Similarity: ${result.score}*`;
+      }
+      
+      output += '\n';
+      
+      if (result.type && result.name) {
+        output += `**${result.type}:** \`${result.name}\`\n`;
+      }
+      
+      output += `\`\`\`${result.language || 'text'}\n${result.content}\n\`\`\`\n\n`;
+    }
+
+    return output;
+  }
+
+  private formatExploreCodebaseResult(parsed: any, args: any): string {
+    if (!parsed.success) {
+      return `\n\n### ❌ Explore Codebase Error\n\n${parsed.error || 'Unknown error occurred'}`;
+    }
+
+    let output = `\n\n### 🗺️ Codebase Exploration`;
+    
+    if (args.action) {
+      output += ` - ${args.action.replace(/_/g, ' ')}`;
+    }
+    
+    output += '\n\n';
+
+    if (parsed.results && Array.isArray(parsed.results)) {
+      for (const item of parsed.results) {
+        if (typeof item === 'string') {
+          output += `- ${item}\n`;
+        } else if (item.name) {
+          const icon = item.type === 'file' ? this.getFileIcon(item.name) : '📁';
+          output += `- ${icon} \`${item.name}\``;
+          
+          if (item.type) output += ` (${item.type})`;
+          if (item.language) output += ` [${item.language}]`;
+          if (item.lines) output += ` ${item.lines} lines`;
+          
+          output += '\n';
+        }
+      }
+      
+      output += `\n*Total: ${parsed.results.length} items*`;
+    } else if (parsed.structure) {
+      // File structure output
+      output += this.formatCodeStructure(parsed.structure);
+    }
+
+    return output;
+  }
+
+  private formatCodeStructure(structure: any): string {
+    let output = '';
+    
+    if (structure.classes && structure.classes.length > 0) {
+      output += `**Classes (${structure.classes.length}):**\n`;
+      for (const cls of structure.classes) {
+        output += `- 🏛️ \`${cls.name}\``;
+        if (cls.lines) output += ` (lines ${cls.lines})`;
+        output += '\n';
+      }
+      output += '\n';
+    }
+    
+    if (structure.functions && structure.functions.length > 0) {
+      output += `**Functions (${structure.functions.length}):**\n`;
+      for (const func of structure.functions) {
+        output += `- ⚡ \`${func.name}\``;
+        if (func.lines) output += ` (lines ${func.lines})`;
+        output += '\n';
+      }
+      output += '\n';
+    }
+    
+    if (structure.imports && structure.imports.length > 0) {
+      output += `**Imports (${structure.imports.length}):**\n`;
+      for (const imp of structure.imports) {
+        output += `- 📦 \`${imp}\`\n`;
+      }
+      output += '\n';
+    }
+    
+    return output;
+  }
+
+  private formatCodeVectorizationStatusResult(parsed: any, args: any): string {
+    if (!parsed.success) {
+      return `\n\n### ❌ Code Vectorization Error\n\n${parsed.error || 'Unknown error occurred'}`;
+    }
+
+    let output = `\n\n### 📊 Code Vectorization Status\n\n`;
+
+    if (parsed.status) {
+      const status = parsed.status;
+      
+      output += `**Status:** ${status.isRunning ? '🟢 Running' : '🔴 Stopped'}\n`;
+      output += `**Total files:** ${status.totalFiles}\n`;
+      output += `**Processed files:** ${status.processedFiles}\n`;
+      output += `**Total code elements:** ${status.totalElements}\n`;
+      
+      if (status.progress !== undefined) {
+        const progressBar = this.createProgressBar(status.progress);
+        output += `**Progress:** ${progressBar} ${Math.round(status.progress)}%\n`;
+      }
+      
+      if (status.lastUpdate) {
+        output += `**Last update:** ${new Date(status.lastUpdate).toLocaleString()}\n`;
+      }
+      
+      if (status.errors && status.errors > 0) {
+        output += `**Errors:** ⚠️ ${status.errors}\n`;
+      }
+    }
+
+    if (parsed.message) {
+      output += `\n*${parsed.message}*`;
+    }
+
+    return output;
+  }
+
+  private createProgressBar(progress: number): string {
+    const filled = Math.round(progress / 10);
+    const empty = 10 - filled;
+    return '█'.repeat(filled) + '░'.repeat(empty);
+  }
+
+  private formatToolName(toolName: string): string {
+    const toolDisplayNames: { [key: string]: string } = {
+      'listFiles': 'List Files',
+      'readFile': 'Read File',
+      'replaceText': 'Replace Text',
+      'execCommand': 'Execute Command',
+      'search_code': 'Code Search',
+      'search_files': 'File Search',
+      'search_in_files': 'In-File Search',
+      'read_code_element': 'Read Code Element',
+      'search_with_context': 'Context Search',
+      'replace_in_file': 'Replace in File',
+      'find_similar_code': 'Find Similar Code',
+      'explore_codebase': 'Explore Codebase',
+      'code_vectorization_status': 'Vectorization Status'
+    };
+    
+    return toolDisplayNames[toolName] || toolName;
   }
 
   /**

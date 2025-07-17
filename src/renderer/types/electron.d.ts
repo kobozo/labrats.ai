@@ -238,6 +238,7 @@ export interface ElectronAPI {
   openFolder: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   readDirectory: (dirPath: string) => Promise<FileNode[]>;
   readFile: (filePath: string) => Promise<string>;
+  writeFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
   getFileStats: (filePath: string) => Promise<{ size: string; modifiedTime: string; isDirectory: boolean; isFile: boolean }>;
   onFolderOpened: (callback: (folderPath: string) => void) => void;
   getRecentProjects: () => Promise<RecentProject[]>;
@@ -263,6 +264,7 @@ export interface ElectronAPI {
   codeVectorization?: CodeVectorizationAPI;
   codeOrchestrator?: CodeOrchestratorAPI;
   lineCounter?: LineCounterAPI;
+  aiDescription?: AIDescriptionAPI;
   ipcRenderer?: {
     on: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
     removeListener: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
@@ -323,6 +325,14 @@ export interface LineCountResult {
 
 export interface LineCounterAPI {
   count: (projectPath: string) => Promise<{ success: boolean; result?: LineCountResult; error?: string }>;
+}
+
+export interface AIDescriptionAPI {
+  getHumanReadable: (filePath: string) => Promise<{ success: boolean; content?: string | null; error?: string }>;
+  getFileDescriptions: (filePath: string) => Promise<{ success: boolean; descriptions?: any; error?: string }>;
+  hasDescriptions: (filePath: string) => Promise<{ success: boolean; hasDescriptions?: boolean; error?: string }>;
+  getFilesWithDescriptions: () => Promise<{ success: boolean; files?: string[]; error?: string }>;
+  getStats: () => Promise<{ success: boolean; stats?: { totalFiles: number; totalElements: number }; error?: string }>;
 }
 
 declare global {

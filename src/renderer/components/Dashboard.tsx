@@ -5,8 +5,7 @@ import { dexyService } from '../../services/dexy-service-renderer';
 import { kanbanService } from '../../services/kanban-service';
 import { todoService, TodoStats } from '../../services/todo-service-renderer';
 import { codeVectorizationOrchestrator } from '../../services/code-vectorization-orchestrator-renderer';
-import ReactFlow, { Node, Edge, Controls, Background, useNodesState, useEdgesState, MarkerType } from 'reactflow';
-import 'reactflow/dist/style.css';
+import Graph from 'react-graph-vis';
 
 interface Metric {
   label: string;
@@ -182,8 +181,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   const [dependencyGraph, setDependencyGraph] = useState<DependencyGraph | null>(null);
   const [dependencyStats, setDependencyStats] = useState<DependencyStats | null>(null);
   const [isDependencyAnalyzing, setIsDependencyAnalyzing] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [graphData, setGraphData] = useState<{ nodes: any[], edges: any[] }>({ nodes: [], edges: [] });
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
   // Load config and auto-start code vectorization
   useEffect(() => {
@@ -464,47 +463,49 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
         setDependencyGraph(graph);
         console.log('[Dashboard] Dependency graph loaded:', graph);
         
-        // Convert graph to react-flow format
-        const reactFlowNodes: Node[] = graph.nodes.map((node, index) => ({
+        // Convert graph to react-graph-vis format
+        const visNodes = graph.nodes.map((node) => ({
           id: node.id,
-          type: 'default',
-          position: { x: (index % 5) * 200, y: Math.floor(index / 5) * 150 },
-          data: { 
-            label: node.name,
-            language: node.language,
-            imports: node.imports.length,
-            exports: node.exports.length,
-            dependents: node.dependents.length
-          },
-          style: {
+          label: node.name,
+          title: `${node.name}\nLanguage: ${node.language}\nImports: ${node.imports.length}\nExports: ${node.exports.length}\nDependents: ${node.dependents.length}`,
+          color: {
             background: getNodeColor(node.language),
-            color: 'white',
-            border: '1px solid #555',
-            borderRadius: '8px',
-            padding: '8px',
-            fontSize: '12px'
-          }
-        }));
-
-        const reactFlowEdges: Edge[] = graph.edges.map((edge) => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          type: 'smoothstep',
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: 15,
-            height: 15,
-            color: '#999'
+            border: '#555555',
+            highlight: {
+              background: lightenColor(getNodeColor(node.language), 0.2),
+              border: '#ffffff'
+            }
           },
-          style: {
-            stroke: '#999',
-            strokeWidth: 1
+          font: {
+            color: 'white',
+            size: 12
+          },
+          shape: 'box',
+          margin: 10,
+          widthConstraint: {
+            minimum: 100,
+            maximum: 150
           }
         }));
 
-        setNodes(reactFlowNodes);
-        setEdges(reactFlowEdges);
+        const visEdges = graph.edges.map((edge) => ({
+          id: edge.id,
+          from: edge.source,
+          to: edge.target,
+          arrows: 'to',
+          color: {
+            color: '#666666',
+            highlight: '#ffffff',
+            hover: '#999999'
+          },
+          width: 1,
+          smooth: {
+            type: 'continuous',
+            roundness: 0.5
+          }
+        }));
+
+        setGraphData({ nodes: visNodes, edges: visEdges });
       }
     } catch (error) {
       console.error('[Dashboard] Error loading dependency graph:', error);
@@ -570,6 +571,128 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       unknown: '#6b7280'
     };
     return colors[language] || colors.unknown;
+  };
+
+  const lightenColor = (color: string, percent: number): string => {
+    const num = parseInt(color.replace("#", ""), 16);
+    const amt = Math.round(2.55 * percent * 100);
+    const R = (num >> 16) + amt;
+    const G = (num >> 8 & 0x00FF) + amt;
+    const B = (num & 0x0000FF) + amt;
+    return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+      (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+      (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+  };
+
+  const handleNodeClick = (event: any) => {
+    if (event.nodes.length > 0) {
+      const nodeId = event.nodes[0];
+      setSelectedNode(nodeId);
+      
+      // Highlight connected nodes
+      const connectedEdges = graphData.edges.filter(edge => 
+        edge.from === nodeId || edge.to === nodeId
+      );
+      
+      const connectedNodes = new Set<string>();
+      connectedEdges.forEach(edge => {
+        connectedNodes.add(edge.from);
+        connectedNodes.add(edge.to);
+      });
+
+      // Update node colors to highlight connections
+      const updatedNodes = graphData.nodes.map(node => ({
+        ...node,
+        color: {
+          ...node.color,
+          background: connectedNodes.has(node.id) 
+            ? lightenColor(getNodeColor(getNodeLanguage(node.id)), 0.3)
+            : node.color.background
+        }
+      }));
+
+      const updatedEdges = graphData.edges.map(edge => ({
+        ...edge,
+        color: {
+          ...edge.color,
+          color: connectedEdges.some(ce => ce.id === edge.id) ? '#ffffff' : '#666666'
+        },
+        width: connectedEdges.some(ce => ce.id === edge.id) ? 2 : 1
+      }));
+
+      setGraphData({ nodes: updatedNodes, edges: updatedEdges });
+    }
+  };
+
+  const getNodeLanguage = (nodeId: string): string => {
+    const node = dependencyGraph?.nodes.find(n => n.id === nodeId);
+    return node?.language || 'unknown';
+  };
+
+  const graphOptions = {
+    layout: {
+      hierarchical: {
+        enabled: true,
+        levelSeparation: 200,
+        nodeSpacing: 150,
+        treeSpacing: 200,
+        blockShifting: true,
+        edgeMinimization: true,
+        parentCentralization: true,
+        direction: 'LR',
+        sortMethod: 'directed'
+      }
+    },
+    physics: {
+      enabled: true,
+      hierarchicalRepulsion: {
+        centralGravity: 0.3,
+        springLength: 100,
+        springConstant: 0.01,
+        nodeDistance: 120,
+        damping: 0.09
+      },
+      maxVelocity: 50,
+      solver: 'hierarchicalRepulsion',
+      timestep: 0.35,
+      stabilization: {
+        enabled: true,
+        iterations: 1000,
+        updateInterval: 25
+      }
+    },
+    nodes: {
+      shape: 'box',
+      margin: 10,
+      widthConstraint: {
+        minimum: 100,
+        maximum: 150
+      },
+      heightConstraint: {
+        minimum: 30
+      }
+    },
+    edges: {
+      smooth: {
+        type: 'continuous',
+        roundness: 0.5
+      },
+      arrows: {
+        to: {
+          enabled: true,
+          scaleFactor: 0.5
+        }
+      }
+    },
+    interaction: {
+      hover: true,
+      selectConnectedEdges: true,
+      hoverConnectedEdges: true
+    }
+  };
+
+  const graphEvents = {
+    select: handleNodeClick
   };
 
   const loadVectorStats = async () => {
@@ -1924,29 +2047,84 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
             <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-white">Dependency Graph</h3>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-4">
+                  {selectedNode && (
+                    <div className="flex items-center space-x-2">
+                      <div className="text-sm text-blue-400">
+                        Selected: {selectedNode.split('/').pop()}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedNode(null);
+                          loadDependencyGraph(); // Reset graph colors
+                        }}
+                        className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
                   <div className="text-sm text-gray-400">
                     {dependencyGraph ? `${dependencyGraph.nodes.length} files` : 'No graph data'}
                   </div>
                 </div>
               </div>
 
-              {dependencyGraph && nodes.length > 0 ? (
-                <div className="h-96 bg-gray-900 rounded-lg border border-gray-700">
-                  <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    fitView
-                    className="dependency-graph"
-                  >
-                    <Background color="#374151" />
-                    <Controls />
-                  </ReactFlow>
+              {/* Language Legend */}
+              {dependencyGraph && graphData.nodes.length > 0 && (
+                <div className="mb-4 p-3 bg-gray-700 rounded-lg">
+                  <div className="text-sm text-gray-300 mb-2">Language Colors:</div>
+                  <div className="flex flex-wrap gap-3">
+                    {Object.entries({
+                      typescript: '#3178c6',
+                      javascript: '#f7df1e',
+                      python: '#3776ab',
+                      java: '#ed8b00',
+                      go: '#00add8',
+                      rust: '#ce422b'
+                    }).map(([lang, color]) => (
+                      <div key={lang} className="flex items-center space-x-2">
+                        <div 
+                          className="w-3 h-3 rounded-sm" 
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="text-xs text-gray-300 capitalize">{lang}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {dependencyGraph && graphData.nodes.length > 0 ? (
+                <div className="h-[600px] bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
+                  <style>{`
+                    .vis-network {
+                      background-color: #111827 !important;
+                    }
+                    .vis-navigation {
+                      background-color: #374151 !important;
+                    }
+                    .vis-button {
+                      background-color: #4b5563 !important;
+                      color: white !important;
+                    }
+                    .vis-button:hover {
+                      background-color: #6b7280 !important;
+                    }
+                  `}</style>
+                  <Graph
+                    graph={graphData}
+                    options={graphOptions}
+                    events={graphEvents}
+                    style={{ height: '100%', width: '100%' }}
+                    getNetwork={(network: any) => {
+                      // Store network reference for potential future use
+                      (window as any).dependencyNetwork = network;
+                    }}
+                  />
                 </div>
               ) : (
-                <div className="h-96 bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center">
+                <div className="h-[600px] bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center">
                   <div className="text-center">
                     <Network className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                     <p className="text-gray-400">No dependency graph available</p>

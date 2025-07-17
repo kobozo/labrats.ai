@@ -1,10 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle } from 'lucide-react';
-import { CodeVectorizationProgress, PreScanResult, LineCountResult } from '../types/electron';
+import React, { useState, useEffect, useCallback } from 'react';
+import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle, Play, Pause, RotateCcw, Search } from 'lucide-react';
+import { CodeVectorizationProgress, PreScanResult, LineCountResult, DependencyGraph, DependencyStats } from '../types/electron';
 import { dexyService } from '../../services/dexy-service-renderer';
 import { kanbanService } from '../../services/kanban-service';
 import { todoService, TodoStats } from '../../services/todo-service-renderer';
 import { codeVectorizationOrchestrator } from '../../services/code-vectorization-orchestrator-renderer';
+import ReactFlow, { 
+  Node, 
+  Edge, 
+  Controls, 
+  Background, 
+  useNodesState, 
+  useEdgesState, 
+  ConnectionMode,
+  ReactFlowProvider,
+  useReactFlow,
+  ReactFlowInstance,
+  MarkerType
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import dagre from 'dagre';
 
 interface Metric {
   label: string;
@@ -69,6 +84,54 @@ const defaultMetrics: Metric[] = [
     icon: Target
   }
 ];
+
+// Layout calculation function using dagre for proper graph layout
+const calculateNodePositions = (nodes: any[], edges: any[]) => {
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+  
+  // Configure the layout
+  dagreGraph.setGraph({
+    rankdir: 'LR', // Left to right layout (better for dependency graphs)
+    align: 'UL', // Align to upper left
+    nodesep: 120, // Horizontal spacing between nodes (increased)
+    ranksep: 150, // Vertical spacing between layers (increased)
+    edgesep: 50,  // Edge separation
+    marginx: 50,  // Graph margin x
+    marginy: 50   // Graph margin y
+  });
+  
+  // Add nodes to dagre graph
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { 
+      width: 60,  // Node width
+      height: 60  // Node height
+    });
+  });
+  
+  // Add edges to dagre graph
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+  
+  // Calculate the layout
+  dagre.layout(dagreGraph);
+  
+  // Extract positions from dagre
+  const positions: { [key: string]: { x: number; y: number } } = {};
+  
+  nodes.forEach((node) => {
+    const dagreNode = dagreGraph.node(node.id);
+    if (dagreNode) {
+      positions[node.id] = {
+        x: dagreNode.x,
+        y: dagreNode.y
+      };
+    }
+  });
+  
+  return positions;
+};
 
 const timelineEvents: TimelineEvent[] = [
   {
@@ -159,7 +222,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
-  const [activeView, setActiveView] = useState<'overview' | 'timeline' | 'compare' | 'todos' | 'embeddings'>('overview');
+  const [activeView, setActiveView] = useState<'overview' | 'timeline' | 'compare' | 'todos' | 'embeddings' | 'dependencies'>('overview');
   const [vectorStats, setVectorStats] = useState<VectorStats>({
     totalTasks: 0,
     vectorizedTasks: 0,
@@ -177,6 +240,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   const [preScanResult, setPreScanResult] = useState<PreScanResult | null>(null);
   const [metrics, setMetrics] = useState<Metric[]>(defaultMetrics);
   const [lineCountResult, setLineCountResult] = useState<LineCountResult | null>(null);
+  const [dependencyGraph, setDependencyGraph] = useState<DependencyGraph | null>(null);
+  const [dependencyStats, setDependencyStats] = useState<DependencyStats | null>(null);
+  const [isDependencyAnalyzing, setIsDependencyAnalyzing] = useState(false);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [visibleLanguages, setVisibleLanguages] = useState<Set<string>>(new Set());
+  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
 
   // Load config and auto-start code vectorization
   useEffect(() => {
@@ -318,6 +390,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       loadTodoStats();
     } else if (activeView === 'overview' && currentFolder) {
       loadLineCount();
+    } else if (activeView === 'dependencies' && currentFolder) {
+      initializeDependencyAnalysis();
     }
   }, [activeView, currentFolder]);
 
@@ -426,6 +500,328 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
     } catch (error) {
       console.error('[Dashboard] Error loading line count:', error);
     }
+  };
+
+  const loadDependencyStats = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Loading dependency stats for folder:', currentFolder);
+
+    try {
+      const stats = await window.electronAPI?.dependencyAnalysis?.getStats();
+      if (stats) {
+        setDependencyStats(stats);
+        console.log('[Dashboard] Dependency stats loaded:', stats);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error loading dependency stats:', error);
+    }
+  };
+
+  const loadDependencyGraph = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Loading dependency graph for folder:', currentFolder);
+
+    try {
+      const graph = await window.electronAPI?.dependencyAnalysis?.getGraph();
+      if (graph) {
+        setDependencyGraph(graph);
+        console.log('[Dashboard] Dependency graph loaded:', graph);
+        
+        // Get all unique languages and initialize visible languages
+        const allLanguages = new Set(graph.nodes.map(node => node.language));
+        setVisibleLanguages(allLanguages);
+        
+        // Convert graph to react-flow format with proper layout
+        const positions = calculateNodePositions(graph.nodes, graph.edges);
+        const flowNodes: Node[] = graph.nodes.map((node, index) => ({
+          id: node.id,
+          type: 'default',
+          position: positions[node.id] || { x: 100 + (index % 10) * 80, y: 100 + Math.floor(index / 10) * 80 },
+          data: { 
+            label: node.name,
+            language: node.language,
+            imports: node.imports.length,
+            exports: node.exports.length,
+            dependents: node.dependents.length
+          },
+          style: {
+            background: getNodeColor(node.language),
+            color: 'white',
+            border: '2px solid #555555',
+            borderRadius: '50%',
+            width: 60,
+            height: 60,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '10px',
+            fontWeight: 'bold'
+          }
+        }));
+
+        const flowEdges: Edge[] = graph.edges.map((edge, index) => ({
+          id: `edge-${index}-${edge.source}-${edge.target}`,
+          source: edge.source,
+          target: edge.target,
+          type: 'smoothstep',
+          style: {
+            stroke: '#666666',
+            strokeWidth: 1
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#666666'
+          }
+        }));
+
+        setNodes(flowNodes);
+        setEdges(flowEdges);
+        
+        // Auto-layout the graph
+        setTimeout(() => {
+          if (reactFlowInstance) {
+            reactFlowInstance.fitView({ padding: 0.1, maxZoom: 1 });
+          }
+        }, 100);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error loading dependency graph:', error);
+    }
+  };
+
+  const initializeDependencyAnalysis = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Initializing dependency analysis for folder:', currentFolder);
+
+    try {
+      const result = await window.electronAPI?.dependencyAnalysis?.initialize(currentFolder);
+      if (result?.success) {
+        console.log('[Dashboard] Dependency analysis initialized successfully');
+        await loadDependencyStats();
+        await loadDependencyGraph();
+      } else {
+        console.error('[Dashboard] Failed to initialize dependency analysis:', result?.error);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error initializing dependency analysis:', error);
+    }
+  };
+
+  const analyzeDependencies = async () => {
+    if (!currentFolder || isDependencyAnalyzing) return;
+
+    setIsDependencyAnalyzing(true);
+    console.log('[Dashboard] Starting dependency analysis...');
+
+    try {
+      const result = await window.electronAPI?.dependencyAnalysis?.analyze();
+      if (result?.success) {
+        console.log('[Dashboard] Dependency analysis completed successfully');
+        await loadDependencyStats();
+        await loadDependencyGraph();
+      } else {
+        console.error('[Dashboard] Failed to analyze dependencies:', result?.error);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error analyzing dependencies:', error);
+    } finally {
+      setIsDependencyAnalyzing(false);
+    }
+  };
+
+  const getNodeColor = (language: string): string => {
+    const colors: { [key: string]: string } = {
+      typescript: '#3178c6',
+      javascript: '#f7df1e',
+      python: '#3776ab',
+      java: '#ed8b00',
+      go: '#00add8',
+      rust: '#ce422b',
+      cpp: '#00599c',
+      c: '#a8b9cc',
+      csharp: '#239120',
+      ruby: '#cc342d',
+      php: '#777bb4',
+      swift: '#fa7343',
+      kotlin: '#7f52ff',
+      terraform: '#7b42bc',
+      yaml: '#cb171e',
+      json: '#000000',
+      dockerfile: '#2496ed',
+      shell: '#4eaa25',
+      unknown: '#6b7280'
+    };
+    return colors[language] || colors.unknown;
+  };
+
+
+  const lightenColor = (color: string, percent: number): string => {
+    const num = parseInt(color.replace("#", ""), 16);
+    const amt = Math.round(2.55 * percent * 100);
+    const R = (num >> 16) + amt;
+    const G = (num >> 8 & 0x00FF) + amt;
+    const B = (num & 0x0000FF) + amt;
+    return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+      (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+      (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+  };
+
+  // Helper functions for react-flow
+  const handleNodeClick = useCallback((event: any, node: Node) => {
+    setSelectedNode(node.id);
+    
+    // Highlight connected nodes and edges
+    const connectedEdges = edges.filter(edge => 
+      edge.source === node.id || edge.target === node.id
+    );
+    
+    const connectedNodeIds = new Set<string>();
+    connectedEdges.forEach(edge => {
+      connectedNodeIds.add(edge.source);
+      connectedNodeIds.add(edge.target);
+    });
+
+    // Update node styles to highlight connections
+    const updatedNodes = nodes.map(n => ({
+      ...n,
+      style: {
+        ...n.style,
+        border: connectedNodeIds.has(n.id) 
+          ? '3px solid #ffffff'
+          : '2px solid #555555',
+        boxShadow: connectedNodeIds.has(n.id) 
+          ? '0 0 10px rgba(255, 255, 255, 0.5)'
+          : 'none'
+      }
+    }));
+
+    // Update edge styles to highlight connections
+    const updatedEdges = edges.map(edge => ({
+      ...edge,
+      style: {
+        ...edge.style,
+        stroke: connectedEdges.some(ce => ce.id === edge.id) ? '#ffffff' : '#666666',
+        strokeWidth: connectedEdges.some(ce => ce.id === edge.id) ? 2 : 1
+      }
+    }));
+
+    setNodes(updatedNodes);
+    setEdges(updatedEdges);
+  }, [nodes, edges, setNodes, setEdges]);
+
+  const handleSearch = useCallback((query: string) => {
+    if (!query || !reactFlowInstance) return;
+    
+    const matchingNode = nodes.find(node => 
+      node.data.label.toLowerCase().includes(query.toLowerCase())
+    );
+    
+    if (matchingNode) {
+      reactFlowInstance.setCenter(matchingNode.position.x, matchingNode.position.y, { zoom: 1.5 });
+      setSelectedNode(matchingNode.id);
+    }
+  }, [nodes, reactFlowInstance]);
+
+  const toggleLanguageVisibility = useCallback((language: string) => {
+    const newVisibleLanguages = new Set(visibleLanguages);
+    if (newVisibleLanguages.has(language)) {
+      newVisibleLanguages.delete(language);
+    } else {
+      newVisibleLanguages.add(language);
+    }
+    setVisibleLanguages(newVisibleLanguages);
+
+    // Filter nodes based on visible languages
+    const filteredNodes = nodes.map(node => ({
+      ...node,
+      hidden: !newVisibleLanguages.has(node.data.language)
+    }));
+    
+    setNodes(filteredNodes);
+  }, [visibleLanguages, nodes, setNodes]);
+
+  const onInit = useCallback((instance: ReactFlowInstance) => {
+    setReactFlowInstance(instance);
+    setTimeout(() => {
+      instance.fitView({ padding: 0.1, maxZoom: 1 });
+    }, 100);
+  }, []);
+
+  const getNodeLanguage = (nodeId: string): string => {
+    const node = dependencyGraph?.nodes.find(n => n.id === nodeId);
+    return node?.language || 'unknown';
+  };
+
+  const graphOptions = {
+    layout: {
+      hierarchical: {
+        enabled: true,
+        levelSeparation: 200,
+        nodeSpacing: 150,
+        treeSpacing: 200,
+        blockShifting: true,
+        edgeMinimization: true,
+        parentCentralization: true,
+        direction: 'LR',
+        sortMethod: 'directed'
+      }
+    },
+    physics: {
+      enabled: true,
+      hierarchicalRepulsion: {
+        centralGravity: 0.3,
+        springLength: 100,
+        springConstant: 0.01,
+        nodeDistance: 120,
+        damping: 0.09
+      },
+      maxVelocity: 50,
+      solver: 'hierarchicalRepulsion',
+      timestep: 0.35,
+      stabilization: {
+        enabled: true,
+        iterations: 1000,
+        updateInterval: 25
+      }
+    },
+    nodes: {
+      shape: 'box',
+      margin: 10,
+      widthConstraint: {
+        minimum: 120,
+        maximum: 180
+      },
+      heightConstraint: {
+        minimum: 35
+      },
+      font: {
+        multi: 'html'
+      }
+    },
+    edges: {
+      smooth: {
+        type: 'continuous',
+        roundness: 0.5
+      },
+      arrows: {
+        to: {
+          enabled: true,
+          scaleFactor: 0.5
+        }
+      }
+    },
+    interaction: {
+      hover: true,
+      selectConnectedEdges: true,
+      hoverConnectedEdges: true
+    }
+  };
+
+  const graphEvents = {
+    select: handleNodeClick
   };
 
   const loadVectorStats = async () => {
@@ -760,7 +1156,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   };
 
   return (
-    <div className="flex-1 bg-gray-900 flex flex-col h-full">
+    <ReactFlowProvider>
+      <div className="flex-1 bg-gray-900 flex flex-col h-full">
       {/* Header */}
       <div className="p-6 border-b border-gray-700 bg-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -776,7 +1173,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
               { id: 'timeline', label: 'Timeline', icon: Clock },
               { id: 'compare', label: 'Compare', icon: TrendingUp },
               { id: 'todos', label: 'TODOs', icon: Code },
-              { id: 'embeddings', label: 'Embeddings', icon: Database }
+              { id: 'embeddings', label: 'Embeddings', icon: Database },
+              { id: 'dependencies', label: 'Dependencies', icon: Network }
             ].map((view) => (
               <button
                 key={view.id}
@@ -1716,8 +2114,227 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
           </div>
         )}
 
+        {activeView === 'dependencies' && (
+          <div className="space-y-6">
+            {!currentFolder ? (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div className="text-center py-8">
+                  <Network className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-white mb-2">No Project Loaded</h3>
+                  <p className="text-gray-400">Please open a project folder to view dependency graph</p>
+                </div>
+              </div>
+            ) : (
+            <>
+            {/* Dependency Analysis Overview */}
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-white">Dependency Analysis</h3>
+                <button
+                  onClick={analyzeDependencies}
+                  disabled={isDependencyAnalyzing}
+                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                >
+                  {isDependencyAnalyzing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Analyzing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" />
+                      <span>Analyze Dependencies</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {dependencyStats && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-white">{dependencyStats.totalFiles}</div>
+                    <div className="text-sm text-gray-400">Total Files</div>
+                  </div>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-white">{dependencyStats.totalDependencies}</div>
+                    <div className="text-sm text-gray-400">Dependencies</div>
+                  </div>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-white">{dependencyStats.circularDependencies.length}</div>
+                    <div className="text-sm text-gray-400">Circular Dependencies</div>
+                  </div>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-white">
+                      {dependencyStats.mostDependedOn.length > 0 ? dependencyStats.mostDependedOn[0].count : 0}
+                    </div>
+                    <div className="text-sm text-gray-400">Max Dependencies</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Dependency Graph Visualization */}
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-white">Dependency Graph</h3>
+                <div className="flex items-center space-x-4">
+                  {selectedNode && (
+                    <div className="flex items-center space-x-2">
+                      <div className="text-sm text-blue-400">
+                        Selected: {selectedNode.split('/').pop()}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedNode(null);
+                          loadDependencyGraph(); // Reset graph colors
+                        }}
+                        className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+                  <div className="text-sm text-gray-400">
+                    {dependencyGraph ? `${dependencyGraph.nodes.length} files` : 'No graph data'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Search Box */}
+              {dependencyGraph && nodes.length > 0 && (
+                <div className="mb-4 flex items-center space-x-4">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder="Search files..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
+                      className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleSearch(searchQuery)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Find
+                  </button>
+                </div>
+              )}
+              
+              {/* Language Filters */}
+              {dependencyGraph && nodes.length > 0 && (
+                <div className="mb-4 p-3 bg-gray-700 rounded-lg">
+                  <div className="text-sm text-gray-300 mb-2">Languages (click to toggle):</div>
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from(new Set(dependencyGraph.nodes.map(n => n.language))).map((lang) => (
+                      <button
+                        key={lang}
+                        onClick={() => toggleLanguageVisibility(lang)}
+                        className={`flex items-center space-x-2 px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                          visibleLanguages.has(lang)
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                        }`}
+                      >
+                        <div 
+                          className="w-3 h-3 rounded-full" 
+                          style={{ backgroundColor: getNodeColor(lang) }}
+                        />
+                        <span className="capitalize">{lang}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {dependencyGraph && nodes.length > 0 ? (
+                <div className="h-[600px] bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
+                  <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onNodeClick={handleNodeClick}
+                    onInit={onInit}
+                    fitView
+                    attributionPosition="bottom-left"
+                    connectionMode={ConnectionMode.Loose}
+                    defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+                  >
+                    <Background color="#374151" gap={20} />
+                    <Controls />
+                  </ReactFlow>
+                </div>
+              ) : (
+                <div className="h-[600px] bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center">
+                  <div className="text-center">
+                    <Network className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                    <p className="text-gray-400">No dependency graph available</p>
+                    <p className="text-sm text-gray-500 mt-2">Click "Analyze Dependencies" to generate the graph</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Top Dependencies */}
+            {dependencyStats && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                  <h3 className="text-lg font-semibold text-white mb-4">Most Dependent Files</h3>
+                  <div className="space-y-3">
+                    {dependencyStats.mostDependent.slice(0, 10).map((item, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="text-sm text-gray-300 truncate">{item.file}</div>
+                        <div className="text-sm text-gray-400">{item.count} imports</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                  <h3 className="text-lg font-semibold text-white mb-4">Most Depended On Files</h3>
+                  <div className="space-y-3">
+                    {dependencyStats.mostDependedOn.slice(0, 10).map((item, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="text-sm text-gray-300 truncate">{item.file}</div>
+                        <div className="text-sm text-gray-400">{item.count} dependents</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Circular Dependencies */}
+            {dependencyStats && dependencyStats.circularDependencies.length > 0 && (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-semibold text-white mb-4">Circular Dependencies</h3>
+                <div className="space-y-3">
+                  {dependencyStats.circularDependencies.map((cycle, index) => (
+                    <div key={index} className="bg-red-900/20 border border-red-700/50 rounded-lg p-4">
+                      <div className="text-sm text-red-300">
+                        {cycle.map((file, i) => (
+                          <span key={i}>
+                            {file.split('/').pop()}
+                            {i < cycle.length - 1 && ' → '}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            </>
+            )}
+          </div>
+        )}
+
         </div>
       </div>
     </div>
+    </ReactFlowProvider>
   );
 };

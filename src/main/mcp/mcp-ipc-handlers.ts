@@ -22,6 +22,11 @@ import { executeInFileSearchTool } from './tools/infile-search-tool-main';
 import { executeReplaceTextTool } from './tools/replace-text-tool-main';
 import { executeReadCodeElementTool } from './tools/read-code-element-tool-main';
 import { executeSearchWithContextTool } from './tools/search-with-context-tool-main';
+import { handleDependencyQuery } from './tools/dependency-query';
+import { handleDependencyPath } from './tools/dependency-path';
+import { handleDependencyStats } from './tools/dependency-stats';
+import { handleDependencyImpact } from './tools/dependency-impact';
+import { handleCircularDependencies } from './tools/circular-dependencies';
 
 // Declare global to access windowProjects from main.ts
 declare global {
@@ -147,6 +152,16 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
           return await executeReadCodeElementTool(args);
         case 'search_with_context':
           return await executeSearchWithContextTool(args);
+        case 'dependency_query':
+          return await handleDependencyQuery(args);
+        case 'dependency_path':
+          return await handleDependencyPath(args);
+        case 'dependency_stats':
+          return await handleDependencyStats(args);
+        case 'dependency_impact':
+          return await handleDependencyImpact(args);
+        case 'circular_dependencies':
+          return await handleCircularDependencies(args);
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }

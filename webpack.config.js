@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -103,13 +104,18 @@ module.exports = [
         "url": false,
         "buffer": false,
         "util": false,
-        "events": false
+        "events": false,
+        "process": false
       },
     },
     plugins: [
       new HtmlWebpackPlugin({
         template: './src/renderer/index.html',
         filename: 'index.html',
+      }),
+      new webpack.DefinePlugin({
+        'global': 'window',
+        'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
       }),
     ],
     devServer: {

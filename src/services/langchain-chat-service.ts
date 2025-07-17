@@ -583,6 +583,16 @@ export class LangChainChatService {
           return this.formatExploreCodebaseResult(parsed, args);
         case 'code_vectorization_status':
           return this.formatCodeVectorizationStatusResult(parsed, args);
+        case 'dependency_query':
+          return this.formatDependencyQueryResult(parsed, args);
+        case 'dependency_path':
+          return this.formatDependencyPathResult(parsed, args);
+        case 'dependency_stats':
+          return this.formatDependencyStatsResult(parsed, args);
+        case 'dependency_impact':
+          return this.formatDependencyImpactResult(parsed, args);
+        case 'circular_dependencies':
+          return this.formatCircularDependenciesResult(parsed, args);
         default:
           return `\n\n**Tool Result (${toolName}):**\n\`\`\`json\n${result}\n\`\`\``;
       }
@@ -1146,6 +1156,203 @@ export class LangChainChatService {
     return output;
   }
 
+  private formatDependencyQueryResult(parsed: any, args: any): string {
+    const filePath = args.filePath || 'Unknown file';
+    
+    if (!parsed.found) {
+      return `\n\n### 🔍 Dependency Query: \`${filePath}\`\n\n❌ ${parsed.message || 'File not found in dependency graph'}`;
+    }
+
+    let output = `\n\n### 🔍 Dependency Query: \`${filePath}\`\n\n`;
+    output += `**Language:** ${parsed.language}\n`;
+    output += `**Summary:**\n`;
+    output += `- 📥 **Imports:** ${parsed.summary.imports} files\n`;
+    output += `- 📤 **Exports:** ${parsed.summary.exports} symbols\n`;
+    output += `- 📎 **Dependents:** ${parsed.summary.dependents} files\n\n`;
+
+    if (parsed.dependencies.imports.length > 0) {
+      output += `**Imports (${parsed.dependencies.imports.length}):**\n`;
+      for (const imp of parsed.dependencies.imports) {
+        output += `- \`${imp.name}\` (${imp.path})\n`;
+      }
+      output += '\n';
+    }
+
+    if (parsed.dependencies.exports.length > 0) {
+      output += `**Exports (${parsed.dependencies.exports.length}):**\n`;
+      for (const exp of parsed.dependencies.exports) {
+        output += `- \`${exp}\`\n`;
+      }
+      output += '\n';
+    }
+
+    if (parsed.dependencies.dependents.length > 0) {
+      output += `**Dependent Files (${parsed.dependencies.dependents.length}):**\n`;
+      for (const dep of parsed.dependencies.dependents) {
+        output += `- \`${dep.name}\` (${dep.path})\n`;
+      }
+    }
+
+    return output;
+  }
+
+  private formatDependencyPathResult(parsed: any, args: any): string {
+    const fromFile = args.fromFile || 'Unknown';
+    const toFile = args.toFile || 'Unknown';
+
+    let output = `\n\n### 🛤️ Dependency Path: \`${fromFile}\` → \`${toFile}\`\n\n`;
+
+    if (!parsed.pathExists) {
+      output += `❌ No dependency path found between these files.\n`;
+      return output;
+    }
+
+    if (parsed.path && parsed.path.length > 0) {
+      output += `✅ **Path found (${parsed.path.length} steps):**\n\n`;
+      for (let i = 0; i < parsed.path.length; i++) {
+        const file = parsed.path[i];
+        output += `${i + 1}. \`${file.name}\` (${file.path})`;
+        if (i < parsed.path.length - 1) {
+          output += ' →';
+        }
+        output += '\n';
+      }
+    }
+
+    return output;
+  }
+
+  private formatDependencyStatsResult(parsed: any, args: any): string {
+    if (!parsed.available) {
+      return `\n\n### 📊 Dependency Statistics\n\n❌ ${parsed.message || 'No dependency statistics available'}`;
+    }
+
+    let output = `\n\n### 📊 Dependency Statistics\n\n`;
+    
+    if (parsed.overview) {
+      output += `**Overview:**\n`;
+      output += `- 📁 **Total Files:** ${parsed.overview.totalFiles}\n`;
+      output += `- 🔗 **Total Dependencies:** ${parsed.overview.totalDependencies}\n`;
+      output += `- 🔄 **Circular Dependencies:** ${parsed.overview.circularDependencyCount}\n\n`;
+    }
+
+    if (parsed.mostDependent && parsed.mostDependent.length > 0) {
+      output += `**Most Dependent Files (highest imports):**\n`;
+      for (const file of parsed.mostDependent) {
+        output += `- \`${file.file}\` - ${file.imports} imports\n`;
+      }
+      output += '\n';
+    }
+
+    if (parsed.mostDependedOn && parsed.mostDependedOn.length > 0) {
+      output += `**Most Depended On Files (most dependents):**\n`;
+      for (const file of parsed.mostDependedOn) {
+        output += `- \`${file.file}\` - ${file.dependents} dependents\n`;
+      }
+      output += '\n';
+    }
+
+    if (parsed.circularDependencies && parsed.circularDependencies.length > 0) {
+      output += `**⚠️ Circular Dependencies (${parsed.circularDependencies.length}):**\n`;
+      for (const cycle of parsed.circularDependencies) {
+        output += `- ${cycle.summary}\n`;
+      }
+    }
+
+    return output;
+  }
+
+  private formatDependencyImpactResult(parsed: any, args: any): string {
+    const filePath = args.filePath || 'Unknown file';
+
+    let output = `\n\n### 💥 Dependency Impact Analysis: \`${filePath}\`\n\n`;
+
+    if (!parsed.found) {
+      output += `❌ File not found in dependency graph\n`;
+      return output;
+    }
+
+    if (parsed.impact) {
+      output += `**Direct Impact:**\n`;
+      output += `- 🎯 **Direct dependents:** ${parsed.impact.directDependents}\n`;
+      output += `- 📊 **Total affected files:** ${parsed.impact.totalAffected}\n`;
+      output += `- 🏗️ **Max dependency depth:** ${parsed.impact.maxDepth}\n\n`;
+
+      if (parsed.impact.affectedByLevel) {
+        output += `**Impact by Depth Level:**\n`;
+        for (const [level, count] of Object.entries(parsed.impact.affectedByLevel)) {
+          output += `- Level ${level}: ${count} files\n`;
+        }
+        output += '\n';
+      }
+
+      if (parsed.impact.criticalFiles && parsed.impact.criticalFiles.length > 0) {
+        output += `**⚠️ Critical Files Affected:**\n`;
+        for (const file of parsed.impact.criticalFiles) {
+          output += `- \`${file.name}\` (${file.path}) - ${file.reason}\n`;
+        }
+      }
+    }
+
+    return output;
+  }
+
+  private formatCircularDependenciesResult(parsed: any, args: any): string {
+    let output = `\n\n### 🔄 Circular Dependencies Analysis\n\n`;
+
+    if (parsed.count === 0) {
+      output += parsed.message || '✅ No circular dependencies found!\n';
+      return output;
+    }
+
+    output += parsed.message || `⚠️ Found ${parsed.count} circular dependency cycles.\n\n`;
+
+    if (parsed.severity) {
+      output += `**Overall Severity:** ${parsed.severity.toUpperCase()}\n`;
+    }
+
+    if (parsed.breakdown) {
+      output += `**Breakdown:**\n`;
+      output += `- 🔴 High severity: ${parsed.breakdown.high}\n`;
+      output += `- 🟡 Medium severity: ${parsed.breakdown.medium}\n`;
+      output += `- 🟢 Low severity: ${parsed.breakdown.low}\n\n`;
+    }
+
+    if (parsed.cycles && parsed.cycles.length > 0) {
+      output += `**Circular Dependency Cycles:**\n`;
+      for (let i = 0; i < Math.min(10, parsed.cycles.length); i++) {
+        const cycle = parsed.cycles[i];
+        output += `${i + 1}. ${cycle.flowSummary}\n`;
+      }
+      if (parsed.cycles.length > 10) {
+        output += `... and ${parsed.cycles.length - 10} more cycles\n`;
+      }
+      output += '\n';
+    }
+
+    if (parsed.details && parsed.details.length > 0) {
+      output += `**Detailed Analysis:**\n`;
+      for (const detail of parsed.details.slice(0, 5)) {
+        output += `\n**${detail.severity.toUpperCase()} - ${detail.description}**\n`;
+        if (detail.recommendations && detail.recommendations.length > 0) {
+          for (const rec of detail.recommendations) {
+            output += `  ${rec}\n`;
+          }
+        }
+      }
+      output += '\n';
+    }
+
+    if (parsed.recommendations && parsed.recommendations.length > 0) {
+      output += `**General Recommendations:**\n`;
+      for (const rec of parsed.recommendations) {
+        output += `${rec}\n`;
+      }
+    }
+
+    return output;
+  }
+
   private createProgressBar(progress: number): string {
     const filled = Math.round(progress / 10);
     const empty = 10 - filled;
@@ -1166,7 +1373,12 @@ export class LangChainChatService {
       'replace_in_file': 'Replace in File',
       'find_similar_code': 'Find Similar Code',
       'explore_codebase': 'Explore Codebase',
-      'code_vectorization_status': 'Vectorization Status'
+      'code_vectorization_status': 'Vectorization Status',
+      'dependency_query': 'Dependency Query',
+      'dependency_path': 'Dependency Path',
+      'dependency_stats': 'Dependency Statistics',
+      'dependency_impact': 'Dependency Impact',
+      'circular_dependencies': 'Circular Dependencies'
     };
     
     return toolDisplayNames[toolName] || toolName;

@@ -97,6 +97,15 @@ export class DependencyAnalysisService extends EventEmitter {
       '**/*.py',
       '**/*.java',
       '**/*.go',
+      '**/*.rs',
+      '**/*.tf',
+      '**/*.hcl',
+      '**/*.yml',
+      '**/*.yaml',
+      '**/Dockerfile',
+      '**/dockerfile',
+      '**/*.sh',
+      '**/*.bash',
     ];
 
     const filePaths = await glob(patterns || defaultPatterns, {
@@ -205,6 +214,22 @@ export class DependencyAnalysisService extends EventEmitter {
           }
         }
       }
+    } else if (language === 'terraform') {
+      // Extract Terraform module sources (only local modules)
+      const moduleRegex = /module\s+"[^"]+"\s*\{[^}]*source\s*=\s*"([^"]+)"/g;
+      
+      let match;
+      while ((match = moduleRegex.exec(content)) !== null) {
+        const modulePath = match[1];
+        
+        // Only handle local modules (starting with ./ or ../)
+        if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
+          const resolvedPath = await this.resolveTerraformModule(modulePath, fileDir);
+          if (resolvedPath) {
+            imports.push(resolvedPath);
+          }
+        }
+      }
     }
 
     return imports;
@@ -238,6 +263,19 @@ export class DependencyAnalysisService extends EventEmitter {
       
       while ((match = functionRegex.exec(content)) !== null) {
         exports.push(match[1]);
+      }
+    } else if (language === 'terraform') {
+      // Extract Terraform modules and resources
+      const moduleRegex = /module\s+"([^"]+)"/g;
+      const resourceRegex = /resource\s+"([^"]+)"\s+"([^"]+)"/g;
+      
+      let match;
+      while ((match = moduleRegex.exec(content)) !== null) {
+        exports.push(`module.${match[1]}`);
+      }
+      
+      while ((match = resourceRegex.exec(content)) !== null) {
+        exports.push(`${match[1]}.${match[2]}`);
       }
     }
 
@@ -303,24 +341,62 @@ export class DependencyAnalysisService extends EventEmitter {
     }
   }
 
+  private async resolveTerraformModule(modulePath: string, fromDir: string): Promise<string | null> {
+    // Resolve relative module path
+    const resolvedPath = path.resolve(fromDir, modulePath);
+    
+    // Look for main.tf or any .tf file in the module directory
+    const tfFiles = [
+      path.join(resolvedPath, 'main.tf'),
+      path.join(resolvedPath, 'variables.tf'),
+      path.join(resolvedPath, 'outputs.tf'),
+    ];
+    
+    for (const tfFile of tfFiles) {
+      try {
+        await fs.access(tfFile);
+        return tfFile;
+      } catch {}
+    }
+    
+    // If no specific files found, try to find any .tf file in the directory
+    try {
+      const files = await fs.readdir(resolvedPath);
+      const tfFile = files.find(file => file.endsWith('.tf'));
+      if (tfFile) {
+        return path.join(resolvedPath, tfFile);
+      }
+    } catch {}
+    
+    return null;
+  }
+
   private resolveDependencies(): void {
     // Build dependency relationships and create edges
-    for (const [filePath, node] of this.dependencyGraph.nodes) {
+    const existingEdges = new Set<string>();
+    
+    for (const [filePath, node] of Array.from(this.dependencyGraph.nodes.entries())) {
       for (const importPath of node.imports) {
         const targetNode = this.dependencyGraph.nodes.get(importPath);
         if (targetNode) {
-          // Add this file as a dependent of the imported file
-          targetNode.dependents.push(filePath);
+          // Add this file as a dependent of the imported file (only if not already present)
+          if (!targetNode.dependents.includes(filePath)) {
+            targetNode.dependents.push(filePath);
+          }
           
-          // Create edge
-          const edge: DependencyEdge = {
-            id: `${filePath}->${importPath}`,
-            source: filePath,
-            target: importPath,
-            type: 'import',
-          };
-          
-          this.dependencyGraph.edges.push(edge);
+          // Create edge only if it doesn't already exist
+          const edgeId = `${filePath}->${importPath}`;
+          if (!existingEdges.has(edgeId)) {
+            const edge: DependencyEdge = {
+              id: edgeId,
+              source: filePath,
+              target: importPath,
+              type: 'import',
+            };
+            
+            this.dependencyGraph.edges.push(edge);
+            existingEdges.add(edgeId);
+          }
         }
       }
     }
@@ -384,7 +460,7 @@ export class DependencyAnalysisService extends EventEmitter {
     };
 
     // Run DFS from each unvisited node
-    for (const filePath of this.dependencyGraph.nodes.keys()) {
+    for (const filePath of Array.from(this.dependencyGraph.nodes.keys())) {
       if (!visited.has(filePath)) {
         dfs(filePath, []);
       }
@@ -455,6 +531,45 @@ export class DependencyAnalysisService extends EventEmitter {
     }
   }
 
+  async getCircularDependencies(options?: { includeDetails?: boolean; maxCycles?: number }): Promise<{
+    cycles: string[][];
+    count: number;
+    details?: Array<{
+      cycle: string[];
+      fileNames: string[];
+      severity: 'low' | 'medium' | 'high';
+      description: string;
+    }>;
+  }> {
+    const cycles = this.findCircularDependencies();
+    const maxCycles = options?.maxCycles || 50;
+    const limitedCycles = cycles.slice(0, maxCycles);
+    
+    const result = {
+      cycles: limitedCycles,
+      count: cycles.length,
+    };
+
+    if (options?.includeDetails !== false) {
+      const details = limitedCycles.map(cycle => {
+        const fileNames = cycle.map(filePath => path.basename(filePath));
+        const severity: 'low' | 'medium' | 'high' = cycle.length <= 2 ? 'low' : cycle.length <= 4 ? 'medium' : 'high';
+        const description = `Circular dependency involving ${cycle.length} files: ${fileNames.join(' → ')} → ${fileNames[0]}`;
+        
+        return {
+          cycle,
+          fileNames,
+          severity,
+          description,
+        };
+      });
+      
+      return { ...result, details };
+    }
+
+    return result;
+  }
+
   private async saveToDisk(): Promise<void> {
     if (!this.storageDir) return;
 
@@ -503,6 +618,13 @@ export class DependencyAnalysisService extends EventEmitter {
 
   private getLanguageFromPath(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
+    const fileName = path.basename(filePath).toLowerCase();
+    
+    // Check for specific file names first
+    if (fileName === 'dockerfile' || fileName.startsWith('dockerfile.')) {
+      return 'dockerfile';
+    }
+    
     const langMap: { [key: string]: string } = {
       '.ts': 'typescript',
       '.tsx': 'typescript',
@@ -519,6 +641,15 @@ export class DependencyAnalysisService extends EventEmitter {
       '.php': 'php',
       '.swift': 'swift',
       '.kt': 'kotlin',
+      '.tf': 'terraform',
+      '.hcl': 'terraform',
+      '.yml': 'yaml',
+      '.yaml': 'yaml',
+      '.json': 'json',
+      '.sh': 'shell',
+      '.bash': 'shell',
+      '.zsh': 'shell',
+      '.fish': 'shell',
     };
     return langMap[ext] || 'unknown';
   }
@@ -532,6 +663,12 @@ export class DependencyAnalysisService extends EventEmitter {
     
     // Re-analyze the specific file
     this.analyzeFile(filePath).then(() => {
+      // Clear existing edges before rebuilding to avoid duplicates
+      this.dependencyGraph.edges = [];
+      // Clear all dependents arrays to rebuild them
+      Array.from(this.dependencyGraph.nodes.values()).forEach(node => {
+        node.dependents = [];
+      });
       this.resolveDependencies();
       this.saveDebounced();
     });

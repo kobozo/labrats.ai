@@ -1,12 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle, Play, Pause, RotateCcw } from 'lucide-react';
+import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle, Play, Pause, RotateCcw, Search } from 'lucide-react';
 import { CodeVectorizationProgress, PreScanResult, LineCountResult, DependencyGraph, DependencyStats } from '../types/electron';
 import { dexyService } from '../../services/dexy-service-renderer';
 import { kanbanService } from '../../services/kanban-service';
 import { todoService, TodoStats } from '../../services/todo-service-renderer';
 import { codeVectorizationOrchestrator } from '../../services/code-vectorization-orchestrator-renderer';
-import Graph from 'react-graph-vis';
-import 'devicons/css/devicons.min.css';
+import ReactFlow, { 
+  Node, 
+  Edge, 
+  Controls, 
+  Background, 
+  useNodesState, 
+  useEdgesState, 
+  ConnectionMode,
+  ReactFlowProvider,
+  useReactFlow,
+  ReactFlowInstance,
+  MarkerType
+} from 'reactflow';
+import 'reactflow/dist/style.css';
 
 interface Metric {
   label: string;
@@ -71,6 +83,118 @@ const defaultMetrics: Metric[] = [
     icon: Target
   }
 ];
+
+// Layout calculation function for dependency graph nodes
+const calculateNodePositions = (nodes: any[], edges: any[]) => {
+  const positions: { [key: string]: { x: number; y: number } } = {};
+  const nodeCount = nodes.length;
+  
+  if (nodeCount === 0) return positions;
+  
+  // Use force-directed layout algorithm
+  const width = 1400;
+  const height = 1000;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  
+  // Initialize positions randomly but spread out
+  const nodeRadius = 30; // Half of node width/height (60px diameter)
+  const minDistance = 200; // Minimum distance between node centers (ensures good spacing)
+  
+  // Simple grid-based layout with some randomization
+  const cols = Math.ceil(Math.sqrt(nodeCount));
+  const rows = Math.ceil(nodeCount / cols);
+  const cellWidth = Math.max(200, (width - 300) / cols);
+  const cellHeight = Math.max(200, (height - 300) / rows);
+  
+  nodes.forEach((node, index) => {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    
+    // Add some randomization within the grid cell
+    const randomX = (Math.random() - 0.5) * (cellWidth * 0.15);
+    const randomY = (Math.random() - 0.5) * (cellHeight * 0.15);
+    
+    positions[node.id] = {
+      x: 150 + col * cellWidth + cellWidth / 2 + randomX,
+      y: 150 + row * cellHeight + cellHeight / 2 + randomY
+    };
+  });
+  
+  // Apply force-directed adjustments to prevent overlaps
+  for (let iteration = 0; iteration < 150; iteration++) {
+    const forces: { [key: string]: { x: number; y: number } } = {};
+    
+    // Initialize forces
+    nodes.forEach(node => {
+      forces[node.id] = { x: 0, y: 0 };
+    });
+    
+    // Repulsion between nodes
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const nodeA = nodes[i];
+        const nodeB = nodes[j];
+        const posA = positions[nodeA.id];
+        const posB = positions[nodeB.id];
+        
+        const dx = posA.x - posB.x;
+        const dy = posA.y - posB.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < minDistance && distance > 0) {
+          const force = (minDistance - distance) / distance * 1.0;
+          const fx = dx * force;
+          const fy = dy * force;
+          
+          forces[nodeA.id].x += fx;
+          forces[nodeA.id].y += fy;
+          forces[nodeB.id].x -= fx;
+          forces[nodeB.id].y -= fy;
+        }
+      }
+    }
+    
+    // Attraction along edges
+    edges.forEach(edge => {
+      const sourcePos = positions[edge.source];
+      const targetPos = positions[edge.target];
+      
+      if (sourcePos && targetPos) {
+        const dx = targetPos.x - sourcePos.x;
+        const dy = targetPos.y - sourcePos.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const optimalDistance = 250;
+        
+        if (distance > 0) {
+          const force = (distance - optimalDistance) * 0.005;
+          const fx = (dx / distance) * force;
+          const fy = (dy / distance) * force;
+          
+          forces[edge.source].x += fx;
+          forces[edge.source].y += fy;
+          forces[edge.target].x -= fx;
+          forces[edge.target].y -= fy;
+        }
+      }
+    });
+    
+    // Apply forces
+    nodes.forEach(node => {
+      const force = forces[node.id];
+      const pos = positions[node.id];
+      
+      pos.x += force.x;
+      pos.y += force.y;
+      
+      // Keep nodes within bounds
+      pos.x = Math.max(nodeRadius, Math.min(width - nodeRadius, pos.x));
+      pos.y = Math.max(nodeRadius, Math.min(height - nodeRadius, pos.y));
+    });
+  }
+  
+  return positions;
+};
 
 const timelineEvents: TimelineEvent[] = [
   {
@@ -182,8 +306,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   const [dependencyGraph, setDependencyGraph] = useState<DependencyGraph | null>(null);
   const [dependencyStats, setDependencyStats] = useState<DependencyStats | null>(null);
   const [isDependencyAnalyzing, setIsDependencyAnalyzing] = useState(false);
-  const [graphData, setGraphData] = useState<{ nodes: any[], edges: any[] }>({ nodes: [], edges: [] });
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [visibleLanguages, setVisibleLanguages] = useState<Set<string>>(new Set());
+  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
 
   // Load config and auto-start code vectorization
   useEffect(() => {
@@ -464,53 +592,62 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
         setDependencyGraph(graph);
         console.log('[Dashboard] Dependency graph loaded:', graph);
         
-        // Convert graph to react-graph-vis format
-        const visNodes = graph.nodes.map((node) => {
-          const iconClass = getLanguageIcon(node.language);
-          return {
-            id: node.id,
-            label: `<i class="${iconClass}" style="font-size: 16px; margin-right: 4px;"></i>${node.name}`,
-            title: `${node.name}\nLanguage: ${node.language}\nImports: ${node.imports.length}\nExports: ${node.exports.length}\nDependents: ${node.dependents.length}`,
-            color: {
-              background: getNodeColor(node.language),
-              border: '#555555',
-              highlight: {
-                background: lightenColor(getNodeColor(node.language), 0.2),
-                border: '#ffffff'
-              }
-            },
-            font: {
-              color: 'white',
-              size: 12,
-              multi: 'html'
-            },
-            shape: 'box',
-            margin: 10,
-            widthConstraint: {
-              minimum: 120,
-              maximum: 180
-            }
-          };
-        });
-
-        const visEdges = graph.edges.map((edge) => ({
-          id: edge.id,
-          from: edge.source,
-          to: edge.target,
-          arrows: 'to',
-          color: {
-            color: '#666666',
-            highlight: '#ffffff',
-            hover: '#999999'
+        // Get all unique languages and initialize visible languages
+        const allLanguages = new Set(graph.nodes.map(node => node.language));
+        setVisibleLanguages(allLanguages);
+        
+        // Convert graph to react-flow format with proper layout
+        const positions = calculateNodePositions(graph.nodes, graph.edges);
+        const flowNodes: Node[] = graph.nodes.map((node, index) => ({
+          id: node.id,
+          type: 'default',
+          position: positions[node.id] || { x: 100 + (index % 10) * 80, y: 100 + Math.floor(index / 10) * 80 },
+          data: { 
+            label: node.name,
+            language: node.language,
+            imports: node.imports.length,
+            exports: node.exports.length,
+            dependents: node.dependents.length
           },
-          width: 1,
-          smooth: {
-            type: 'continuous',
-            roundness: 0.5
+          style: {
+            background: getNodeColor(node.language),
+            color: 'white',
+            border: '2px solid #555555',
+            borderRadius: '50%',
+            width: 60,
+            height: 60,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '10px',
+            fontWeight: 'bold'
           }
         }));
 
-        setGraphData({ nodes: visNodes, edges: visEdges });
+        const flowEdges: Edge[] = graph.edges.map((edge, index) => ({
+          id: `edge-${index}-${edge.source}-${edge.target}`,
+          source: edge.source,
+          target: edge.target,
+          type: 'smoothstep',
+          style: {
+            stroke: '#666666',
+            strokeWidth: 1
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#666666'
+          }
+        }));
+
+        setNodes(flowNodes);
+        setEdges(flowEdges);
+        
+        // Auto-layout the graph
+        setTimeout(() => {
+          if (reactFlowInstance) {
+            reactFlowInstance.fitView({ padding: 0.1, maxZoom: 1 });
+          }
+        }, 100);
       }
     } catch (error) {
       console.error('[Dashboard] Error loading dependency graph:', error);
@@ -573,30 +710,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       php: '#777bb4',
       swift: '#fa7343',
       kotlin: '#7f52ff',
+      terraform: '#7b42bc',
+      yaml: '#cb171e',
+      json: '#000000',
+      dockerfile: '#2496ed',
+      shell: '#4eaa25',
       unknown: '#6b7280'
     };
     return colors[language] || colors.unknown;
   };
 
-  const getLanguageIcon = (language: string): string => {
-    const icons: { [key: string]: string } = {
-      typescript: 'devicons devicons-javascript', // TypeScript uses JS icon in devicons
-      javascript: 'devicons devicons-javascript',
-      python: 'devicons devicons-python',
-      java: 'devicons devicons-java',
-      go: 'devicons devicons-go',
-      rust: 'devicons devicons-rust',
-      cpp: 'devicons devicons-code', // C++ uses generic code icon
-      c: 'devicons devicons-code',
-      csharp: 'devicons devicons-dotnet',
-      ruby: 'devicons devicons-ruby',
-      php: 'devicons devicons-php',
-      swift: 'devicons devicons-swift',
-      kotlin: 'devicons devicons-java', // Kotlin uses Java icon as fallback
-      unknown: 'devicons devicons-code'
-    };
-    return icons[language] || icons.unknown;
-  };
 
   const lightenColor = (color: string, percent: number): string => {
     const num = parseInt(color.replace("#", ""), 16);
@@ -609,51 +732,86 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
   };
 
-  const handleNodeClick = (event: any) => {
-    if (event.nodes.length > 0) {
-      const nodeId = event.nodes[0];
-      setSelectedNode(nodeId);
-      
-      // Highlight connected nodes
-      const connectedEdges = graphData.edges.filter(edge => 
-        edge.from === nodeId || edge.to === nodeId
-      );
-      
-      const connectedNodes = new Set<string>();
-      connectedEdges.forEach(edge => {
-        connectedNodes.add(edge.from);
-        connectedNodes.add(edge.to);
-      });
+  // Helper functions for react-flow
+  const handleNodeClick = useCallback((event: any, node: Node) => {
+    setSelectedNode(node.id);
+    
+    // Highlight connected nodes and edges
+    const connectedEdges = edges.filter(edge => 
+      edge.source === node.id || edge.target === node.id
+    );
+    
+    const connectedNodeIds = new Set<string>();
+    connectedEdges.forEach(edge => {
+      connectedNodeIds.add(edge.source);
+      connectedNodeIds.add(edge.target);
+    });
 
-      // Update node colors to highlight connections
-      const updatedNodes = graphData.nodes.map(node => {
-        const nodeLanguage = getNodeLanguage(node.id);
-        const iconClass = getLanguageIcon(nodeLanguage);
-        const fileName = node.id.split('/').pop();
-        return {
-          ...node,
-          label: `<i class="${iconClass}" style="font-size: 16px; margin-right: 4px;"></i>${fileName}`,
-          color: {
-            ...node.color,
-            background: connectedNodes.has(node.id) 
-              ? lightenColor(getNodeColor(nodeLanguage), 0.3)
-              : getNodeColor(nodeLanguage)
-          }
-        };
-      });
+    // Update node styles to highlight connections
+    const updatedNodes = nodes.map(n => ({
+      ...n,
+      style: {
+        ...n.style,
+        border: connectedNodeIds.has(n.id) 
+          ? '3px solid #ffffff'
+          : '2px solid #555555',
+        boxShadow: connectedNodeIds.has(n.id) 
+          ? '0 0 10px rgba(255, 255, 255, 0.5)'
+          : 'none'
+      }
+    }));
 
-      const updatedEdges = graphData.edges.map(edge => ({
-        ...edge,
-        color: {
-          ...edge.color,
-          color: connectedEdges.some(ce => ce.id === edge.id) ? '#ffffff' : '#666666'
-        },
-        width: connectedEdges.some(ce => ce.id === edge.id) ? 2 : 1
-      }));
+    // Update edge styles to highlight connections
+    const updatedEdges = edges.map(edge => ({
+      ...edge,
+      style: {
+        ...edge.style,
+        stroke: connectedEdges.some(ce => ce.id === edge.id) ? '#ffffff' : '#666666',
+        strokeWidth: connectedEdges.some(ce => ce.id === edge.id) ? 2 : 1
+      }
+    }));
 
-      setGraphData({ nodes: updatedNodes, edges: updatedEdges });
+    setNodes(updatedNodes);
+    setEdges(updatedEdges);
+  }, [nodes, edges, setNodes, setEdges]);
+
+  const handleSearch = useCallback((query: string) => {
+    if (!query || !reactFlowInstance) return;
+    
+    const matchingNode = nodes.find(node => 
+      node.data.label.toLowerCase().includes(query.toLowerCase())
+    );
+    
+    if (matchingNode) {
+      reactFlowInstance.setCenter(matchingNode.position.x, matchingNode.position.y, { zoom: 1.5 });
+      setSelectedNode(matchingNode.id);
     }
-  };
+  }, [nodes, reactFlowInstance]);
+
+  const toggleLanguageVisibility = useCallback((language: string) => {
+    const newVisibleLanguages = new Set(visibleLanguages);
+    if (newVisibleLanguages.has(language)) {
+      newVisibleLanguages.delete(language);
+    } else {
+      newVisibleLanguages.add(language);
+    }
+    setVisibleLanguages(newVisibleLanguages);
+
+    // Filter nodes based on visible languages
+    const filteredNodes = nodes.map(node => ({
+      ...node,
+      hidden: !newVisibleLanguages.has(node.data.language)
+    }));
+    
+    setNodes(filteredNodes);
+  }, [visibleLanguages, nodes, setNodes]);
+
+  const onInit = useCallback((instance: ReactFlowInstance) => {
+    setReactFlowInstance(instance);
+    setTimeout(() => {
+      instance.fitView({ padding: 0.1, maxZoom: 1 });
+    }, 100);
+  }, []);
 
   const getNodeLanguage = (nodeId: string): string => {
     const node = dependencyGraph?.nodes.find(n => n.id === nodeId);
@@ -1061,7 +1219,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   };
 
   return (
-    <div className="flex-1 bg-gray-900 flex flex-col h-full">
+    <ReactFlowProvider>
+      <div className="flex-1 bg-gray-900 flex flex-col h-full">
       {/* Header */}
       <div className="p-6 border-b border-gray-700 bg-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -2104,60 +2263,72 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                 </div>
               </div>
 
-              {/* Language Legend */}
-              {dependencyGraph && graphData.nodes.length > 0 && (
+              {/* Search Box */}
+              {dependencyGraph && nodes.length > 0 && (
+                <div className="mb-4 flex items-center space-x-4">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder="Search files..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
+                      className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleSearch(searchQuery)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Find
+                  </button>
+                </div>
+              )}
+              
+              {/* Language Filters */}
+              {dependencyGraph && nodes.length > 0 && (
                 <div className="mb-4 p-3 bg-gray-700 rounded-lg">
-                  <div className="text-sm text-gray-300 mb-2">Languages:</div>
-                  <div className="flex flex-wrap gap-4">
-                    {Object.entries({
-                      typescript: { color: '#3178c6', icon: 'devicons devicons-javascript' },
-                      javascript: { color: '#f7df1e', icon: 'devicons devicons-javascript' },
-                      python: { color: '#3776ab', icon: 'devicons devicons-python' },
-                      java: { color: '#ed8b00', icon: 'devicons devicons-java' },
-                      go: { color: '#00add8', icon: 'devicons devicons-go' },
-                      rust: { color: '#ce422b', icon: 'devicons devicons-rust' }
-                    }).map(([lang, { color, icon }]) => (
-                      <div key={lang} className="flex items-center space-x-2">
+                  <div className="text-sm text-gray-300 mb-2">Languages (click to toggle):</div>
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from(new Set(dependencyGraph.nodes.map(n => n.language))).map((lang) => (
+                      <button
+                        key={lang}
+                        onClick={() => toggleLanguageVisibility(lang)}
+                        className={`flex items-center space-x-2 px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                          visibleLanguages.has(lang)
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                        }`}
+                      >
                         <div 
-                          className="w-4 h-4 rounded-sm flex items-center justify-center" 
-                          style={{ backgroundColor: color }}
-                        >
-                          <i className={icon} style={{ fontSize: '10px', color: 'white' }} />
-                        </div>
-                        <span className="text-xs text-gray-300 capitalize">{lang}</span>
-                      </div>
+                          className="w-3 h-3 rounded-full" 
+                          style={{ backgroundColor: getNodeColor(lang) }}
+                        />
+                        <span className="capitalize">{lang}</span>
+                      </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              {dependencyGraph && graphData.nodes.length > 0 ? (
+              {dependencyGraph && nodes.length > 0 ? (
                 <div className="h-[600px] bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
-                  <style>{`
-                    .vis-network {
-                      background-color: #111827 !important;
-                    }
-                    .vis-navigation {
-                      background-color: #374151 !important;
-                    }
-                    .vis-button {
-                      background-color: #4b5563 !important;
-                      color: white !important;
-                    }
-                    .vis-button:hover {
-                      background-color: #6b7280 !important;
-                    }
-                  `}</style>
-                  <Graph
-                    graph={graphData}
-                    options={graphOptions}
-                    events={graphEvents}
-                    style={{ height: '100%', width: '100%' }}
-                    getNetwork={(network: any) => {
-                      // Store network reference for potential future use
-                      (window as any).dependencyNetwork = network;
-                    }}
-                  />
+                  <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onNodeClick={handleNodeClick}
+                    onInit={onInit}
+                    fitView
+                    attributionPosition="bottom-left"
+                    connectionMode={ConnectionMode.Loose}
+                    defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+                  >
+                    <Background color="#374151" gap={20} />
+                    <Controls />
+                  </ReactFlow>
                 </div>
               ) : (
                 <div className="h-[600px] bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center">
@@ -2227,5 +2398,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
         </div>
       </div>
     </div>
+    </ReactFlowProvider>
   );
 };

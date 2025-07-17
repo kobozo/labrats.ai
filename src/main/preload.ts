@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+// Polyfill for global object that some Node.js modules expect
+(window as any).global = window;
+
 contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: () => ipcRenderer.invoke('open-folder'),
   readDirectory: (dirPath: string) => ipcRenderer.invoke('read-directory', dirPath),

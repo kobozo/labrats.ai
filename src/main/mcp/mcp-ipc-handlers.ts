@@ -26,6 +26,7 @@ import { handleDependencyQuery } from './tools/dependency-query';
 import { handleDependencyPath } from './tools/dependency-path';
 import { handleDependencyStats } from './tools/dependency-stats';
 import { handleDependencyImpact } from './tools/dependency-impact';
+import { handleCircularDependencies } from './tools/circular-dependencies';
 
 // Declare global to access windowProjects from main.ts
 declare global {
@@ -159,6 +160,8 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
           return await handleDependencyStats(args);
         case 'dependency_impact':
           return await handleDependencyImpact(args);
+        case 'circular_dependencies':
+          return await handleCircularDependencies(args);
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }

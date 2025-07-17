@@ -204,6 +204,65 @@ class LangChainMcpClient {
             required: ['query'],
           },
         },
+        {
+          name: 'dependency_query',
+          description: 'Query dependencies for a specific file. Get information about what a file imports and exports, and what files depend on it.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              filePath: { type: 'string', description: 'Path to the file to query (relative to project root)' },
+            },
+            required: ['filePath'],
+          },
+        },
+        {
+          name: 'dependency_path',
+          description: 'Find the dependency path between two files. Shows how files are connected through imports.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              fromFile: { type: 'string', description: 'Source file path (relative to project root)' },
+              toFile: { type: 'string', description: 'Target file path (relative to project root)' },
+            },
+            required: ['fromFile', 'toFile'],
+          },
+        },
+        {
+          name: 'dependency_stats',
+          description: 'Get overall dependency statistics for the project. Shows most dependent files, circular dependencies, etc.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              includeCircular: { type: 'boolean', description: 'Whether to include circular dependencies (default: true)' },
+              topCount: { type: 'number', description: 'Number of top files to include (default: 10)' },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'dependency_impact',
+          description: 'Analyze the impact of changes to a specific file. Shows which files would be affected by changes.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              filePath: { type: 'string', description: 'Path to the file to analyze (relative to project root)' },
+              maxDepth: { type: 'number', description: 'Maximum depth to analyze (default: 5)' },
+            },
+            required: ['filePath'],
+          },
+        },
+        {
+          name: 'circular_dependencies',
+          description: 'Find all circular dependencies in the project. Critical for identifying potential issues and maintaining code quality.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              includeDetails: { type: 'boolean', description: 'Whether to include detailed information about each cycle (default: true)' },
+              maxCycles: { type: 'number', description: 'Maximum number of cycles to return (default: 50)' },
+            },
+            required: [],
+          },
+        },
       ];
       
       console.log('[LANGCHAIN-MCP] Connected. Available tools:', this.tools.map(t => t.name));
@@ -307,6 +366,25 @@ class LangChainMcpClient {
         includeCodeContext: z.boolean().optional().describe('Whether to include code element context'),
         includePatterns: z.string().optional().describe('Comma-separated patterns to include files'),
         excludePatterns: z.string().optional().describe('Comma-separated patterns to exclude files'),
+      }),
+      dependency_query: z.object({
+        filePath: z.string().describe('Path to the file to query (relative to project root)'),
+      }),
+      dependency_path: z.object({
+        fromFile: z.string().describe('Source file path (relative to project root)'),
+        toFile: z.string().describe('Target file path (relative to project root)'),
+      }),
+      dependency_stats: z.object({
+        includeCircular: z.boolean().optional().describe('Whether to include circular dependencies'),
+        topCount: z.number().optional().describe('Number of top files to include'),
+      }),
+      dependency_impact: z.object({
+        filePath: z.string().describe('Path to the file to analyze (relative to project root)'),
+        maxDepth: z.number().optional().describe('Maximum depth to analyze'),
+      }),
+      circular_dependencies: z.object({
+        includeDetails: z.boolean().optional().describe('Whether to include detailed information about each cycle'),
+        maxCycles: z.number().optional().describe('Maximum number of cycles to return'),
       }),
     };
 

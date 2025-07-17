@@ -118,6 +118,17 @@ class DependencyAnalysisIPCHandlers {
         return null;
       }
     });
+
+    // Get circular dependencies
+    ipcMain.handle('dependency-analysis:get-circular-dependencies', async (_, options?: { includeDetails?: boolean; maxCycles?: number }) => {
+      try {
+        const circularDeps = await dependencyAnalysis.getCircularDependencies(options);
+        return circularDeps;
+      } catch (error) {
+        console.error('[DEPENDENCY-IPC] Failed to get circular dependencies:', error);
+        return null;
+      }
+    });
   }
 
   private setupEventForwarding(): void {

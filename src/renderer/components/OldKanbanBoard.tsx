@@ -451,9 +451,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       
       {showCreateDialog && (
         <CreateTaskDialog
-          initialStatus={createTaskStatus}
+          defaultStatus={createTaskStatus}
+          allTasks={tasks}
+          open={showCreateDialog}
           onClose={() => setShowCreateDialog(false)}
-          onTaskCreated={async (newTask) => {
+          onCreate={async (newTask: any) => {
             try {
               // Check for duplicates before creating
               setCheckingDuplicates(newTask);

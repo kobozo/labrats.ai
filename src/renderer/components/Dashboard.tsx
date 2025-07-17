@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle, Play, Pause, RotateCcw, Search } from 'lucide-react';
+import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle, Play, Pause, RotateCcw, Search, KanbanSquare } from 'lucide-react';
 import { CodeVectorizationProgress, PreScanResult, LineCountResult, DependencyGraph, DependencyStats } from '../types/electron';
 import { dexyService } from '../../services/dexy-service-renderer';
 import { kanbanService } from '../../services/kanban-service';
@@ -20,6 +20,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import dagre from 'dagre';
+import { SimpleKanbanBoard } from './SimpleKanbanBoard';
 
 interface Metric {
   label: string;
@@ -222,7 +223,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
-  const [activeView, setActiveView] = useState<'overview' | 'timeline' | 'compare' | 'todos' | 'embeddings' | 'dependencies'>('overview');
+  const [activeView, setActiveView] = useState<'overview' | 'timeline' | 'compare' | 'todos' | 'embeddings' | 'dependencies' | 'kanban'>('overview');
   const [vectorStats, setVectorStats] = useState<VectorStats>({
     totalTasks: 0,
     vectorizedTasks: 0,
@@ -1174,7 +1175,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
               { id: 'compare', label: 'Compare', icon: TrendingUp },
               { id: 'todos', label: 'TODOs', icon: Code },
               { id: 'embeddings', label: 'Embeddings', icon: Database },
-              { id: 'dependencies', label: 'Dependencies', icon: Network }
+              { id: 'dependencies', label: 'Dependencies', icon: Network },
+              { id: 'kanban', label: 'Kanban', icon: KanbanSquare }
             ].map((view) => (
               <button
                 key={view.id}
@@ -2328,6 +2330,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
               </div>
             )}
             </>
+            )}
+          </div>
+        )}
+
+        {activeView === 'kanban' && (
+          <div className="h-full">
+            {!currentFolder ? (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div className="text-center py-8">
+                  <KanbanSquare className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-white mb-2">No Project Loaded</h3>
+                  <p className="text-gray-400">Please open a project folder to view kanban board</p>
+                </div>
+              </div>
+            ) : (
+              <SimpleKanbanBoard projectPath={currentFolder} />
             )}
           </div>
         )}

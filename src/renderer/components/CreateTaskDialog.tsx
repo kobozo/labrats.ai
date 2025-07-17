@@ -1,237 +1,244 @@
-import React, { useState, useRef } from 'react';
-import { X } from 'lucide-react';
-import { Task, WorkflowStage } from '../../types/kanban';
-import { kanbanService } from '../../services/kanban-service';
-import { agents } from '../../config/agents';
-import { workflowStages } from '../../config/workflow-stages';
-import { RichTextInput, RichTextInputRef } from './RichTextInput';
-import { SimilarTasksPanel } from './SimilarTasksPanel';
+/**
+ * Create Task Dialog Component
+ * Modal dialog for creating new tasks
+ */
+
+import React, { useState } from 'react';
+import { SimpleTask, TaskStatus, TaskPriority } from '../../types/simple-kanban';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter
+} from './ui/dialog';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
+import { Label } from './ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from './ui/select';
+import { Badge } from './ui/badge';
+import { Plus, X } from 'lucide-react';
 
 interface CreateTaskDialogProps {
-  initialStatus: WorkflowStage;
+  open: boolean;
   onClose: () => void;
-  onTaskCreated: (task: Task) => void;
+  onCreate: (task: Partial<SimpleTask>) => void;
+  defaultStatus: TaskStatus;
+  allTasks: SimpleTask[];
 }
 
-export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ 
-  initialStatus, 
-  onClose, 
-  onTaskCreated 
+export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
+  open,
+  onClose,
+  onCreate,
+  defaultStatus,
+  allTasks
 }) => {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [type, setType] = useState<Task['type']>('task');
-  const [priority, setPriority] = useState<Task['priority']>('medium');
-  const [assignee, setAssignee] = useState('LabRats');
-  const [status, setStatus] = useState<WorkflowStage>(
-    initialStatus === 'backlog' || initialStatus === 'definition-of-ready' 
-      ? initialStatus 
-      : 'backlog'
-  );
-  
-  const richTextRef = useRef<RichTextInputRef>(null);
-  
-  // Get available assignees based on selected status
-  const currentStage = workflowStages.find(stage => stage.id === status);
-  const availableAssignees = currentStage?.primaryRats.map(ratName => {
-    if (ratName === 'LabRats') {
-      return { id: 'LabRats', name: 'LabRats (User)' };
-    }
-    const agent = agents.find(a => a.name === ratName);
-    return agent ? { id: agent.name, name: agent.name } : null;
-  }).filter(Boolean) as Array<{ id: string; name: string }> || [];
+  const [task, setTask] = useState<Partial<SimpleTask>>({
+    title: '',
+    description: '',
+    status: defaultStatus,
+    priority: 'medium',
+    tags: [],
+    blockedBy: []
+  });
+  const [newTag, setNewTag] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const newTask = kanbanService.createTask(title);
-    const fullTask: Task = {
-      ...newTask,
-      description: richTextRef.current?.getMarkdown() || description,
-      type,
-      priority,
-      assignee,
-      status,
-    };
-    
-    onTaskCreated(fullTask);
-    onClose();
+  const handleCreate = () => {
+    if (task.title?.trim()) {
+      onCreate(task);
+      // Reset form
+      setTask({
+        title: '',
+        description: '',
+        status: defaultStatus,
+        priority: 'medium',
+        tags: [],
+        blockedBy: []
+      });
+      setNewTag('');
+    }
   };
 
+  const handleAddTag = () => {
+    if (newTag.trim() && task.tags && !task.tags.includes(newTag.trim())) {
+      setTask({
+        ...task,
+        tags: [...task.tags, newTag.trim()]
+      });
+      setNewTag('');
+    }
+  };
+
+  const handleRemoveTag = (tag: string) => {
+    setTask({
+      ...task,
+      tags: task.tags?.filter(t => t !== tag) || []
+    });
+  };
+
+  const handleToggleBlocker = (blockerId: string) => {
+    const blockedBy = task.blockedBy || [];
+    if (blockedBy.includes(blockerId)) {
+      setTask({
+        ...task,
+        blockedBy: blockedBy.filter(id => id !== blockerId)
+      });
+    } else {
+      setTask({
+        ...task,
+        blockedBy: [...blockedBy, blockerId]
+      });
+    }
+  };
+
+  const availableBlockers = allTasks.filter(t => t.status !== 'done');
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg w-full max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-bold text-white">Create New Task</h2>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-700 rounded transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-        
-        <div className="flex-1 flex overflow-hidden">
-          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-6">
-            {/* Title */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Title
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
-                required
-                autoFocus
-              />
-            </div>
-            
-            {/* Description with RichTextInput */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Description
-              </label>
-              <div className="bg-gray-700 border border-gray-600 rounded-md">
-                <RichTextInput
-                  ref={richTextRef}
-                  value={description}
-                  onChange={setDescription}
-                  onSubmit={() => {}} // Disable submit on enter for dialog
-                  placeholder="Enter task description..."
-                  className="min-h-[200px] max-h-[200px]"
-                />
-              </div>
-            </div>
-            
-            {/* Two column layout for metadata */}
-            <div className="grid grid-cols-2 gap-6">
-              {/* Left column */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Initial Status
-                  </label>
-                  <select
-                    value={status}
-                    onChange={(e) => {
-                      const newStatus = e.target.value as WorkflowStage;
-                      setStatus(newStatus);
-                      // Reset assignee if not available in new status
-                      const newStage = workflowStages.find(s => s.id === newStatus);
-                      if (newStage && !newStage.primaryRats.includes(assignee)) {
-                        setAssignee('LabRats');
-                      }
-                    }}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="backlog">Backlog & Discovery</option>
-                    <option value="definition-of-ready">Definition of Ready</option>
-                  </select>
-                  <p className="text-xs text-gray-400 mt-1">
-                    New tickets can only be created in these stages
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Type
-                  </label>
-                  <select
-                    value={type}
-                    onChange={(e) => setType(e.target.value as Task['type'])}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="task">Task</option>
-                    <option value="feature">Feature</option>
-                    <option value="bug">Bug</option>
-                    <option value="agent-task">Agent Task</option>
-                    <option value="todo">TODO</option>
-                    <option value="hotfix">Hotfix</option>
-                  </select>
-                </div>
-              </div>
-              
-              {/* Right column */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Priority
-                  </label>
-                  <select
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value as Task['priority'])}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Assignee
-                  </label>
-                  <select
-                    value={assignee}
-                    onChange={(e) => setAssignee(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
-                    required
-                  >
-                    {availableAssignees.map(option => (
-                      <option key={option.id} value={option.id}>
-                        {option.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="mt-8 flex space-x-3">
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
-            >
-              Create Task
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-          </form>
-          
-          {/* Similar Tasks Panel */}
-          <div className="w-96 border-l border-gray-700 overflow-hidden">
-            <SimilarTasksPanel
-              task={{
-                title,
-                description: richTextRef.current?.getMarkdown() || description,
-                status,
-                priority,
-                assignee,
-                type
-              }}
-              boardId="main-board"
-              onSelectTask={(task) => {
-                // Optional: populate form with selected task data
-                setTitle(task.title + ' (copy)');
-                setDescription(task.description);
-                setType(task.type);
-                setPriority(task.priority);
-              }}
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create New Task</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Title */}
+          <div>
+            <Label htmlFor="title">Title*</Label>
+            <Input
+              id="title"
+              value={task.title}
+              onChange={(e) => setTask({ ...task, title: e.target.value })}
+              placeholder="Enter task title"
             />
           </div>
+
+          {/* Description */}
+          <div>
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              value={task.description}
+              onChange={(e) => setTask({ ...task, description: e.target.value })}
+              placeholder="Enter task description"
+              rows={3}
+            />
+          </div>
+
+          {/* Status and Priority */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="status">Status</Label>
+              <Select
+                value={task.status || 'todo'}
+                onValueChange={(value) => setTask({ ...task, status: value as TaskStatus })}
+              >
+                <SelectTrigger id="status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="backlog">Backlog</SelectItem>
+                  <SelectItem value="todo">To Do</SelectItem>
+                  <SelectItem value="in-progress">In Progress</SelectItem>
+                  <SelectItem value="review">Review</SelectItem>
+                  <SelectItem value="done">Done</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="priority">Priority</Label>
+              <Select
+                value={task.priority || 'medium'}
+                onValueChange={(value) => setTask({ ...task, priority: value as TaskPriority })}
+              >
+                <SelectTrigger id="priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Assignee */}
+          <div>
+            <Label htmlFor="assignee">Assignee</Label>
+            <Input
+              id="assignee"
+              value={task.assignee || ''}
+              onChange={(e) => setTask({ ...task, assignee: e.target.value })}
+              placeholder="Enter assignee name"
+            />
+          </div>
+
+          {/* Tags */}
+          <div>
+            <Label>Tags</Label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {task.tags?.map(tag => (
+                <Badge key={tag} variant="secondary">
+                  {tag}
+                  <X
+                    className="w-3 h-3 ml-1 cursor-pointer"
+                    onClick={() => handleRemoveTag(tag)}
+                  />
+                </Badge>
+              ))}
+              <div className="flex gap-1">
+                <Input
+                  value={newTag}
+                  onChange={(e) => setNewTag(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleAddTag()}
+                  placeholder="Add tag"
+                  className="h-6 w-24 text-xs"
+                />
+                <Button size="sm" onClick={handleAddTag} className="h-6 w-6 p-0">
+                  <Plus className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Blocked By */}
+          {availableBlockers.length > 0 && (
+            <div>
+              <Label>Blocked By</Label>
+              <div className="space-y-2 mt-2 max-h-32 overflow-y-auto border rounded p-2">
+                {availableBlockers.map(blocker => (
+                  <label key={blocker.id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={task.blockedBy?.includes(blocker.id) || false}
+                      onChange={() => handleToggleBlocker(blocker.id)}
+                    />
+                    <span className="text-sm">{blocker.title}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
-    </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleCreate} disabled={!task.title?.trim()}>
+            Create Task
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };

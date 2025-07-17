@@ -19,6 +19,7 @@ import ReactFlow, {
   MarkerType
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import dagre from 'dagre';
 
 interface Metric {
   label: string;
@@ -84,114 +85,50 @@ const defaultMetrics: Metric[] = [
   }
 ];
 
-// Layout calculation function for dependency graph nodes
+// Layout calculation function using dagre for proper graph layout
 const calculateNodePositions = (nodes: any[], edges: any[]) => {
-  const positions: { [key: string]: { x: number; y: number } } = {};
-  const nodeCount = nodes.length;
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
   
-  if (nodeCount === 0) return positions;
-  
-  // Use force-directed layout algorithm
-  const width = 1400;
-  const height = 1000;
-  const centerX = width / 2;
-  const centerY = height / 2;
-  
-  // Initialize positions randomly but spread out
-  const nodeRadius = 30; // Half of node width/height (60px diameter)
-  const minDistance = 200; // Minimum distance between node centers (ensures good spacing)
-  
-  // Simple grid-based layout with some randomization
-  const cols = Math.ceil(Math.sqrt(nodeCount));
-  const rows = Math.ceil(nodeCount / cols);
-  const cellWidth = Math.max(200, (width - 300) / cols);
-  const cellHeight = Math.max(200, (height - 300) / rows);
-  
-  nodes.forEach((node, index) => {
-    const row = Math.floor(index / cols);
-    const col = index % cols;
-    
-    // Add some randomization within the grid cell
-    const randomX = (Math.random() - 0.5) * (cellWidth * 0.15);
-    const randomY = (Math.random() - 0.5) * (cellHeight * 0.15);
-    
-    positions[node.id] = {
-      x: 150 + col * cellWidth + cellWidth / 2 + randomX,
-      y: 150 + row * cellHeight + cellHeight / 2 + randomY
-    };
+  // Configure the layout
+  dagreGraph.setGraph({
+    rankdir: 'LR', // Left to right layout (better for dependency graphs)
+    align: 'UL', // Align to upper left
+    nodesep: 120, // Horizontal spacing between nodes (increased)
+    ranksep: 150, // Vertical spacing between layers (increased)
+    edgesep: 50,  // Edge separation
+    marginx: 50,  // Graph margin x
+    marginy: 50   // Graph margin y
   });
   
-  // Apply force-directed adjustments to prevent overlaps
-  for (let iteration = 0; iteration < 150; iteration++) {
-    const forces: { [key: string]: { x: number; y: number } } = {};
-    
-    // Initialize forces
-    nodes.forEach(node => {
-      forces[node.id] = { x: 0, y: 0 };
+  // Add nodes to dagre graph
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { 
+      width: 60,  // Node width
+      height: 60  // Node height
     });
-    
-    // Repulsion between nodes
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const nodeA = nodes[i];
-        const nodeB = nodes[j];
-        const posA = positions[nodeA.id];
-        const posB = positions[nodeB.id];
-        
-        const dx = posA.x - posB.x;
-        const dy = posA.y - posB.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance < minDistance && distance > 0) {
-          const force = (minDistance - distance) / distance * 1.0;
-          const fx = dx * force;
-          const fy = dy * force;
-          
-          forces[nodeA.id].x += fx;
-          forces[nodeA.id].y += fy;
-          forces[nodeB.id].x -= fx;
-          forces[nodeB.id].y -= fy;
-        }
-      }
+  });
+  
+  // Add edges to dagre graph
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+  
+  // Calculate the layout
+  dagre.layout(dagreGraph);
+  
+  // Extract positions from dagre
+  const positions: { [key: string]: { x: number; y: number } } = {};
+  
+  nodes.forEach((node) => {
+    const dagreNode = dagreGraph.node(node.id);
+    if (dagreNode) {
+      positions[node.id] = {
+        x: dagreNode.x,
+        y: dagreNode.y
+      };
     }
-    
-    // Attraction along edges
-    edges.forEach(edge => {
-      const sourcePos = positions[edge.source];
-      const targetPos = positions[edge.target];
-      
-      if (sourcePos && targetPos) {
-        const dx = targetPos.x - sourcePos.x;
-        const dy = targetPos.y - sourcePos.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const optimalDistance = 250;
-        
-        if (distance > 0) {
-          const force = (distance - optimalDistance) * 0.005;
-          const fx = (dx / distance) * force;
-          const fy = (dy / distance) * force;
-          
-          forces[edge.source].x += fx;
-          forces[edge.source].y += fy;
-          forces[edge.target].x -= fx;
-          forces[edge.target].y -= fy;
-        }
-      }
-    });
-    
-    // Apply forces
-    nodes.forEach(node => {
-      const force = forces[node.id];
-      const pos = positions[node.id];
-      
-      pos.x += force.x;
-      pos.y += force.y;
-      
-      // Keep nodes within bounds
-      pos.x = Math.max(nodeRadius, Math.min(width - nodeRadius, pos.x));
-      pos.y = Math.max(nodeRadius, Math.min(height - nodeRadius, pos.y));
-    });
-  }
+  });
   
   return positions;
 };

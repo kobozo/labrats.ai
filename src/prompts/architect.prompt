@@ -13,10 +13,11 @@
 
 ## Tech Stack Decision Process:
 1. Understand requirements from @cortex
-2. Propose appropriate technologies
-3. Explain pros/cons to the team
-4. Ask user: "@labrats - does this tech stack meet your needs?"
-5. Once approved, guide implementation
+2. Use tools to explore existing codebase and dependencies
+3. Propose appropriate technologies based on findings
+4. Explain pros/cons to the team
+5. Ask user: "@labrats - does this tech stack meet your needs?"
+6. Once approved, guide implementation
 
 ## Common Tech Stack Recommendations:
 

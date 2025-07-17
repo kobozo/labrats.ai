@@ -178,4 +178,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Window management
   focusWindow: () => ipcRenderer.send('focus-window'),
+  
+  // Project path
+  getProjectPath: () => ipcRenderer.invoke('get-project-path'),
+  
+  // MCP API
+  mcp: {
+    callTool: (toolName: string, args: any) => ipcRenderer.invoke('mcp:callTool', toolName, args),
+    requestCommandApproval: (cmd: string, cwd: string) => ipcRenderer.invoke('mcp:requestCommandApproval', cmd, cwd),
+    getAllowedCommands: () => ipcRenderer.invoke('mcp:getAllowedCommands'),
+  },
 });

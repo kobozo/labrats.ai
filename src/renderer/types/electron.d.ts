@@ -249,6 +249,7 @@ export interface ElectronAPI {
   checkCommand: (command: string) => Promise<{ available: boolean }>;
   executeClaudeCommand: (request: any) => Promise<{ success: boolean; content?: string; error?: string; usage?: any }>;
   focusWindow: () => void;
+  getProjectPath: () => Promise<string>;
   config: ConfigAPI;
   git: GitAPI;
   terminal?: TerminalAPI;
@@ -258,6 +259,12 @@ export interface ElectronAPI {
   kanban?: KanbanAPI;
   dexy?: DexyAPI;
   todo?: TodoAPI;
+  mcp?: McpAPI;
+}
+
+export interface McpAPI {
+  callTool: (toolName: string, args: any) => Promise<{ success: boolean; result?: any; error?: string }>;
+  getStatus: () => Promise<{ ready: boolean; serverInfo?: { name: string; version: string } }>;
 }
 
 declare global {

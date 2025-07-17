@@ -10,6 +10,8 @@ import { LABRATS_CONFIG_DIR } from './constants';
 import { AIProvider, AIModel, AIProviderConfig } from '../types/ai-provider';
 import { getAIProviderManager } from '../services/ai-provider-manager';
 import { chatHistoryManager } from './chat-history-manager';
+import { setupMcpIpcHandlers } from './mcp/mcp-ipc-handlers';
+import { getProjectPathService } from '../services/project-path-service';
 
 app.name = 'LabRats.AI';
 
@@ -103,6 +105,8 @@ const store: any = createSafeStore();
 
 const windows = new Map<number, BrowserWindow>();
 const windowProjects = new Map<number, string>();
+// Make windowProjects globally accessible for MCP handlers
+global.windowProjects = windowProjects;
 const configManager = new ConfigManager();
 const gitServices = new Map<number, GitService>();
 const terminalService = TerminalService.getInstance();
@@ -134,10 +138,18 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
   }
 
   windows.set(window.id, window);
+  console.log(`[MAIN] Created window ${window.id}`);
   
   if (projectPath) {
     windowProjects.set(window.id, projectPath);
+    console.log(`[MAIN] Set project path for window ${window.id}:`, projectPath);
+    console.log(`[MAIN] windowProjects map now has ${windowProjects.size} entries`);
     updateRecentProjects(projectPath);
+    
+    // Update ProjectPathService for central project path management
+    const projectPathService = getProjectPathService();
+    projectPathService.setProjectPath(projectPath);
+    console.log(`[MAIN] Updated ProjectPathService with project path:`, projectPath);
     
     // Initialize git service for this window
     initializeGitServiceForWindow(window.id, projectPath);
@@ -163,6 +175,8 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
       setDexyProjectPath(projectPath);
       // Initialize TODO auto-scanner for this project
       todoAutoScanner.startScanning(projectPath);
+      // Set up MCP IPC handlers
+      setupMcpIpcHandlers(projectPath);
     }
   });
 
@@ -290,6 +304,7 @@ function createMenu(window?: BrowserWindow): void {
               initializeGitServiceForWindow(targetWindow.id, projectPath);
               setDexyProjectPath(projectPath);
               todoAutoScanner.startScanning(projectPath);
+              setupMcpIpcHandlers(projectPath);
               
               updateRecentProjects(projectPath);
               saveOpenWindows();
@@ -421,6 +436,7 @@ function updateRecentProjectsMenu(): void {
             initializeGitServiceForWindow(focusedWindow.id, project.path);
             setDexyProjectPath(project.path);
             todoAutoScanner.startScanning(project.path);
+            setupMcpIpcHandlers(project.path);
             
             updateRecentProjects(project.path);
             saveOpenWindows();
@@ -464,6 +480,7 @@ ipcMain.handle('open-folder', async (event) => {
       initializeGitServiceForWindow(requestingWindow.id, projectPath);
       setDexyProjectPath(projectPath);
       todoAutoScanner.startScanning(projectPath);
+      setupMcpIpcHandlers(projectPath);
     }
 
     updateRecentProjects(projectPath);
@@ -604,6 +621,21 @@ ipcMain.handle('get-file-stats', async (event, filePath: string) => {
 
 ipcMain.handle('get-env', async (event, key: string) => {
   return process.env[key];
+});
+
+ipcMain.handle('get-project-path', async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window) {
+    const projectPath = windowProjects.get(window.id);
+    if (projectPath) {
+      // Ensure MCP handlers are set up for this project
+      console.log('[MAIN] get-project-path called, setting up MCP handlers for:', projectPath);
+      setupMcpIpcHandlers(projectPath);
+      return projectPath;
+    }
+  }
+  console.log('[MAIN] get-project-path called but no project path found');
+  return process.cwd();
 });
 
 // System API handlers
@@ -1267,6 +1299,9 @@ function formatFileSize(bytes: number): string {
 }
 
 app.whenReady().then(() => {
+  // Initialize MCP IPC handlers with null workspace (will be updated when projects open)
+  setupMcpIpcHandlers(null);
+  
   // Restore previous windows or create new one
   const lastActiveWindows = store.get('lastActiveWindows', []) as string[];
   const windowStates = store.get('windowStates', []) as WindowState[];
@@ -1599,7 +1634,8 @@ ipcMain.handle('kanban:checkBranches', async (event, projectPath: string) => {
 import { registerDexyHandlers, setDexyProjectPath } from './dexy-ipc-handlers';
 console.log('[MAIN] Registering Dexy handlers...');
 registerDexyHandlers();
-console.log('[MAIN] Dexy handlers registered successfully');
+
+// MCP server is now started when projects are opened
 
 // TODO Scanning IPC handlers
 import { setupTodoIpcHandlers } from './todo-ipc-handlers';

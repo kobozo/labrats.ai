@@ -85,6 +85,7 @@ export class AgentMessageBus extends BrowserEventEmitter {
   private loopDetection: Map<string, { lastContent: string; count: number; lastTimestamp: number }> = new Map();
   private failedAgents: Set<string> = new Set(); // Track agents that have failed
   private conversationId: string = ''; // Unique ID for this conversation
+  private mcpReady: boolean = false; // Track MCP readiness
 
   constructor(options: MessageBusOptions = {}) {
     super();
@@ -119,6 +120,18 @@ export class AgentMessageBus extends BrowserEventEmitter {
       console.error('[AGENT-BUS] LabRats backend not available:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       throw new Error(`Cannot start multi-agent chat: ${errorMessage}\n\nPlease go to Settings > Backend and configure your LabRats backend correctly.`);
+    }
+
+    // Check MCP status
+    try {
+      if (typeof window !== 'undefined' && window.electronAPI?.mcp) {
+        const status = await window.electronAPI.mcp.getStatus();
+        this.mcpReady = status.ready;
+        console.log('[AGENT-BUS] MCP status:', status);
+      }
+    } catch (error) {
+      console.error('[AGENT-BUS] Failed to check MCP status:', error);
+      this.mcpReady = false;
     }
     
     this.busActive = true;
@@ -2656,6 +2669,7 @@ START YOUR REVIEW NOW!`;
     }
     console.log('================================');
   }
+
 }
 
 // Singleton instance

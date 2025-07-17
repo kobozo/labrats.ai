@@ -341,25 +341,33 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ currentFolder, isVis
   };
 
   const performVectorSearch = async () => {
-    if (!searchTerm.trim() || !currentFolder) return;
+    console.log('[FileExplorer] performVectorSearch called with searchTerm:', searchTerm);
+    if (!searchTerm.trim() || !currentFolder) {
+      console.log('[FileExplorer] Search cancelled - empty term or no folder');
+      return;
+    }
     
     setIsSearching(true);
     setVectorSearchResults([]);
     
     try {
+      console.log('[FileExplorer] Checking if API is available:', !!window.electronAPI?.codeVectorization);
       const results = await window.electronAPI.codeVectorization?.searchCode(searchTerm, {
         limit: 20,
         minSimilarity: 0.5
       });
       
+      console.log('[FileExplorer] Search API returned:', results);
+      
       if (results?.success && results?.results) {
+        console.log('[FileExplorer] Setting', results.results.length, 'search results');
         setVectorSearchResults(results.results);
       } else {
-        console.error('Vector search failed:', results?.error || 'API not available');
+        console.error('[FileExplorer] Vector search failed:', results?.error || 'API not available');
         setVectorSearchResults([]);
       }
     } catch (error) {
-      console.error('Error performing vector search:', error);
+      console.error('[FileExplorer] Error performing vector search:', error);
       setVectorSearchResults([]);
     } finally {
       setIsSearching(false);

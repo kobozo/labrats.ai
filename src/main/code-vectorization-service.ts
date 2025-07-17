@@ -10,6 +10,7 @@ import { CodeParserService, ParsedCodeElement } from './code-parser-service';
 import { DexyVectorizationService } from './dexy-vectorization-service';
 import { CentralizedAPIKeyService } from '../services/centralized-api-key-service';
 import { ReadmeContextService } from './readme-context-service';
+import { fileTrackingService } from './file-tracking-service';
 
 /**
  * Simple semaphore for controlling concurrency
@@ -68,6 +69,18 @@ export interface PreScanResult {
   elementTypes: { [type: string]: number };
 }
 
+export interface VectorizationFileState {
+  fileHash: string;
+  lastVectorized: string;
+  elements: {
+    [elementKey: string]: {
+      elementHash: string;
+      vectorId: string;
+      lastVectorized: string;
+    };
+  };
+}
+
 export class CodeVectorizationService {
   private static instance: CodeVectorizationService;
   private vectorStorage: VectorStorageService | null = null;
@@ -78,6 +91,8 @@ export class CodeVectorizationService {
   private codeIndex: VectorIndex | null = null;
   private lastPreScanResult: PreScanResult | null = null;
   private isCurrentlyVectorizing: boolean = false;
+  private fileHashCache: Map<string, string> = new Map();
+  private vectorizationState: Map<string, VectorizationFileState> = new Map();
 
   private constructor() {
     this.codeParser = CodeParserService.getInstance();
@@ -108,6 +123,9 @@ export class CodeVectorizationService {
     // Initialize README context service
     await this.readmeContextService.initialize(projectPath);
     
+    // Initialize file tracking service
+    await fileTrackingService.initialize(projectPath);
+    
     // Get or create code index
     const config = await this.dexyService.getConfig();
     if (config) {
@@ -118,6 +136,12 @@ export class CodeVectorizationService {
       );
       console.log('[CODE-VECTORIZATION] Initialized with index:', this.codeIndex.id);
     }
+    
+    // Load file hash cache from disk
+    await this.loadFileHashCache();
+    
+    // Load vectorization state from disk
+    await this.loadVectorizationState();
   }
 
   /**
@@ -174,6 +198,96 @@ export class CodeVectorizationService {
   }
 
   /**
+   * Get the file hash cache path (general file tracking)
+   */
+  private getFileHashCachePath(): string {
+    return path.join(this.projectPath!, '.labrats', 'file-tracker.json');
+  }
+
+  /**
+   * Get the vectorization state path (tracks what's been vectorized)
+   */
+  private getVectorizationStatePath(): string {
+    return path.join(this.projectPath!, '.labrats', 'vectors', 'vectorization-state.json');
+  }
+
+  /**
+   * Load file hash cache from disk
+   */
+  private async loadFileHashCache(): Promise<void> {
+    try {
+      const cachePath = this.getFileHashCachePath();
+      if (await fs.promises.access(cachePath).then(() => true).catch(() => false)) {
+        const cacheData = await fs.promises.readFile(cachePath, 'utf-8');
+        const cache = JSON.parse(cacheData);
+        this.fileHashCache = new Map(Object.entries(cache));
+        console.log(`[CODE-VECTORIZATION] Loaded ${this.fileHashCache.size} file hashes from cache`);
+      }
+    } catch (error) {
+      console.error('[CODE-VECTORIZATION] Failed to load file hash cache:', error);
+      this.fileHashCache = new Map();
+    }
+  }
+
+  /**
+   * Save file hash cache to disk
+   */
+  private async saveFileHashCache(): Promise<void> {
+    try {
+      const cachePath = this.getFileHashCachePath();
+      const cacheDir = path.dirname(cachePath);
+      
+      // Ensure directory exists
+      await fs.promises.mkdir(cacheDir, { recursive: true });
+      
+      // Convert Map to object for JSON serialization
+      const cacheData = Object.fromEntries(this.fileHashCache);
+      await fs.promises.writeFile(cachePath, JSON.stringify(cacheData, null, 2));
+      console.log(`[CODE-VECTORIZATION] Saved ${this.fileHashCache.size} file hashes to cache`);
+    } catch (error) {
+      console.error('[CODE-VECTORIZATION] Failed to save file hash cache:', error);
+    }
+  }
+
+  /**
+   * Load vectorization state from disk
+   */
+  private async loadVectorizationState(): Promise<void> {
+    try {
+      const statePath = this.getVectorizationStatePath();
+      if (await fs.promises.access(statePath).then(() => true).catch(() => false)) {
+        const stateData = await fs.promises.readFile(statePath, 'utf-8');
+        const state = JSON.parse(stateData);
+        this.vectorizationState = new Map(Object.entries(state));
+        console.log(`[CODE-VECTORIZATION] Loaded vectorization state for ${this.vectorizationState.size} files`);
+      }
+    } catch (error) {
+      console.error('[CODE-VECTORIZATION] Failed to load vectorization state:', error);
+      this.vectorizationState = new Map();
+    }
+  }
+
+  /**
+   * Save vectorization state to disk
+   */
+  private async saveVectorizationState(): Promise<void> {
+    try {
+      const statePath = this.getVectorizationStatePath();
+      const stateDir = path.dirname(statePath);
+      
+      // Ensure directory exists
+      await fs.promises.mkdir(stateDir, { recursive: true });
+      
+      // Convert Map to object for JSON serialization
+      const stateData = Object.fromEntries(this.vectorizationState);
+      await fs.promises.writeFile(statePath, JSON.stringify(stateData, null, 2));
+      console.log(`[CODE-VECTORIZATION] Saved vectorization state for ${this.vectorizationState.size} files`);
+    } catch (error) {
+      console.error('[CODE-VECTORIZATION] Failed to save vectorization state:', error);
+    }
+  }
+
+  /**
    * Get existing elements for a file with their hashes
    */
   private async getExistingElements(filePath: string): Promise<Map<string, VectorDocument>> {
@@ -196,6 +310,26 @@ export class CodeVectorizationService {
   }
 
   /**
+   * Get all existing documents for a file
+   */
+  private async getExistingDocuments(filePath: string): Promise<VectorDocument[]> {
+    const docs: VectorDocument[] = [];
+    
+    // Get document IDs for this index
+    const docIds = await this.vectorStorage!.getDocumentIds(this.codeIndex!.id);
+    
+    // Find documents for this file
+    for (const docId of docIds) {
+      const doc = await this.vectorStorage!.getDocument(this.codeIndex!.id, docId);
+      if (doc && doc.metadata.filePath === filePath) {
+        docs.push(doc);
+      }
+    }
+    
+    return docs;
+  }
+
+  /**
    * Check if an element has changed by comparing hashes
    */
   private hasElementChanged(element: ParsedCodeElement, existingDoc: VectorDocument | undefined): boolean {
@@ -215,13 +349,45 @@ export class CodeVectorizationService {
 
     console.log('[CODE-VECTORIZATION] Processing file:', filePath);
     
+    // Check if file has changed using the file tracking service
+    const hasChanged = await fileTrackingService.hasFileChanged(filePath);
+    
+    // Calculate file hash
+    const fileHash = await this.calculateFileHash(filePath);
+    
+    // Check if file has changed at all
+    const cachedHash = this.fileHashCache.get(filePath);
+    if (!forceReindex && cachedHash === fileHash) {
+      // File hasn't changed, return existing vectors
+      const existingDocs = await this.getExistingDocuments(filePath);
+      console.log(`[CODE-VECTORIZATION] File ${path.basename(filePath)} unchanged (hash match), skipping`);
+      return existingDocs;
+    }
+    
+    // Update cache
+    this.fileHashCache.set(filePath, fileHash);
+    
+    // Update file tracking service
+    await fileTrackingService.updateFileTracking(filePath);
+    
+    // Update or create vectorization state for this file
+    let fileState = this.vectorizationState.get(filePath);
+    if (!fileState) {
+      fileState = {
+        fileHash: fileHash,
+        lastVectorized: new Date().toISOString(),
+        elements: {}
+      };
+      this.vectorizationState.set(filePath, fileState);
+    } else {
+      fileState.fileHash = fileHash;
+      fileState.lastVectorized = new Date().toISOString();
+    }
+    
     // Get existing elements for this file
     const existingElements = await this.getExistingElements(filePath);
     
-    // Calculate file hash for metadata
-    const fileHash = await this.calculateFileHash(filePath);
-    
-    // Parse the file
+    // Parse the file since it changed
     const elements = await this.codeParser.parseFile(filePath);
     const vectorDocs: VectorDocument[] = [];
     const elementsToDelete: string[] = [];
@@ -256,6 +422,10 @@ export class CodeVectorizationService {
     for (const [key, doc] of existingElements) {
       elementsToDelete.push(doc.id);
       console.log(`[CODE-VECTORIZATION] Deleting removed element: ${key}`);
+      // Remove from vectorization state
+      if (fileState && fileState.elements[key]) {
+        delete fileState.elements[key];
+      }
     }
     
     // Delete changed/removed elements
@@ -316,6 +486,14 @@ export class CodeVectorizationService {
       // Add to vector storage
       await this.vectorStorage!.addDocument(this.codeIndex!.id, vectorDoc);
       vectorDocs.push(vectorDoc);
+      
+      // Update vectorization state for this element
+      const elementKey = `${element.type}:${element.name}:${element.startLine}`;
+      fileState!.elements[elementKey] = {
+        elementHash: this.calculateElementHash(element),
+        vectorId: elementId,
+        lastVectorized: new Date().toISOString()
+      };
       
       console.log(`[CODE-VECTORIZATION] Vectorized: ${element.type} ${element.name}`);
     }
@@ -753,6 +931,12 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
       console.log(`[CODE-VECTORIZATION] - Total elements processed: ${stats.elementsProcessed}`);
       console.log(`[CODE-VECTORIZATION] - Errors: ${stats.errors}`);
       
+      // Save file hash cache to disk
+      await this.saveFileHashCache();
+      
+      // Save vectorization state to disk
+      await this.saveVectorizationState();
+      
       this.isCurrentlyVectorizing = false;
     } catch (error) {
       this.isCurrentlyVectorizing = false;
@@ -994,7 +1178,13 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     language?: string;
     minSimilarity?: number;
   } = {}): Promise<Array<{ document: VectorDocument; similarity: number }>> {
+    console.log(`[CODE-VECTORIZATION] searchCode called with query: "${query}"`);
+    
     if (!this.isReady()) {
+      console.log('[CODE-VECTORIZATION] Service not ready!');
+      console.log('[CODE-VECTORIZATION] vectorStorage:', !!this.vectorStorage);
+      console.log('[CODE-VECTORIZATION] dexyService:', !!this.dexyService);
+      console.log('[CODE-VECTORIZATION] codeIndex:', !!this.codeIndex);
       throw new Error('Service not initialized');
     }
 
@@ -1002,6 +1192,10 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
     
     console.log(`[CODE-VECTORIZATION] Searching for: "${query}" with minSimilarity: ${minSimilarity}`);
     console.log(`[CODE-VECTORIZATION] Using index: ${this.codeIndex!.id}`);
+    
+    // Check index stats
+    const stats = await this.getStats();
+    console.log(`[CODE-VECTORIZATION] Index has ${stats.vectorizedElements} vectorized elements`);
     
     // Generate embedding for query
     const queryEmbedding = await this.generateEmbedding(query);
@@ -1018,6 +1212,7 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
       },
     });
     
+    console.log(`[CODE-VECTORIZATION] Search completed, found ${results.length} results`);
     return results;
   }
 
@@ -1063,6 +1258,16 @@ Provide a clear, technical description in 2-3 sentences. Focus on:
         console.log(`[CODE-VECTORIZATION] Deleted vector for: ${doc.metadata.name || docId}`);
       }
     }
+    
+    // Remove from file hash cache
+    this.fileHashCache.delete(filePath);
+    
+    // Remove from vectorization state
+    this.vectorizationState.delete(filePath);
+    
+    // Save both tracking files
+    await this.saveFileHashCache();
+    await this.saveVectorizationState();
   }
 
   /**

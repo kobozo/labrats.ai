@@ -222,7 +222,20 @@ export class VectorStorageService {
       throw new Error(`Embedding dimension mismatch: expected ${index.dimensions}, got ${document.embedding.length}`);
     }
 
-    index.documents.set(document.id, document);
+    // Save embedding to disk immediately if provided
+    if (document.embedding && document.embedding.length > 0) {
+      const embeddingPath = this.getEmbeddingFilePath(indexId, document.id);
+      const embeddingDir = path.dirname(embeddingPath);
+      if (!fs.existsSync(embeddingDir)) {
+        await fs.promises.mkdir(embeddingDir, { recursive: true });
+      }
+      await fs.promises.writeFile(embeddingPath, JSON.stringify(document.embedding));
+    }
+
+    // Store document without embedding in memory to save RAM
+    const docWithoutEmbedding = { ...document };
+    delete docWithoutEmbedding.embedding;
+    index.documents.set(document.id, docWithoutEmbedding);
     index.metadata.updatedAt = new Date().toISOString();
     
     await this.saveIndex(index);

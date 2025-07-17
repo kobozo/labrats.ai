@@ -57,8 +57,19 @@ export function setupCodeVectorizationIpcHandlers(): void {
 
   // Search code
   ipcMain.handle('code-vectorization:searchCode', async (event, query: string, options?: any) => {
+    console.log('[CODE-VECTORIZATION-IPC] searchCode called with query:', query, 'options:', options);
     try {
+      const isReady = codeVectorizationService.isReady();
+      console.log('[CODE-VECTORIZATION-IPC] Service ready state:', isReady);
+      
+      if (!isReady) {
+        console.log('[CODE-VECTORIZATION-IPC] Service not ready, attempting to get project path...');
+        const projectPath = codeVectorizationService.getProjectPath();
+        console.log('[CODE-VECTORIZATION-IPC] Current project path:', projectPath);
+      }
+      
       const results = await codeVectorizationService.searchCode(query, options);
+      console.log('[CODE-VECTORIZATION-IPC] Search returned', results.length, 'results');
       return { success: true, results };
     } catch (error) {
       console.error('[CODE-VECTORIZATION-IPC] Failed to search code:', error);

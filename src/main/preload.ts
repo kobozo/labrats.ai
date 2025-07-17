@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: () => ipcRenderer.invoke('open-folder'),
   readDirectory: (dirPath: string) => ipcRenderer.invoke('read-directory', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+  writeFile: (filePath: string, content: string) => ipcRenderer.invoke('write-file', filePath, content),
   getFileStats: (filePath: string) => ipcRenderer.invoke('get-file-stats', filePath),
   onFolderOpened: (callback: (folderPath: string) => void) => 
     ipcRenderer.on('folder-opened', (_event, folderPath) => callback(folderPath)),
@@ -187,5 +188,53 @@ contextBridge.exposeInMainWorld('electronAPI', {
     callTool: (toolName: string, args: any) => ipcRenderer.invoke('mcp:callTool', toolName, args),
     requestCommandApproval: (cmd: string, cwd: string) => ipcRenderer.invoke('mcp:requestCommandApproval', cmd, cwd),
     getAllowedCommands: () => ipcRenderer.invoke('mcp:getAllowedCommands'),
+  },
+
+  // Code Vectorization API
+  codeVectorization: {
+    initialize: (projectPath: string) => ipcRenderer.invoke('code-vectorization:initialize', projectPath),
+    isReady: () => ipcRenderer.invoke('code-vectorization:isReady'),
+    vectorizeFile: (filePath: string) => ipcRenderer.invoke('code-vectorization:vectorizeFile', filePath),
+    vectorizeProject: (filePatterns?: string[]) => ipcRenderer.invoke('code-vectorization:vectorizeProject', filePatterns),
+    getStats: () => ipcRenderer.invoke('code-vectorization:getStats'),
+    searchCode: (query: string, options?: any) => ipcRenderer.invoke('code-vectorization:searchCode', query, options),
+    findSimilarCode: (codeSnippet: string, options?: any) => ipcRenderer.invoke('code-vectorization:findSimilarCode', codeSnippet, options),
+    deleteFileVectors: (filePath: string) => ipcRenderer.invoke('code-vectorization:deleteFileVectors', filePath),
+    preScanProject: (filePatterns?: string[]) => ipcRenderer.invoke('code-vectorization:preScanProject', filePatterns),
+    onProgress: (callback: (progress: any) => void) => {
+      ipcRenderer.on('code-vectorization:progress', (_event, progress) => callback(progress));
+      return () => ipcRenderer.removeAllListeners('code-vectorization:progress');
+    },
+  },
+
+  // Code Vectorization Orchestrator API
+  codeOrchestrator: {
+    initialize: (projectPath: string) => ipcRenderer.invoke('code-orchestrator:initialize', projectPath),
+    vectorizeProject: (filePatterns?: string[], concurrency?: number) => ipcRenderer.invoke('code-orchestrator:vectorizeProject', filePatterns, concurrency),
+    startWatching: () => ipcRenderer.invoke('code-orchestrator:startWatching'),
+    stopWatching: () => ipcRenderer.invoke('code-orchestrator:stopWatching'),
+    getStatus: () => ipcRenderer.invoke('code-orchestrator:getStatus'),
+    forceReindex: () => ipcRenderer.invoke('code-orchestrator:forceReindex'),
+    shutdown: () => ipcRenderer.invoke('code-orchestrator:shutdown'),
+  },
+
+  // Line Counter API
+  lineCounter: {
+    count: (projectPath: string) => ipcRenderer.invoke('line-counter:count', projectPath),
+  },
+
+  // AI Description API
+  aiDescription: {
+    getHumanReadable: (filePath: string) => ipcRenderer.invoke('ai-description:get-human-readable', filePath),
+    getFileDescriptions: (filePath: string) => ipcRenderer.invoke('ai-description:get-file-descriptions', filePath),
+    hasDescriptions: (filePath: string) => ipcRenderer.invoke('ai-description:has-descriptions', filePath),
+    getFilesWithDescriptions: () => ipcRenderer.invoke('ai-description:get-files-with-descriptions'),
+    getStats: () => ipcRenderer.invoke('ai-description:get-stats'),
+  },
+
+  // IPC Renderer for event listening
+  ipcRenderer: {
+    on: (channel: string, listener: (event: any, ...args: any[]) => void) => ipcRenderer.on(channel, listener),
+    removeListener: (channel: string, listener: (event: any, ...args: any[]) => void) => ipcRenderer.removeListener(channel, listener),
   },
 });

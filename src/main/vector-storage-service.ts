@@ -5,13 +5,32 @@ export interface VectorDocument {
   id: string;
   content: string;
   metadata: {
-    type: 'kanban-task' | 'chat-message' | 'code-snippet' | 'document';
+    type: 'kanban-task' | 'chat-message' | 'code-snippet' | 'document' |
+          'code-file' | 'code-function' | 'code-class' | 'code-block' | 
+          'code-import' | 'code-comment' | 'code-documentation';
+    // Kanban-specific fields
     taskId?: string;
     boardId?: string;
     epicId?: string;
     status?: string;
     priority?: string;
     assignee?: string;
+    // Code-specific fields
+    filePath?: string;
+    language?: string;
+    functionName?: string;
+    className?: string;
+    lineStart?: number;
+    lineEnd?: number;
+    imports?: string[];
+    exports?: string[];
+    dependencies?: string[];
+    complexity?: number;
+    aiDescription?: string;  // AI-generated description
+    lastModified?: string;
+    gitBranch?: string;
+    codeType?: 'function' | 'class' | 'method' | 'variable' | 'import' | 'export' | 'interface' | 'enum';
+    // Common fields
     createdAt: string;
     updatedAt: string;
     [key: string]: any;
@@ -203,7 +222,20 @@ export class VectorStorageService {
       throw new Error(`Embedding dimension mismatch: expected ${index.dimensions}, got ${document.embedding.length}`);
     }
 
-    index.documents.set(document.id, document);
+    // Save embedding to disk immediately if provided
+    if (document.embedding && document.embedding.length > 0) {
+      const embeddingPath = this.getEmbeddingFilePath(indexId, document.id);
+      const embeddingDir = path.dirname(embeddingPath);
+      if (!fs.existsSync(embeddingDir)) {
+        await fs.promises.mkdir(embeddingDir, { recursive: true });
+      }
+      await fs.promises.writeFile(embeddingPath, JSON.stringify(document.embedding));
+    }
+
+    // Store document without embedding in memory to save RAM
+    const docWithoutEmbedding = { ...document };
+    delete docWithoutEmbedding.embedding;
+    index.documents.set(document.id, docWithoutEmbedding);
     index.metadata.updatedAt = new Date().toISOString();
     
     await this.saveIndex(index);
@@ -313,15 +345,40 @@ export class VectorStorageService {
     const { topK = 10, threshold = 0.0, filter } = options;
     const results: Array<{ document: VectorDocument; similarity: number }> = [];
 
-    for (const [_, doc] of index.documents) {
-      if (!doc.embedding) continue;
+    console.log(`[VECTOR-STORAGE] Searching ${index.documents.size} documents in index ${indexId}`);
+
+    for (const [docId, doc] of index.documents) {
       if (filter && !filter(doc)) continue;
 
+      // Load embedding from disk if not in memory
+      if (!doc.embedding || doc.embedding.length === 0) {
+        const embeddingPath = this.getEmbeddingFilePath(indexId, docId);
+        if (fs.existsSync(embeddingPath)) {
+          try {
+            const embedding = JSON.parse(await fs.promises.readFile(embeddingPath, 'utf-8'));
+            doc.embedding = embedding;
+          } catch (error) {
+            console.error(`[VECTOR-STORAGE] Failed to load embedding for document ${docId}:`, error);
+            continue;
+          }
+        } else {
+          console.warn(`[VECTOR-STORAGE] No embedding file found for document ${docId}`);
+          continue;
+        }
+      }
+
+      if (!doc.embedding || doc.embedding.length === 0) {
+        console.warn(`[VECTOR-STORAGE] Document ${docId} has no embedding after load attempt`);
+        continue;
+      }
+      
       const similarity = this.cosineSimilarity(queryVector, doc.embedding);
       if (similarity >= threshold) {
         results.push({ document: doc, similarity });
       }
     }
+
+    console.log(`[VECTOR-STORAGE] Found ${results.length} results above threshold ${threshold}`);
 
     // Sort by similarity descending
     results.sort((a, b) => b.similarity - a.similarity);
@@ -402,5 +459,26 @@ export class VectorStorageService {
     // Create new index
     console.log('[VECTOR-STORAGE] Creating new kanban index');
     return await this.createIndex('kanban-tasks', dimensions, embeddingProvider, embeddingModel);
+  }
+
+  // Get or create the code vectors index
+  async getOrCreateCodeIndex(embeddingProvider: string, embeddingModel: string, dimensions: number): Promise<VectorIndex> {
+    // Ensure indices are loaded
+    await this.initialize();
+    
+    // Look for existing code index
+    for (const index of this.indices.values()) {
+      if (index.name === 'code-vectors' && 
+          index.metadata.embeddingProvider === embeddingProvider &&
+          index.metadata.embeddingModel === embeddingModel &&
+          index.dimensions === dimensions) {
+        console.log('[VECTOR-STORAGE] Found existing code index:', index.id);
+        return index;
+      }
+    }
+
+    // Create new index
+    console.log('[VECTOR-STORAGE] Creating new code vectors index');
+    return await this.createIndex('code-vectors', dimensions, embeddingProvider, embeddingModel);
   }
 }

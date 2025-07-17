@@ -77,7 +77,16 @@ src/
 ├── services/
 │   ├── agent-message-bus.ts # Multi-agent orchestration
 │   ├── labrats-backend-service.ts # Ollama backend
-│   └── prompt-manager.ts    # Prompt composition
+│   ├── prompt-manager.ts    # Prompt composition
+│   ├── code-vectorization-*  # Code vectorization services
+│   └── mcp/
+│       └── tools/          # MCP code search tools
+├── main/
+│   ├── code-vectorization-service.ts # Main process vectorization
+│   ├── code-parser-service.ts # Multi-language AST parsing
+│   ├── vector-storage-service.ts # LanceDB vector storage
+│   └── mcp/
+│       └── tools/          # Main process MCP handlers
 └── renderer/
     └── components/
         └── Chat.tsx        # Main chat interface
@@ -90,6 +99,10 @@ src/
 3. **POV mode fixes**: Single-agent mode now properly shows in POV dropdown
 4. **System prompt debugging**: POV mode shows system prompt in single-agent mode
 5. **Development tools**: Added lint and typecheck npm scripts with ESLint setup
+6. **Code Vectorization**: Added semantic code search and exploration tools
+   - See `docs/CODE_VECTORIZATION_TOOLS.md` for AI agent usage
+   - MCP tools: `search_code`, `find_similar_code`, `explore_codebase`, `code_vectorization_status`
+   - Dashboard integration: New "Code Vectors" tab shows vectorization stats, progress, and file/element distributions
 
 ## Testing Checklist
 

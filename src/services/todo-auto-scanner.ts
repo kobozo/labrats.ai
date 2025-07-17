@@ -94,6 +94,9 @@ export class TodoAutoScanner {
         return;
       }
       
+      // File tracking is now handled by the code orchestrator service
+      // to avoid circular dependencies
+      
       // Initial scan if enabled
       if (config.scanOnProjectOpen) {
         await this.performScan();

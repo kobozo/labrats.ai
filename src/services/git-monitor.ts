@@ -37,7 +37,7 @@ export class GitMonitor {
     error: null
   };
   private currentFolder: string | null = null;
-  private updateInterval: NodeJS.Timeout | null = null;
+  private updateInterval: number | null = null;
   private isUpdating = false;
 
   private constructor() {}
@@ -67,7 +67,7 @@ export class GitMonitor {
       
       // Stop existing interval
       if (this.updateInterval) {
-        clearInterval(this.updateInterval);
+        window.clearInterval(this.updateInterval);
         this.updateInterval = null;
       }
       
@@ -77,7 +77,7 @@ export class GitMonitor {
         this.updateGitInfo();
         
         // Set up regular updates every 5 seconds
-        this.updateInterval = setInterval(() => {
+        this.updateInterval = window.setInterval(() => {
           this.updateGitInfo();
         }, 5000);
       }
@@ -422,7 +422,7 @@ export class GitMonitor {
   // Cleanup
   dispose() {
     if (this.updateInterval) {
-      clearInterval(this.updateInterval);
+      window.clearInterval(this.updateInterval);
       this.updateInterval = null;
     }
     this.listeners.clear();

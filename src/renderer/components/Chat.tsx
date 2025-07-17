@@ -61,13 +61,14 @@ interface Agent {
 interface Message {
   id: string;
   content: string;
-  sender: 'user' | Agent;
+  sender: 'user' | Agent | 'tool-status';
   timestamp: Date;
-  type?: 'text' | 'code' | 'review' | 'approval';
+  type?: 'text' | 'code' | 'review' | 'approval' | 'tool-status';
   metadata?: {
     codeChanges?: number;
     filesAffected?: string[];
     reviewStatus?: 'pending' | 'approved' | 'rejected';
+    toolName?: string;
   };
   providerId?: string;
   modelId?: string;
@@ -177,6 +178,27 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
   const chatService = getLangChainChatService();
   const providerManager = getAIProviderManager();
   const baseChatService = getChatService();
+  
+  // Set up tool status callback
+  useEffect(() => {
+    chatService.setToolStatusCallback((status: string, toolName?: string) => {
+      const toolStatusMessage: Message = {
+        id: Date.now().toString(),
+        content: status,
+        sender: 'tool-status',
+        timestamp: new Date(),
+        type: 'tool-status',
+        metadata: {
+          toolName
+        }
+      };
+      setMessages(prev => [...prev, toolStatusMessage]);
+    });
+    
+    return () => {
+      chatService.setToolStatusCallback(null);
+    };
+  }, []);
   
   // Handle initial message
   useEffect(() => {
@@ -409,16 +431,18 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
   // Persist messages whenever they change
   useEffect(() => {
     if (currentFolder && messages.length > 0) {
-      // Convert Message format to ChatServiceMessage
-      const chatServiceMessages: ChatServiceMessage[] = messages.map(msg => ({
-        id: msg.id,
-        role: msg.sender === 'user' ? 'user' : 'assistant',
-        content: msg.content,
-        timestamp: msg.timestamp,
-        agentId: msg.sender !== 'user' ? (msg.sender as Agent).id : undefined,
-        providerId: msg.providerId,
-        modelId: msg.modelId
-      }));
+      // Convert Message format to ChatServiceMessage (excluding tool-status messages)
+      const chatServiceMessages: ChatServiceMessage[] = messages
+        .filter(msg => msg.sender !== 'tool-status')
+        .map(msg => ({
+          id: msg.id,
+          role: msg.sender === 'user' ? 'user' : 'assistant',
+          content: msg.content,
+          timestamp: msg.timestamp,
+          agentId: msg.sender !== 'user' ? (msg.sender as Agent).id : undefined,
+          providerId: msg.providerId,
+          modelId: msg.modelId
+        }));
       
       // Save chat history to .labrats/chats/history
       chatHistoryManager.saveChatHistory(currentFolder, chatServiceMessages);
@@ -835,7 +859,14 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
 
   const copyMessage = async (message: Message) => {
     try {
-      const sender = message.sender === 'user' ? 'User' : (message.sender as Agent).name;
+      let sender: string;
+      if (message.sender === 'user') {
+        sender = 'User';
+      } else if (message.sender === 'tool-status') {
+        sender = 'Tool';
+      } else {
+        sender = (message.sender as Agent).name;
+      }
       const timestamp = message.timestamp.toLocaleString();
       const content = `[${timestamp}] ${sender}: ${message.content}`;
       
@@ -850,7 +881,14 @@ export const Chat: React.FC<ChatProps> = ({ onCodeReview, currentFolder, onToken
   const copyEntireChat = async () => {
     try {
       const chatContent = messages.map(message => {
-        const sender = message.sender === 'user' ? 'User' : (message.sender as Agent).name;
+        let sender: string;
+        if (message.sender === 'user') {
+          sender = 'User';
+        } else if (message.sender === 'tool-status') {
+          sender = 'Tool';
+        } else {
+          sender = (message.sender as Agent).name;
+        }
         const timestamp = message.timestamp.toLocaleString();
         return `[${timestamp}] ${sender}: ${message.content}`;
       }).join('\n\n');
@@ -887,16 +925,18 @@ To debug the message bus, open console and type: debugBus()
       const archiveTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const archiveProjectPath = `${currentFolder}_archive_${archiveTimestamp}`;
       
-      // Convert Message format to ChatServiceMessage
-      const chatServiceMessages: ChatServiceMessage[] = messages.map(msg => ({
-        id: msg.id,
-        role: msg.sender === 'user' ? 'user' : 'assistant',
-        content: msg.content,
-        timestamp: msg.timestamp,
-        agentId: msg.sender !== 'user' ? (msg.sender as Agent).id : undefined,
-        providerId: msg.providerId,
-        modelId: msg.modelId
-      }));
+      // Convert Message format to ChatServiceMessage (excluding tool-status messages)
+      const chatServiceMessages: ChatServiceMessage[] = messages
+        .filter(msg => msg.sender !== 'tool-status')
+        .map(msg => ({
+          id: msg.id,
+          role: msg.sender === 'user' ? 'user' : 'assistant',
+          content: msg.content,
+          timestamp: msg.timestamp,
+          agentId: msg.sender !== 'user' ? (msg.sender as Agent).id : undefined,
+          providerId: msg.providerId,
+          modelId: msg.modelId
+        }));
       
       // Save to archive
       await chatHistoryManager.saveChatHistory(archiveProjectPath, chatServiceMessages);
@@ -1423,9 +1463,13 @@ To debug the message bus, open console and type: debugBus()
             
             // Convert bus messages to display messages
             displayMessages = messages.filter(msg => {
+              // Always show tool status messages
+              if (msg.sender === 'tool-status') {
+                return true;
+              }
               // Show messages in agent's personal history OR messages from the agent themselves
               const isInHistory = agentHistory.some(busMsg => busMsg.id === msg.id);
-              const isFromAgent = msg.sender !== 'user' && (msg.sender as Agent).id === povMode.agentId;
+              const isFromAgent = typeof msg.sender !== 'string' && (msg.sender as Agent).id === povMode.agentId;
               return isInHistory || isFromAgent;
             });
             
@@ -1445,8 +1489,21 @@ To debug the message bus, open console and type: debugBus()
           
           return displayMessages.map((message) => {
           const isUser = message.sender === 'user';
-          const isPovAgent = povMode.enabled && povMode.agentId && message.sender !== 'user' && (message.sender as Agent).id === povMode.agentId;
+          const isToolStatus = message.sender === 'tool-status';
+          const isPovAgent = povMode.enabled && povMode.agentId && typeof message.sender !== 'string' && (message.sender as Agent).id === povMode.agentId;
           const shouldShowOnRight = isUser || isPovAgent;
+          
+          // Handle tool status messages
+          if (isToolStatus) {
+            return (
+              <div key={message.id} className="w-full flex justify-center my-2">
+                <div className="bg-gray-800 border border-gray-700 rounded-full px-4 py-1 text-xs text-gray-400 flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+                  <span>{message.content}</span>
+                </div>
+              </div>
+            );
+          }
           
           return (
           <div key={message.id} className="w-full">

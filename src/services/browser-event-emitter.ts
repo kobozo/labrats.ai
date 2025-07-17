@@ -1,6 +1,6 @@
 /**
  * Browser-compatible EventEmitter implementation
- * Avoids using Node.js 'events' module in renderer process
+ * Used in renderer process where Node.js EventEmitter is not available
  */
 export class BrowserEventEmitter {
   private events: Map<string, Set<Function>> = new Map();
@@ -26,27 +26,17 @@ export class BrowserEventEmitter {
 
   emit(event: string, ...args: any[]): boolean {
     const listeners = this.events.get(event);
-    if (!listeners || listeners.size === 0) {
-      return false;
+    if (listeners) {
+      listeners.forEach(listener => {
+        try {
+          listener(...args);
+        } catch (error) {
+          console.error(`Error in event listener for ${event}:`, error);
+        }
+      });
+      return true;
     }
-    
-    listeners.forEach(listener => {
-      try {
-        listener(...args);
-      } catch (error) {
-        console.error(`Error in event listener for ${event}:`, error);
-      }
-    });
-    
-    return true;
-  }
-
-  once(event: string, listener: Function): this {
-    const onceWrapper = (...args: any[]) => {
-      this.off(event, onceWrapper);
-      listener(...args);
-    };
-    return this.on(event, onceWrapper);
+    return false;
   }
 
   removeAllListeners(event?: string): this {

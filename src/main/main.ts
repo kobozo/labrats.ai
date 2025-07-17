@@ -604,6 +604,16 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
   }
 });
 
+ipcMain.handle('write-file', async (event, filePath: string, content: string) => {
+  try {
+    await fs.promises.writeFile(filePath, content, 'utf-8');
+    return { success: true };
+  } catch (error) {
+    console.error('Error writing file:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('get-file-stats', async (event, filePath: string) => {
   try {
     const stats = await fs.promises.stat(filePath);
@@ -1643,6 +1653,26 @@ import { todoAutoScanner } from '../services/todo-auto-scanner';
 console.log('[MAIN] Registering TODO handlers...');
 setupTodoIpcHandlers();
 console.log('[MAIN] TODO handlers registered successfully');
+
+// Code Vectorization IPC handlers
+import { setupCodeVectorizationIpcHandlers } from './code-vectorization-ipc-handlers';
+import { setupCodeVectorizationOrchestratorHandlers } from './code-vectorization-orchestrator-ipc';
+console.log('[MAIN] Registering Code Vectorization handlers...');
+setupCodeVectorizationIpcHandlers();
+setupCodeVectorizationOrchestratorHandlers();
+console.log('[MAIN] Code Vectorization handlers registered successfully');
+
+// Line Counter IPC handlers
+import { setupLineCounterIpcHandlers } from './line-counter-ipc-handlers';
+console.log('[MAIN] Registering Line Counter handlers...');
+setupLineCounterIpcHandlers();
+console.log('[MAIN] Line Counter handlers registered successfully');
+
+// AI Description IPC handlers
+import { registerAIDescriptionHandlers } from './ai-description-ipc-handlers';
+console.log('[MAIN] Registering AI Description handlers...');
+registerAIDescriptionHandlers();
+console.log('[MAIN] AI Description handlers registered successfully');
 
 // Chat History IPC handlers
 ipcMain.handle('chat-history-save', async (event, projectPath: string, messages: any[]) => {

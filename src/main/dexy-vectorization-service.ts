@@ -1,10 +1,17 @@
 import { Task } from '../types/kanban';
 import { VectorStorageService, VectorDocument } from '../main/vector-storage-service';
 import { AIProvider } from '../types/ai-provider';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as yaml from 'js-yaml';
+import * as os from 'os';
+import * as https from 'https';
+import { CentralizedAPIKeyService } from '../services/centralized-api-key-service';
 
 export interface DexyConfig {
   providerId: string;
   modelId: string;
+  concurrency?: number;
 }
 
 export class DexyVectorizationService {
@@ -66,10 +73,6 @@ export class DexyVectorizationService {
 
   private async loadDexyConfig(): Promise<void> {
     try {
-      const path = require('path');
-      const fs = require('fs');
-      const yaml = require('js-yaml');
-      const os = require('os');
       
       // Load from ~/.labrats/config.yaml
       const configPath = path.join(os.homedir(), '.labrats', 'config.yaml');
@@ -77,7 +80,7 @@ export class DexyVectorizationService {
       
       if (fs.existsSync(configPath)) {
         const configContent = fs.readFileSync(configPath, 'utf8');
-        const configData = yaml.load(configContent);
+        const configData = yaml.load(configContent) as any;
         
         // Check for agent overrides in the YAML structure
         const dexyConfig = configData?.agents?.overrides?.dexy;
@@ -96,9 +99,16 @@ export class DexyVectorizationService {
         }
         
         if (providerId && modelId) {
+          // Get concurrency setting (default to 4 if not specified)
+          let concurrency = dexyConfig?.concurrency;
+          if (concurrency === undefined || concurrency === null) {
+            concurrency = 4; // Default concurrency
+          }
+          
           this.config = {
             providerId,
-            modelId
+            modelId,
+            concurrency
           };
           console.log('[DEXY] Loaded configuration from YAML:', this.config);
         } else {
@@ -358,7 +368,7 @@ export class DexyVectorizationService {
     }
   }
 
-  private async callEmbeddingAPI(text: string): Promise<number[] | null> {
+  async callEmbeddingAPI(text: string): Promise<number[] | null> {
     if (!this.provider || !this.config) {
       return null;
     }
@@ -370,7 +380,6 @@ export class DexyVectorizationService {
         console.log('[DEXY] Calling OpenAI embeddings API with model:', this.config.modelId);
         
         // Use https module for Node.js compatibility
-        const https = require('https');
         const requestData = JSON.stringify({
           model: this.config.modelId,
           input: text
@@ -434,7 +443,6 @@ export class DexyVectorizationService {
     }
 
     try {
-      const { CentralizedAPIKeyService } = require('./centralized-api-key-service');
       const centralizedService = CentralizedAPIKeyService.getInstance();
       
       console.log('[DEXY] Getting API key from centralized service for provider:', this.config.providerId);
@@ -458,6 +466,10 @@ export class DexyVectorizationService {
 
   getConfig(): DexyConfig | null {
     return this.config;
+  }
+
+  getConcurrency(): number {
+    return this.config?.concurrency || 4;
   }
 
   async hasTaskVector(taskId: string): Promise<boolean> {

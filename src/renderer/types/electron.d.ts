@@ -201,7 +201,7 @@ export interface KanbanAPI {
 export interface DexyAPI {
   initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
   isReady: () => Promise<boolean>;
-  getConfig: () => Promise<{ providerId: string; modelId: string } | null>;
+  getConfig: () => Promise<{ providerId: string; modelId: string; concurrency?: number } | null>;
   vectorizeTask: (params: { task: any; boardId: string }) => Promise<{ success: boolean; error?: string }>;
   updateTaskVector: (params: { task: any; boardId: string }) => Promise<{ success: boolean; error?: string }>;
   deleteTaskVector: (taskId: string) => Promise<{ success: boolean; error?: string }>;
@@ -238,6 +238,7 @@ export interface ElectronAPI {
   openFolder: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   readDirectory: (dirPath: string) => Promise<FileNode[]>;
   readFile: (filePath: string) => Promise<string>;
+  writeFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
   getFileStats: (filePath: string) => Promise<{ size: string; modifiedTime: string; isDirectory: boolean; isFile: boolean }>;
   onFolderOpened: (callback: (folderPath: string) => void) => void;
   getRecentProjects: () => Promise<RecentProject[]>;
@@ -260,11 +261,78 @@ export interface ElectronAPI {
   dexy?: DexyAPI;
   todo?: TodoAPI;
   mcp?: McpAPI;
+  codeVectorization?: CodeVectorizationAPI;
+  codeOrchestrator?: CodeOrchestratorAPI;
+  lineCounter?: LineCounterAPI;
+  aiDescription?: AIDescriptionAPI;
+  ipcRenderer?: {
+    on: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
+    removeListener: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
+  };
 }
 
 export interface McpAPI {
   callTool: (toolName: string, args: any) => Promise<{ success: boolean; result?: any; error?: string }>;
   getStatus: () => Promise<{ ready: boolean; serverInfo?: { name: string; version: string } }>;
+}
+
+export interface CodeVectorizationProgress {
+  phase: 'scanning' | 'processing' | 'completed';
+  current: number;
+  total: number;
+  percentage: number;
+  currentFile: string;
+  elementsProcessed: number;
+  totalElements?: number;
+}
+
+export interface PreScanResult {
+  totalFiles: number;
+  totalElements: number;
+  fileTypes: { [ext: string]: number };
+  elementTypes: { [type: string]: number };
+}
+
+export interface CodeVectorizationAPI {
+  initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  isReady: () => Promise<boolean>;
+  vectorizeFile: (filePath: string) => Promise<{ success: boolean; documents?: any[]; error?: string }>;
+  vectorizeProject: (filePatterns?: string[]) => Promise<{ success: boolean; error?: string }>;
+  getStats: () => Promise<{ success: boolean; stats?: any; error?: string }>;
+  searchCode: (query: string, options?: any) => Promise<{ success: boolean; results?: Array<{ document: any; similarity: number }>; error?: string }>;
+  findSimilarCode: (codeSnippet: string, options?: any) => Promise<{ success: boolean; results?: Array<{ document: any; similarity: number }>; error?: string }>;
+  deleteFileVectors: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  preScanProject: (filePatterns?: string[]) => Promise<{ success: boolean; result?: PreScanResult; error?: string }>;
+  onProgress: (callback: (progress: CodeVectorizationProgress) => void) => () => void;
+}
+
+export interface CodeOrchestratorAPI {
+  initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  vectorizeProject: (filePatterns?: string[], concurrency?: number) => Promise<{ success: boolean; error?: string }>;
+  startWatching: () => Promise<{ success: boolean; error?: string }>;
+  stopWatching: () => Promise<{ success: boolean; error?: string }>;
+  getStatus: () => Promise<{ success: boolean; status?: any; error?: string }>;
+  forceReindex: () => Promise<{ success: boolean; error?: string }>;
+  shutdown: () => Promise<{ success: boolean; error?: string }>;
+}
+
+export interface LineCountResult {
+  totalLines: number;
+  totalFiles: number;
+  fileTypes: { [ext: string]: { files: number; lines: number } };
+  formattedTotal?: string;
+}
+
+export interface LineCounterAPI {
+  count: (projectPath: string) => Promise<{ success: boolean; result?: LineCountResult; error?: string }>;
+}
+
+export interface AIDescriptionAPI {
+  getHumanReadable: (filePath: string) => Promise<{ success: boolean; content?: string | null; error?: string }>;
+  getFileDescriptions: (filePath: string) => Promise<{ success: boolean; descriptions?: any; error?: string }>;
+  hasDescriptions: (filePath: string) => Promise<{ success: boolean; hasDescriptions?: boolean; error?: string }>;
+  getFilesWithDescriptions: () => Promise<{ success: boolean; files?: string[]; error?: string }>;
+  getStats: () => Promise<{ success: boolean; stats?: { totalFiles: number; totalElements: number }; error?: string }>;
 }
 
 declare global {

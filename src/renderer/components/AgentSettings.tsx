@@ -16,6 +16,7 @@ interface AgentConfig {
   provider: string;
   model: string;
   colorAccent?: string;
+  concurrency?: number;
 }
 
 const agents = [...allAgents].sort((a, b) => a.name.localeCompare(b.name));
@@ -393,7 +394,7 @@ export const AgentSettings: React.FC = () => {
 
     // Special case for Dexy - requires embedding models
     if (agent.id === 'dexy') {
-      const config = agentConfigs[agent.id] || { provider: 'inherit', model: 'inherit' };
+      const config = agentConfigs[agent.id] || { provider: 'inherit', model: 'inherit', concurrency: 4 };
       
       return (
         <div className="space-y-4">
@@ -415,6 +416,30 @@ export const AgentSettings: React.FC = () => {
             onProviderChange={(id) => handleConfigChange(agent.id, 'provider', id)}
             onModelChange={(id) => handleConfigChange(agent.id, 'model', id)}
           />
+          
+          {/* Concurrency Setting */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-300">
+              Concurrent Files
+            </label>
+            <div className="flex items-center space-x-3">
+              <input
+                type="number"
+                min="1"
+                max="16"
+                value={config.concurrency || 4}
+                onChange={(e) => handleConfigChange(agent.id, 'concurrency', (parseInt(e.target.value) || 4).toString())}
+                className="w-20 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
+              />
+              <span className="text-sm text-gray-400">
+                Number of files to process simultaneously during vectorization
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Higher values = faster processing but more memory usage. Recommended: 4-8
+            </p>
+          </div>
+          
           {config.provider === 'inherit' && (
             <div className="text-sm text-red-400 mt-2">
               ⚠️ No embedding model configured. Dexy cannot function without an embedding model.

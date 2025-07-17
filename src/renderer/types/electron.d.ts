@@ -265,6 +265,7 @@ export interface ElectronAPI {
   codeOrchestrator?: CodeOrchestratorAPI;
   lineCounter?: LineCounterAPI;
   aiDescription?: AIDescriptionAPI;
+  dependencyAnalysis?: DependencyAnalysisAPI;
   ipcRenderer?: {
     on: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
     removeListener: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
@@ -333,6 +334,48 @@ export interface AIDescriptionAPI {
   hasDescriptions: (filePath: string) => Promise<{ success: boolean; hasDescriptions?: boolean; error?: string }>;
   getFilesWithDescriptions: () => Promise<{ success: boolean; files?: string[]; error?: string }>;
   getStats: () => Promise<{ success: boolean; stats?: { totalFiles: number; totalElements: number }; error?: string }>;
+}
+
+export interface DependencyNode {
+  id: string;
+  name: string;
+  type: 'file';
+  language: string;
+  imports: string[];
+  exports: string[];
+  dependents: string[];
+}
+
+export interface DependencyEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: 'import' | 'export';
+  symbols?: string[];
+}
+
+export interface DependencyGraph {
+  nodes: DependencyNode[];
+  edges: DependencyEdge[];
+  timestamp: Date;
+}
+
+export interface DependencyStats {
+  totalFiles: number;
+  totalDependencies: number;
+  mostDependent: { file: string; count: number }[];
+  mostDependedOn: { file: string; count: number }[];
+  circularDependencies: string[][];
+}
+
+export interface DependencyAnalysisAPI {
+  initialize: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  analyze: (patterns?: string[]) => Promise<{ success: boolean; error?: string }>;
+  getGraph: () => Promise<DependencyGraph | null>;
+  getDependencies: (filePath: string) => Promise<DependencyNode | null>;
+  getDependents: (filePath: string) => Promise<string[]>;
+  findPath: (from: string, to: string) => Promise<string[] | null>;
+  getStats: () => Promise<DependencyStats | null>;
 }
 
 declare global {

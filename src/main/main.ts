@@ -177,6 +177,8 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
       todoAutoScanner.startScanning(projectPath);
       // Set up MCP IPC handlers
       setupMcpIpcHandlers(projectPath);
+      // Initialize dependency analysis for this window
+      dependencyAnalysisIPCHandlers.initialize(window);
     }
   });
 
@@ -1673,6 +1675,12 @@ import { registerAIDescriptionHandlers } from './ai-description-ipc-handlers';
 console.log('[MAIN] Registering AI Description handlers...');
 registerAIDescriptionHandlers();
 console.log('[MAIN] AI Description handlers registered successfully');
+
+// Dependency Analysis IPC handlers
+import { dependencyAnalysisIPCHandlers } from './dependency-analysis-ipc-handlers';
+console.log('[MAIN] Registering Dependency Analysis handlers...');
+dependencyAnalysisIPCHandlers.registerHandlers();
+console.log('[MAIN] Dependency Analysis handlers registered successfully');
 
 // Chat History IPC handlers
 ipcMain.handle('chat-history-save', async (event, projectPath: string, messages: any[]) => {

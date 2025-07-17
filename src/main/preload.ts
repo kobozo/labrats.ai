@@ -232,6 +232,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStats: () => ipcRenderer.invoke('ai-description:get-stats'),
   },
 
+  // Dependency Analysis API
+  dependencyAnalysis: {
+    initialize: (projectPath: string) => ipcRenderer.invoke('dependency-analysis:initialize', projectPath),
+    analyze: (patterns?: string[]) => ipcRenderer.invoke('dependency-analysis:analyze', patterns),
+    getGraph: () => ipcRenderer.invoke('dependency-analysis:get-graph'),
+    getDependencies: (filePath: string) => ipcRenderer.invoke('dependency-analysis:get-dependencies', filePath),
+    getDependents: (filePath: string) => ipcRenderer.invoke('dependency-analysis:get-dependents', filePath),
+    findPath: (from: string, to: string) => ipcRenderer.invoke('dependency-analysis:find-path', from, to),
+    getStats: () => ipcRenderer.invoke('dependency-analysis:get-stats'),
+  },
+
   // IPC Renderer for event listening
   ipcRenderer: {
     on: (channel: string, listener: (event: any, ...args: any[]) => void) => ipcRenderer.on(channel, listener),

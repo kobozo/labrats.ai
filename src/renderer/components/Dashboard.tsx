@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle } from 'lucide-react';
-import { CodeVectorizationProgress, PreScanResult, LineCountResult } from '../types/electron';
+import React, { useState, useEffect, useCallback } from 'react';
+import { BarChart3, GitCommit, Clock, TrendingUp, Users, FileText, Activity, Calendar, Target, Zap, Award, Network, Database, RefreshCw, CheckCircle2, AlertCircle, Layers, Code, CheckCircle, Play, Pause, RotateCcw } from 'lucide-react';
+import { CodeVectorizationProgress, PreScanResult, LineCountResult, DependencyGraph, DependencyStats } from '../types/electron';
 import { dexyService } from '../../services/dexy-service-renderer';
 import { kanbanService } from '../../services/kanban-service';
 import { todoService, TodoStats } from '../../services/todo-service-renderer';
 import { codeVectorizationOrchestrator } from '../../services/code-vectorization-orchestrator-renderer';
+import ReactFlow, { Node, Edge, Controls, Background, useNodesState, useEdgesState, MarkerType } from 'reactflow';
+import 'reactflow/dist/style.css';
 
 interface Metric {
   label: string;
@@ -159,7 +161,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
-  const [activeView, setActiveView] = useState<'overview' | 'timeline' | 'compare' | 'todos' | 'embeddings'>('overview');
+  const [activeView, setActiveView] = useState<'overview' | 'timeline' | 'compare' | 'todos' | 'embeddings' | 'dependencies'>('overview');
   const [vectorStats, setVectorStats] = useState<VectorStats>({
     totalTasks: 0,
     vectorizedTasks: 0,
@@ -177,6 +179,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
   const [preScanResult, setPreScanResult] = useState<PreScanResult | null>(null);
   const [metrics, setMetrics] = useState<Metric[]>(defaultMetrics);
   const [lineCountResult, setLineCountResult] = useState<LineCountResult | null>(null);
+  const [dependencyGraph, setDependencyGraph] = useState<DependencyGraph | null>(null);
+  const [dependencyStats, setDependencyStats] = useState<DependencyStats | null>(null);
+  const [isDependencyAnalyzing, setIsDependencyAnalyzing] = useState(false);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   // Load config and auto-start code vectorization
   useEffect(() => {
@@ -318,6 +325,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
       loadTodoStats();
     } else if (activeView === 'overview' && currentFolder) {
       loadLineCount();
+    } else if (activeView === 'dependencies' && currentFolder) {
+      initializeDependencyAnalysis();
     }
   }, [activeView, currentFolder]);
 
@@ -426,6 +435,141 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
     } catch (error) {
       console.error('[Dashboard] Error loading line count:', error);
     }
+  };
+
+  const loadDependencyStats = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Loading dependency stats for folder:', currentFolder);
+
+    try {
+      const stats = await window.electronAPI?.dependencyAnalysis?.getStats();
+      if (stats) {
+        setDependencyStats(stats);
+        console.log('[Dashboard] Dependency stats loaded:', stats);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error loading dependency stats:', error);
+    }
+  };
+
+  const loadDependencyGraph = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Loading dependency graph for folder:', currentFolder);
+
+    try {
+      const graph = await window.electronAPI?.dependencyAnalysis?.getGraph();
+      if (graph) {
+        setDependencyGraph(graph);
+        console.log('[Dashboard] Dependency graph loaded:', graph);
+        
+        // Convert graph to react-flow format
+        const reactFlowNodes: Node[] = graph.nodes.map((node, index) => ({
+          id: node.id,
+          type: 'default',
+          position: { x: (index % 5) * 200, y: Math.floor(index / 5) * 150 },
+          data: { 
+            label: node.name,
+            language: node.language,
+            imports: node.imports.length,
+            exports: node.exports.length,
+            dependents: node.dependents.length
+          },
+          style: {
+            background: getNodeColor(node.language),
+            color: 'white',
+            border: '1px solid #555',
+            borderRadius: '8px',
+            padding: '8px',
+            fontSize: '12px'
+          }
+        }));
+
+        const reactFlowEdges: Edge[] = graph.edges.map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: 'smoothstep',
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 15,
+            height: 15,
+            color: '#999'
+          },
+          style: {
+            stroke: '#999',
+            strokeWidth: 1
+          }
+        }));
+
+        setNodes(reactFlowNodes);
+        setEdges(reactFlowEdges);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error loading dependency graph:', error);
+    }
+  };
+
+  const initializeDependencyAnalysis = async () => {
+    if (!currentFolder) return;
+
+    console.log('[Dashboard] Initializing dependency analysis for folder:', currentFolder);
+
+    try {
+      const result = await window.electronAPI?.dependencyAnalysis?.initialize(currentFolder);
+      if (result?.success) {
+        console.log('[Dashboard] Dependency analysis initialized successfully');
+        await loadDependencyStats();
+        await loadDependencyGraph();
+      } else {
+        console.error('[Dashboard] Failed to initialize dependency analysis:', result?.error);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error initializing dependency analysis:', error);
+    }
+  };
+
+  const analyzeDependencies = async () => {
+    if (!currentFolder || isDependencyAnalyzing) return;
+
+    setIsDependencyAnalyzing(true);
+    console.log('[Dashboard] Starting dependency analysis...');
+
+    try {
+      const result = await window.electronAPI?.dependencyAnalysis?.analyze();
+      if (result?.success) {
+        console.log('[Dashboard] Dependency analysis completed successfully');
+        await loadDependencyStats();
+        await loadDependencyGraph();
+      } else {
+        console.error('[Dashboard] Failed to analyze dependencies:', result?.error);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error analyzing dependencies:', error);
+    } finally {
+      setIsDependencyAnalyzing(false);
+    }
+  };
+
+  const getNodeColor = (language: string): string => {
+    const colors: { [key: string]: string } = {
+      typescript: '#3178c6',
+      javascript: '#f7df1e',
+      python: '#3776ab',
+      java: '#ed8b00',
+      go: '#00add8',
+      rust: '#ce422b',
+      cpp: '#00599c',
+      c: '#a8b9cc',
+      csharp: '#239120',
+      ruby: '#cc342d',
+      php: '#777bb4',
+      swift: '#fa7343',
+      kotlin: '#7f52ff',
+      unknown: '#6b7280'
+    };
+    return colors[language] || colors.unknown;
   };
 
   const loadVectorStats = async () => {
@@ -776,7 +920,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
               { id: 'timeline', label: 'Timeline', icon: Clock },
               { id: 'compare', label: 'Compare', icon: TrendingUp },
               { id: 'todos', label: 'TODOs', icon: Code },
-              { id: 'embeddings', label: 'Embeddings', icon: Database }
+              { id: 'embeddings', label: 'Embeddings', icon: Database },
+              { id: 'dependencies', label: 'Dependencies', icon: Network }
             ].map((view) => (
               <button
                 key={view.id}
@@ -1709,6 +1854,155 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentFolder }) => {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+            </>
+            )}
+          </div>
+        )}
+
+        {activeView === 'dependencies' && (
+          <div className="space-y-6">
+            {!currentFolder ? (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div className="text-center py-8">
+                  <Network className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-white mb-2">No Project Loaded</h3>
+                  <p className="text-gray-400">Please open a project folder to view dependency graph</p>
+                </div>
+              </div>
+            ) : (
+            <>
+            {/* Dependency Analysis Overview */}
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-white">Dependency Analysis</h3>
+                <button
+                  onClick={analyzeDependencies}
+                  disabled={isDependencyAnalyzing}
+                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                >
+                  {isDependencyAnalyzing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Analyzing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" />
+                      <span>Analyze Dependencies</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {dependencyStats && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-white">{dependencyStats.totalFiles}</div>
+                    <div className="text-sm text-gray-400">Total Files</div>
+                  </div>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-white">{dependencyStats.totalDependencies}</div>
+                    <div className="text-sm text-gray-400">Dependencies</div>
+                  </div>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-white">{dependencyStats.circularDependencies.length}</div>
+                    <div className="text-sm text-gray-400">Circular Dependencies</div>
+                  </div>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-white">
+                      {dependencyStats.mostDependedOn.length > 0 ? dependencyStats.mostDependedOn[0].count : 0}
+                    </div>
+                    <div className="text-sm text-gray-400">Max Dependencies</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Dependency Graph Visualization */}
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-white">Dependency Graph</h3>
+                <div className="flex items-center space-x-2">
+                  <div className="text-sm text-gray-400">
+                    {dependencyGraph ? `${dependencyGraph.nodes.length} files` : 'No graph data'}
+                  </div>
+                </div>
+              </div>
+
+              {dependencyGraph && nodes.length > 0 ? (
+                <div className="h-96 bg-gray-900 rounded-lg border border-gray-700">
+                  <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    fitView
+                    className="dependency-graph"
+                  >
+                    <Background color="#374151" />
+                    <Controls />
+                  </ReactFlow>
+                </div>
+              ) : (
+                <div className="h-96 bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center">
+                  <div className="text-center">
+                    <Network className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                    <p className="text-gray-400">No dependency graph available</p>
+                    <p className="text-sm text-gray-500 mt-2">Click "Analyze Dependencies" to generate the graph</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Top Dependencies */}
+            {dependencyStats && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                  <h3 className="text-lg font-semibold text-white mb-4">Most Dependent Files</h3>
+                  <div className="space-y-3">
+                    {dependencyStats.mostDependent.slice(0, 10).map((item, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="text-sm text-gray-300 truncate">{item.file}</div>
+                        <div className="text-sm text-gray-400">{item.count} imports</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                  <h3 className="text-lg font-semibold text-white mb-4">Most Depended On Files</h3>
+                  <div className="space-y-3">
+                    {dependencyStats.mostDependedOn.slice(0, 10).map((item, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="text-sm text-gray-300 truncate">{item.file}</div>
+                        <div className="text-sm text-gray-400">{item.count} dependents</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Circular Dependencies */}
+            {dependencyStats && dependencyStats.circularDependencies.length > 0 && (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h3 className="text-lg font-semibold text-white mb-4">Circular Dependencies</h3>
+                <div className="space-y-3">
+                  {dependencyStats.circularDependencies.map((cycle, index) => (
+                    <div key={index} className="bg-red-900/20 border border-red-700/50 rounded-lg p-4">
+                      <div className="text-sm text-red-300">
+                        {cycle.map((file, i) => (
+                          <span key={i}>
+                            {file.split('/').pop()}
+                            {i < cycle.length - 1 && ' → '}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             </>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { agents } from '../../config/agents';
 import { workflowStages } from '../../config/workflow-stages';
@@ -18,22 +18,42 @@ export const AssignTaskDialog: React.FC<AssignTaskDialogProps> = ({
   onCancel
 }) => {
   const stageConfig = workflowStages.find(stage => stage.id === targetStage);
-  const availableRats = stageConfig?.primaryRats || [];
   
-  // Map rat names to agent info, including LabRats (user)
-  const availableAssignees = availableRats.map(ratName => {
-    if (ratName === 'LabRats') {
-      return { id: 'LabRats', name: 'LabRats (User)', avatar: null };
-    }
-    const agent = agents.find(a => a.name === ratName);
-    return agent ? { id: agent.name, name: agent.name, avatar: agent.avatar } : null;
-  }).filter(Boolean) as Array<{ id: string; name: string; avatar: string | null }>;
+  // Filter out Switchy and Dexy - all other agents can be assigned
+  const assignableAgents = agents.filter(agent => 
+    agent.name !== 'Switchy' && 
+    agent.name !== 'Dexy'
+  );
+  
+  // Build the list of available assignees
+  const availableAssignees = targetStage === 'review' ? [
+    { id: 'LabRats', name: 'LabRats (User)', avatar: null },
+    ...assignableAgents.map(agent => ({ 
+      id: agent.name, 
+      name: agent.name, 
+      avatar: agent.avatar 
+    }))
+  ] : [];
 
   const [selectedAssignee, setSelectedAssignee] = useState<string>('');
+  
+  // Log for debugging
+  useEffect(() => {
+    console.log('[AssignTaskDialog] Component mounted:', {
+      targetStage,
+      availableAssignees: availableAssignees.length,
+      assigneeNames: availableAssignees.map(a => a.name)
+    });
+  }, [targetStage]);
 
   const handleConfirm = () => {
-    if (selectedAssignee) {
-      onConfirm([selectedAssignee]);
+    if (targetStage === 'review') {
+      if (selectedAssignee) {
+        onConfirm([selectedAssignee]);
+      }
+    } else {
+      // For non-review columns, use default assignee
+      onConfirm(['LabRats']);
     }
   };
 
@@ -53,30 +73,31 @@ export const AssignTaskDialog: React.FC<AssignTaskDialogProps> = ({
         <div className="mb-4">
           <p className="text-gray-300 mb-2">
             Moving "<span className="font-semibold">{taskTitle}</span>" to{' '}
-            <span className="font-semibold text-blue-400">{stageConfig?.title || targetStage}</span>
+            <span className="font-semibold text-purple-400">{stageConfig?.title || targetStage}</span>
           </p>
           <p className="text-sm text-gray-400">
-            Select a team member to assign this task to:
+            {targetStage === 'review' ? 'Select a reviewer to assign this task to:' : 'This task will be moved to the selected column.'}
           </p>
         </div>
 
         <div className="space-y-2 mb-6 max-h-64 overflow-y-auto">
-          {availableAssignees.length > 0 ? (
+          {targetStage === 'review' && availableAssignees.length > 0 ? (
             availableAssignees.map(assignee => (
               <label
                 key={assignee.id}
                 className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors ${
                   selectedAssignee === assignee.id
-                    ? 'bg-blue-900/50 border-blue-500'
+                    ? 'bg-purple-900/50 border-purple-500'
                     : 'bg-gray-700/50 hover:bg-gray-700 border-gray-600'
                 } border`}
               >
                 <input
                   type="radio"
                   name="assignee"
+                  value={assignee.id}
                   checked={selectedAssignee === assignee.id}
                   onChange={() => setSelectedAssignee(assignee.id)}
-                  className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500"
+                  className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 focus:ring-purple-500"
                 />
                 <div className="flex items-center space-x-2 flex-1">
                   {assignee.avatar ? (
@@ -87,16 +108,22 @@ export const AssignTaskDialog: React.FC<AssignTaskDialogProps> = ({
                     />
                   ) : (
                     <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center">
-                      <span className="text-sm font-bold text-white">L</span>
+                      <span className="text-sm font-bold text-white">
+                        {assignee.name.charAt(0).toUpperCase()}
+                      </span>
                     </div>
                   )}
                   <span className="text-white font-medium">{assignee.name}</span>
                 </div>
               </label>
             ))
+          ) : targetStage === 'review' ? (
+            <p className="text-gray-400 text-center py-4">
+              No reviewers available
+            </p>
           ) : (
             <p className="text-gray-400 text-center py-4">
-              No assignees available for this stage
+              Task will be moved directly to {stageConfig?.title || targetStage}
             </p>
           )}
         </div>
@@ -104,14 +131,14 @@ export const AssignTaskDialog: React.FC<AssignTaskDialogProps> = ({
         <div className="flex space-x-3">
           <button
             onClick={handleConfirm}
-            disabled={!selectedAssignee}
+            disabled={targetStage === 'review' && !selectedAssignee}
             className={`flex-1 px-4 py-2 rounded-md transition-colors ${
-              selectedAssignee
-                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+              (targetStage === 'review' && selectedAssignee) || targetStage !== 'review'
+                ? 'bg-purple-600 hover:bg-purple-700 text-white'
                 : 'bg-gray-700 text-gray-400 cursor-not-allowed'
             }`}
           >
-            Assign & Move
+            {targetStage === 'review' ? 'Assign Reviewer' : 'Move Task'}
           </button>
           <button
             onClick={onCancel}

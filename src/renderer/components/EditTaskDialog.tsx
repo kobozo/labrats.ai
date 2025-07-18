@@ -1,10 +1,12 @@
-import React, { useState, useRef } from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, Search, Plus } from 'lucide-react';
 import { Task, WorkflowStage } from '../../types/kanban';
 import { RichTextInput, RichTextInputRef } from './RichTextInput';
 import { agents } from '../../config/agents';
 import { workflowStages } from '../../config/workflow-stages';
 import { SimilarTasksPanel } from './SimilarTasksPanel';
+import { dexyService } from '../../services/dexy-service-renderer';
+import { kanbanService } from '../../services/kanban-service';
 
 interface EditTaskDialogProps {
   task: Task;
@@ -23,29 +25,78 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
   const [priority, setPriority] = useState<Task['priority']>(task.priority);
   const [assignee, setAssignee] = useState(task.assignee);
   const [status, setStatus] = useState<WorkflowStage>(task.status);
+  const [tags, setTags] = useState<string[]>(task.tags || []);
+  const [blockedBy, setBlockedBy] = useState<string[]>(task.blockedBy || []);
+  const [newTag, setNewTag] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestedBlockers, setSuggestedBlockers] = useState<Task[]>([]);
+  const [isSearchingBlockers, setIsSearchingBlockers] = useState(false);
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
   
   const richTextRef = useRef<RichTextInputRef>(null);
   
-  // Get available assignees based on current status
-  const currentStage = workflowStages.find(stage => stage.id === status);
-  const availableAssignees = currentStage?.primaryRats.map(ratName => {
-    if (ratName === 'LabRats') {
-      return { id: 'LabRats', name: 'LabRats (User)' };
-    }
-    const agent = agents.find(a => a.name === ratName);
-    return agent ? { id: agent.name, name: agent.name } : null;
-  }).filter(Boolean) as Array<{ id: string; name: string }> || [];
+  // Get available assignees - exclude Switchy and Dexy
+  const availableAssignees = [
+    { id: 'LabRats', name: 'LabRats (User)' },
+    ...agents
+      .filter(agent => agent.name !== 'Switchy' && agent.name !== 'Dexy')
+      .map(agent => ({ 
+        id: agent.name, 
+        name: agent.name 
+      }))
+  ];
   
-  // Add current assignee if not in available list
-  const currentAssigneeInList = availableAssignees.some(a => a.id === assignee);
-  if (!currentAssigneeInList && assignee) {
-    const currentAgent = agents.find(a => a.name === assignee);
-    if (currentAgent) {
-      availableAssignees.push({ id: currentAgent.name, name: currentAgent.name });
-    } else if (assignee === 'LabRats') {
-      availableAssignees.push({ id: 'LabRats', name: 'LabRats (User)' });
-    }
-  }
+  // Load all tasks for blocker selection
+  useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        const tasks = await kanbanService.getTasks(task.boardId || 'main-board');
+        setAllTasks(tasks || []);
+      } catch (error) {
+        console.error('Error loading tasks:', error);
+      }
+    };
+    loadTasks();
+  }, [task.boardId]);
+  
+  // Search for similar tasks when title or description changes (for blockers)
+  useEffect(() => {
+    const searchForBlockers = async () => {
+      if (!title && !description) {
+        setSuggestedBlockers([]);
+        return;
+      }
+      
+      setIsSearchingBlockers(true);
+      try {
+        const similarTasks = await dexyService.findSimilarTasks(
+          { 
+            ...task,
+            title, 
+            description: richTextRef.current?.getMarkdown() || description
+          },
+          { 
+            topK: 5,
+            excludeTaskId: task.id
+          }
+        );
+        
+        // Convert similar tasks to regular tasks for display
+        const suggestedTasks = similarTasks
+          .map(st => st.task)
+          .filter((t): t is Task => t !== undefined && t.status !== 'done' && t.id !== task.id);
+          
+        setSuggestedBlockers(suggestedTasks);
+      } catch (error) {
+        console.error('Error searching for blockers:', error);
+      } finally {
+        setIsSearchingBlockers(false);
+      }
+    };
+    
+    const debounceTimer = setTimeout(searchForBlockers, 500);
+    return () => clearTimeout(debounceTimer);
+  }, [title, description, allTasks, task.id]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,11 +109,43 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
       priority,
       assignee,
       status,
+      tags,
+      blockedBy,
       updatedAt: new Date().toISOString(),
     };
     
     onSave(updatedTask);
   };
+  
+  const handleAddTag = () => {
+    if (newTag.trim() && !tags.includes(newTag.trim())) {
+      setTags([...tags, newTag.trim()]);
+      setNewTag('');
+    }
+  };
+
+  const handleRemoveTag = (tag: string) => {
+    setTags(tags.filter(t => t !== tag));
+  };
+
+  const handleToggleBlocker = (blockerId: string) => {
+    if (blockedBy.includes(blockerId)) {
+      setBlockedBy(blockedBy.filter(id => id !== blockerId));
+    } else {
+      setBlockedBy([...blockedBy, blockerId]);
+    }
+  };
+  
+  // Filter tasks for manual search
+  const searchResults = searchQuery.trim() 
+    ? allTasks.filter(t => 
+        t.id !== task.id &&
+        t.status !== 'done' &&
+        (t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+         t.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+         t.id.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : [];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -145,6 +228,7 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
                     <option value="feature">Feature</option>
                     <option value="bug">Bug</option>
                     <option value="agent-task">Agent Task</option>
+                    <option value="todo">TODO</option>
                   </select>
                 </div>
               </div>
@@ -182,13 +266,131 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
                       </option>
                     ))}
                   </select>
-                  {status !== task.status && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      Assignees limited to {currentStage?.title} stage participants
-                    </p>
-                  )}
                 </div>
               </div>
+            </div>
+            
+            {/* Tags */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Tags
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {tags.map(tag => (
+                  <span key={tag} className="bg-gray-600 text-gray-200 px-2 py-1 rounded text-sm flex items-center">
+                    {tag}
+                    <X
+                      className="w-3 h-3 ml-1 cursor-pointer hover:text-red-400"
+                      onClick={() => handleRemoveTag(tag)}
+                    />
+                  </span>
+                ))}
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                    placeholder="Add tag"
+                    className="h-7 w-32 text-sm bg-gray-700 border border-gray-600 rounded px-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddTag}
+                    className="h-7 w-7 bg-blue-600 hover:bg-blue-700 rounded flex items-center justify-center"
+                  >
+                    <Plus className="w-3 h-3 text-white" />
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            {/* Blocked By Section */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Blocked By Tasks
+              </label>
+              
+              {/* Manual Search Box */}
+              <div className="mb-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search for blocking tasks..."
+                    className="w-full pl-10 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+              
+              {/* Search Results */}
+              {searchQuery && searchResults.length > 0 && (
+                <div className="mb-3 p-3 bg-gray-700 rounded-md border border-gray-600">
+                  <p className="text-xs text-gray-400 mb-2">Search Results:</p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {searchResults.map(t => (
+                      <label key={t.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
+                        <input
+                          type="checkbox"
+                          checked={blockedBy.includes(t.id)}
+                          onChange={() => handleToggleBlocker(t.id)}
+                          className="rounded bg-gray-600 border-gray-500"
+                        />
+                        <span className="truncate">[{t.id}] {t.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* AI Suggested Blockers */}
+              {suggestedBlockers.length > 0 && (
+                <div className="mb-3 p-3 bg-gray-700 rounded-md border border-gray-600">
+                  <p className="text-xs text-gray-400 mb-2">
+                    {isSearchingBlockers ? 'Searching...' : 'Suggested blocking tasks (based on similarity):'}
+                  </p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {suggestedBlockers.map(t => (
+                      <label key={t.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
+                        <input
+                          type="checkbox"
+                          checked={blockedBy.includes(t.id)}
+                          onChange={() => handleToggleBlocker(t.id)}
+                          className="rounded bg-gray-600 border-gray-500"
+                        />
+                        <span className="truncate">[{t.id}] {t.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Selected Blockers */}
+              {blockedBy.length > 0 && (
+                <div className="p-3 bg-gray-700 rounded-md border border-gray-600">
+                  <p className="text-xs text-gray-400 mb-2">Selected blockers:</p>
+                  <div className="space-y-1">
+                    {blockedBy.map(id => {
+                      const t = allTasks.find(task => task.id === id) || 
+                                { id, title: `Task ${id} (not found)` };
+                      return (
+                        <div key={id} className="flex items-center justify-between text-sm text-gray-300">
+                          <span className="truncate">[{t.id}] {t.title}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBlocker(id)}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
             
             {/* Task metadata */}
@@ -239,7 +441,9 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
                 status,
                 priority,
                 assignee,
-                type
+                type,
+                tags,
+                blockedBy
               }}
               boardId={task.boardId || 'main-board'}
               excludeTaskId={task.id}

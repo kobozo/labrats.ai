@@ -1,37 +1,23 @@
 /**
  * Create Task Dialog Component
- * Modal dialog for creating new tasks
+ * Modal dialog for creating new tasks with rich features
  */
 
-import React, { useState } from 'react';
-import { SimpleTask, TaskStatus, TaskPriority } from '../../types/simple-kanban';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter
-} from './ui/dialog';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Textarea } from './ui/textarea';
-import { Label } from './ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from './ui/select';
-import { Badge } from './ui/badge';
-import { Plus, X } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Task, WorkflowStage } from '../../types/kanban';
+import { Plus, X, Search } from 'lucide-react';
+import { RichTextInput, RichTextInputRef } from './RichTextInput';
+import { agents } from '../../config/agents';
+import { workflowStages } from '../../config/workflow-stages';
+import { dexyService } from '../../services/dexy-service-renderer';
+import { SimilarTasksPanel } from './SimilarTasksPanel';
 
 interface CreateTaskDialogProps {
   open: boolean;
   onClose: () => void;
-  onCreate: (task: Partial<SimpleTask>) => void;
-  defaultStatus: TaskStatus;
-  allTasks: SimpleTask[];
+  onCreate: (task: Partial<Task>) => void;
+  defaultStatus: WorkflowStage;
+  allTasks: Task[];
 }
 
 export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
@@ -41,204 +27,426 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   defaultStatus,
   allTasks
 }) => {
-  const [task, setTask] = useState<Partial<SimpleTask>>({
-    title: '',
-    description: '',
-    status: defaultStatus,
-    priority: 'medium',
-    tags: [],
-    blockedBy: []
-  });
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [type, setType] = useState<Task['type']>('task');
+  const [priority, setPriority] = useState<Task['priority']>('medium');
+  const [assignee, setAssignee] = useState('LabRats');
+  const [status, setStatus] = useState<WorkflowStage>(defaultStatus);
+  const [tags, setTags] = useState<string[]>([]);
+  const [blockedBy, setBlockedBy] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestedBlockers, setSuggestedBlockers] = useState<Task[]>([]);
+  const [isSearchingBlockers, setIsSearchingBlockers] = useState(false);
+  
+  const richTextRef = useRef<RichTextInputRef>(null);
+  
+  // Get available assignees - exclude Switchy and Dexy
+  const availableAssignees = [
+    { id: 'LabRats', name: 'LabRats (User)' },
+    ...agents
+      .filter(agent => agent.name !== 'Switchy' && agent.name !== 'Dexy')
+      .map(agent => ({ 
+        id: agent.name, 
+        name: agent.name 
+      }))
+  ];
+  
+  // Reset form when dialog opens/closes
+  useEffect(() => {
+    if (!open) {
+      setTitle('');
+      setDescription('');
+      setType('task');
+      setPriority('medium');
+      setAssignee('LabRats');
+      setStatus(defaultStatus);
+      setTags([]);
+      setBlockedBy([]);
+      setNewTag('');
+      setSearchQuery('');
+      setSuggestedBlockers([]);
+    }
+  }, [open, defaultStatus]);
+  
+  // Search for similar tasks when title or description changes (for blockers)
+  useEffect(() => {
+    const searchForBlockers = async () => {
+      if (!title && !description) {
+        setSuggestedBlockers([]);
+        return;
+      }
+      
+      setIsSearchingBlockers(true);
+      try {
+        const similarTasks = await dexyService.findSimilarTasks(
+          { 
+            title, 
+            description: richTextRef.current?.getMarkdown() || description,
+            status: 'in-progress' // Dummy status for search
+          } as Task,
+          { 
+            topK: 5,
+            excludeTaskId: 'new-task' // Exclude nothing since this is a new task
+          }
+        );
+        
+        // Convert similar tasks to regular tasks for display
+        const suggestedTasks = similarTasks
+          .map(st => st.task)
+          .filter((t): t is Task => t !== undefined && t.status !== 'done');
+          
+        setSuggestedBlockers(suggestedTasks);
+      } catch (error) {
+        console.error('Error searching for blockers:', error);
+      } finally {
+        setIsSearchingBlockers(false);
+      }
+    };
+    
+    const debounceTimer = setTimeout(searchForBlockers, 500);
+    return () => clearTimeout(debounceTimer);
+  }, [title, description, allTasks]);
 
   const handleCreate = () => {
-    if (task.title?.trim()) {
-      onCreate(task);
-      // Reset form
-      setTask({
-        title: '',
-        description: '',
-        status: defaultStatus,
-        priority: 'medium',
-        tags: [],
-        blockedBy: []
+    if (title.trim()) {
+      onCreate({
+        title,
+        description: richTextRef.current?.getMarkdown() || description,
+        status,
+        priority,
+        type,
+        assignee,
+        tags,
+        blockedBy
       });
-      setNewTag('');
+      onClose();
     }
   };
 
   const handleAddTag = () => {
-    if (newTag.trim() && task.tags && !task.tags.includes(newTag.trim())) {
-      setTask({
-        ...task,
-        tags: [...task.tags, newTag.trim()]
-      });
+    if (newTag.trim() && !tags.includes(newTag.trim())) {
+      setTags([...tags, newTag.trim()]);
       setNewTag('');
     }
   };
 
   const handleRemoveTag = (tag: string) => {
-    setTask({
-      ...task,
-      tags: task.tags?.filter(t => t !== tag) || []
-    });
+    setTags(tags.filter(t => t !== tag));
   };
 
   const handleToggleBlocker = (blockerId: string) => {
-    const blockedBy = task.blockedBy || [];
     if (blockedBy.includes(blockerId)) {
-      setTask({
-        ...task,
-        blockedBy: blockedBy.filter(id => id !== blockerId)
-      });
+      setBlockedBy(blockedBy.filter(id => id !== blockerId));
     } else {
-      setTask({
-        ...task,
-        blockedBy: [...blockedBy, blockerId]
-      });
+      setBlockedBy([...blockedBy, blockerId]);
     }
   };
+  
+  // Filter tasks for manual search
+  const searchResults = searchQuery.trim() 
+    ? allTasks.filter(task => 
+        task.status !== 'done' &&
+        (task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+         task.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+         task.id.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : [];
 
-  const availableBlockers = allTasks.filter(t => t.status !== 'done');
+  if (!open) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Create New Task</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          {/* Title */}
-          <div>
-            <Label htmlFor="title">Title*</Label>
-            <Input
-              id="title"
-              value={task.title}
-              onChange={(e) => setTask({ ...task, title: e.target.value })}
-              placeholder="Enter task title"
-            />
-          </div>
-
-          {/* Description */}
-          <div>
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={task.description}
-              onChange={(e) => setTask({ ...task, description: e.target.value })}
-              placeholder="Enter task description"
-              rows={3}
-            />
-          </div>
-
-          {/* Status and Priority */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="status">Status</Label>
-              <Select
-                value={task.status || 'todo'}
-                onValueChange={(value) => setTask({ ...task, status: value as TaskStatus })}
-              >
-                <SelectTrigger id="status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="backlog">Backlog</SelectItem>
-                  <SelectItem value="todo">To Do</SelectItem>
-                  <SelectItem value="in-progress">In Progress</SelectItem>
-                  <SelectItem value="review">Review</SelectItem>
-                  <SelectItem value="done">Done</SelectItem>
-                </SelectContent>
-              </Select>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-800 rounded-lg w-full max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-6 border-b border-gray-700">
+          <h2 className="text-xl font-bold text-white">Create New Task</h2>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-gray-700 rounded transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+        
+        <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-6">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
+                  placeholder="Enter task title"
+                  required
+                />
+              </div>
+              
+              {/* Description with RichTextInput */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Description
+                </label>
+                <div className="bg-gray-700 border border-gray-600 rounded-md">
+                  <RichTextInput
+                    ref={richTextRef}
+                    value={description}
+                    onChange={setDescription}
+                    onSubmit={() => {}} // Disable submit on enter
+                    placeholder="Enter task description..."
+                    className="min-h-[150px]"
+                  />
+                </div>
+              </div>
+              
+              {/* Two column layout for metadata */}
+              <div className="grid grid-cols-2 gap-6">
+                {/* Left column */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Status
+                    </label>
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value as WorkflowStage)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
+                    >
+                      {workflowStages.map(stage => (
+                        <option key={stage.id} value={stage.id}>
+                          {stage.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Type
+                    </label>
+                    <select
+                      value={type}
+                      onChange={(e) => setType(e.target.value as Task['type'])}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="task">Task</option>
+                      <option value="feature">Feature</option>
+                      <option value="bug">Bug</option>
+                      <option value="agent-task">Agent Task</option>
+                      <option value="todo">TODO</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {/* Right column */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Priority
+                    </label>
+                    <select
+                      value={priority}
+                      onChange={(e) => setPriority(e.target.value as Task['priority'])}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Assignee
+                    </label>
+                    <select
+                      value={assignee}
+                      onChange={(e) => setAssignee(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:border-blue-500"
+                    >
+                      {availableAssignees.map(option => (
+                        <option key={option.id} value={option.id}>
+                          {option.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Tags */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Tags
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {tags.map(tag => (
+                    <span key={tag} className="bg-gray-600 text-gray-200 px-2 py-1 rounded text-sm flex items-center">
+                      {tag}
+                      <X
+                        className="w-3 h-3 ml-1 cursor-pointer hover:text-red-400"
+                        onClick={() => handleRemoveTag(tag)}
+                      />
+                    </span>
+                  ))}
+                  <div className="flex gap-1">
+                    <input
+                      type="text"
+                      value={newTag}
+                      onChange={(e) => setNewTag(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                      placeholder="Add tag"
+                      className="h-7 w-32 text-sm bg-gray-700 border border-gray-600 rounded px-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={handleAddTag}
+                      className="h-7 w-7 bg-blue-600 hover:bg-blue-700 rounded flex items-center justify-center"
+                    >
+                      <Plus className="w-3 h-3 text-white" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Blocked By Section */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Blocked By Tasks
+                </label>
+                
+                {/* Manual Search Box */}
+                <div className="mb-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search for blocking tasks..."
+                      className="w-full pl-10 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                
+                {/* Search Results */}
+                {searchQuery && searchResults.length > 0 && (
+                  <div className="mb-3 p-3 bg-gray-700 rounded-md border border-gray-600">
+                    <p className="text-xs text-gray-400 mb-2">Search Results:</p>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {searchResults.map(task => (
+                        <label key={task.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
+                          <input
+                            type="checkbox"
+                            checked={blockedBy.includes(task.id)}
+                            onChange={() => handleToggleBlocker(task.id)}
+                            className="rounded bg-gray-600 border-gray-500"
+                          />
+                          <span className="truncate">[{task.id}] {task.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* AI Suggested Blockers */}
+                {suggestedBlockers.length > 0 && (
+                  <div className="mb-3 p-3 bg-gray-700 rounded-md border border-gray-600">
+                    <p className="text-xs text-gray-400 mb-2">
+                      {isSearchingBlockers ? 'Searching...' : 'Suggested blocking tasks (based on similarity):'}
+                    </p>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {suggestedBlockers.map(task => (
+                        <label key={task.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
+                          <input
+                            type="checkbox"
+                            checked={blockedBy.includes(task.id)}
+                            onChange={() => handleToggleBlocker(task.id)}
+                            className="rounded bg-gray-600 border-gray-500"
+                          />
+                          <span className="truncate">[{task.id}] {task.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Selected Blockers */}
+                {blockedBy.length > 0 && (
+                  <div className="p-3 bg-gray-700 rounded-md border border-gray-600">
+                    <p className="text-xs text-gray-400 mb-2">Selected blockers:</p>
+                    <div className="space-y-1">
+                      {blockedBy.map(id => {
+                        const task = allTasks.find(t => t.id === id);
+                        return task ? (
+                          <div key={id} className="flex items-center justify-between text-sm text-gray-300">
+                            <span className="truncate">[{task.id}] {task.title}</span>
+                            <button
+                              onClick={() => handleToggleBlocker(id)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             
-            <div>
-              <Label htmlFor="priority">Priority</Label>
-              <Select
-                value={task.priority || 'medium'}
-                onValueChange={(value) => setTask({ ...task, priority: value as TaskPriority })}
+            <div className="mt-8 flex space-x-3">
+              <button
+                onClick={handleCreate}
+                disabled={!title.trim()}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-md transition-colors"
               >
-                <SelectTrigger id="priority">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                </SelectContent>
-              </Select>
+                Create Task
+              </button>
+              <button
+                onClick={onClose}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           </div>
-
-          {/* Assignee */}
-          <div>
-            <Label htmlFor="assignee">Assignee</Label>
-            <Input
-              id="assignee"
-              value={task.assignee || ''}
-              onChange={(e) => setTask({ ...task, assignee: e.target.value })}
-              placeholder="Enter assignee name"
+          
+          {/* Similar Tasks Panel */}
+          <div className="w-96 border-l border-gray-700 overflow-hidden">
+            <SimilarTasksPanel
+              task={{
+                id: 'new-task',
+                title,
+                description: richTextRef.current?.getMarkdown() || description,
+                status,
+                priority,
+                assignee,
+                type,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                createdBy: 'user',
+                projectPath: '',
+                boardId: 'main-board',
+                primaryRats: [],
+                tags,
+                blockedBy
+              }}
+              boardId="main-board"
+              excludeTaskId="new-task"
+              onSelectTask={(selectedTask) => {
+                // Optional: Pre-fill some fields from similar task
+                console.log('Selected similar task:', selectedTask);
+              }}
             />
           </div>
-
-          {/* Tags */}
-          <div>
-            <Label>Tags</Label>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {task.tags?.map(tag => (
-                <Badge key={tag} variant="secondary">
-                  {tag}
-                  <X
-                    className="w-3 h-3 ml-1 cursor-pointer"
-                    onClick={() => handleRemoveTag(tag)}
-                  />
-                </Badge>
-              ))}
-              <div className="flex gap-1">
-                <Input
-                  value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddTag()}
-                  placeholder="Add tag"
-                  className="h-6 w-24 text-xs"
-                />
-                <Button size="sm" onClick={handleAddTag} className="h-6 w-6 p-0">
-                  <Plus className="w-3 h-3" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Blocked By */}
-          {availableBlockers.length > 0 && (
-            <div>
-              <Label>Blocked By</Label>
-              <div className="space-y-2 mt-2 max-h-32 overflow-y-auto border rounded p-2">
-                {availableBlockers.map(blocker => (
-                  <label key={blocker.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={task.blockedBy?.includes(blocker.id) || false}
-                      onChange={() => handleToggleBlocker(blocker.id)}
-                    />
-                    <span className="text-sm">{blocker.title}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={!task.title?.trim()}>
-            Create Task
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 };

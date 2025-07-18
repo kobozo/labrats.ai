@@ -155,8 +155,8 @@ export const SimilarTasksPanel: React.FC<SimilarTasksPanelProps> = ({
                     )}
                     <div className="flex items-center space-x-4 mt-2">
                       <span className={`text-xs px-2 py-0.5 rounded ${
-                        result.task.status === 'deliver-feedback' || result.task.status === 'retro-docs' ? 'bg-green-900 text-green-300' :
-                        result.task.status === 'development' || result.task.status === 'code-review' ? 'bg-blue-900 text-blue-300' :
+                        result.task.status === 'done' ? 'bg-green-900 text-green-300' :
+                        result.task.status === 'in-progress' || result.task.status === 'review' ? 'bg-blue-900 text-blue-300' :
                         'bg-gray-700 text-gray-300'
                       }`}>
                         {result.task.status.replace(/-/g, ' ')}

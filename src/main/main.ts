@@ -180,7 +180,6 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
       // Initialize dependency analysis for this window
       dependencyAnalysisIPCHandlers.initialize(window);
       // Initialize simple kanban handlers
-      registerSimpleKanbanHandlers(projectPath);
     }
   });
 
@@ -309,8 +308,7 @@ function createMenu(window?: BrowserWindow): void {
               setDexyProjectPath(projectPath);
               todoAutoScanner.startScanning(projectPath);
               setupMcpIpcHandlers(projectPath);
-              registerSimpleKanbanHandlers(projectPath);
-              
+                      
               updateRecentProjects(projectPath);
               saveOpenWindows();
             }
@@ -442,7 +440,6 @@ function updateRecentProjectsMenu(): void {
             setDexyProjectPath(project.path);
             todoAutoScanner.startScanning(project.path);
             setupMcpIpcHandlers(project.path);
-            registerSimpleKanbanHandlers(project.path);
             
             updateRecentProjects(project.path);
             saveOpenWindows();
@@ -487,7 +484,6 @@ ipcMain.handle('open-folder', async (event) => {
       setDexyProjectPath(projectPath);
       todoAutoScanner.startScanning(projectPath);
       setupMcpIpcHandlers(projectPath);
-      registerSimpleKanbanHandlers(projectPath);
     }
 
     updateRecentProjects(projectPath);
@@ -1683,7 +1679,6 @@ console.log('[MAIN] AI Description handlers registered successfully');
 
 // Dependency Analysis IPC handlers
 import { dependencyAnalysisIPCHandlers } from './dependency-analysis-ipc-handlers';
-import { registerSimpleKanbanHandlers } from './simple-kanban-ipc-handlers';
 console.log('[MAIN] Registering Dependency Analysis handlers...');
 dependencyAnalysisIPCHandlers.registerHandlers();
 console.log('[MAIN] Dependency Analysis handlers registered successfully');

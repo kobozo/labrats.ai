@@ -217,8 +217,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white mb-2">LabRats Workflow Board</h1>
-            <p className="text-gray-400">9-stage pipeline from idea to retrospective</p>
+            <h1 className="text-2xl font-bold text-white mb-2">LabRats Task Board</h1>
+            <p className="text-gray-400">Simplified 5-stage workflow: backlog → todo → in-progress → review → done</p>
           </div>
           <div className="flex items-center space-x-2">
             <button
@@ -253,14 +253,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       </div>
 
       <div className="flex flex-col h-full">
-        {/* Main workflow columns - all 9 stages */}
-        <div className="flex-1 flex gap-4 overflow-x-auto mb-4 pb-2 px-1">
+        {/* Main workflow columns - 4 stages (excluding backlog) */}
+        <div className="flex-1 grid grid-cols-4 gap-4 mb-4 pb-2 px-1 overflow-x-auto">
         {workflowStages.slice(1).map((stage) => (
           <div 
             key={stage.id} 
-            className={`bg-gray-800 rounded-lg p-3 border-2 min-w-[280px] flex-shrink-0 transition-colors ${
+            className={`bg-gray-800 rounded-lg p-3 border-2 transition-colors ${
               dragOverColumn === stage.id ? 'border-blue-500 bg-gray-700' : `border-${stage.color}-800 border-opacity-50`
             }`}
+            style={{ minWidth: '250px' }}
             onDragOver={(e) => {
               e.preventDefault();
               setDragOverColumn(stage.id);
@@ -269,9 +270,41 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             onDrop={(e) => {
               e.preventDefault();
               if (draggedTask && draggedTask.status !== stage.id) {
-                // Show assignment dialog
-                setAssignDialogData({ task: draggedTask, targetStage: stage.id });
-                setShowAssignDialog(true);
+                // Only show assignment dialog for review column
+                if (stage.id === 'review') {
+                  setAssignDialogData({ task: draggedTask, targetStage: stage.id });
+                  setShowAssignDialog(true);
+                } else {
+                  // For other columns, move task directly
+                  const updatedTask = {
+                    ...draggedTask,
+                    status: stage.id,
+                    assignee: 'LabRats', // Default assignee for non-review columns
+                    updatedAt: new Date().toISOString()
+                  };
+                  
+                  // Update local state
+                  const updatedTasks = tasks.map(task => 
+                    task.id === updatedTask.id ? updatedTask : task
+                  );
+                  setTasks(updatedTasks);
+                  
+                  // Save to backend (don't await to avoid blocking)
+                  kanbanService.updateTask(boardId, updatedTask)
+                    .then(() => {
+                      if (dexyReady) {
+                        return dexyService.updateTaskVector(updatedTask, boardId);
+                      }
+                    })
+                    .then(() => {
+                      // Dispatch event for Dashboard to update vector stats
+                      const taskUpdatedEvent = new CustomEvent('task-updated', { 
+                        detail: { task: updatedTask, boardId } 
+                      });
+                      window.dispatchEvent(taskUpdatedEvent);
+                    })
+                    .catch(console.error);
+                }
               }
               setDraggedTask(null);
               setDragOverColumn(null);
@@ -449,23 +482,57 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
         <WorkflowVisualization onClose={() => setShowWorkflow(false)} />
       )}
       
-      {/* TODO: Fix CreateTaskDialog compatibility with old kanban system */}
       {showCreateDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg">
-            <h3 className="text-lg font-semibold mb-4">Create Task</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Task creation temporarily disabled while migrating to new kanban system.
-              Please use the new simplified kanban board in the Dashboard.
-            </p>
-            <button
-              onClick={() => setShowCreateDialog(false)}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        <CreateTaskDialog
+          open={showCreateDialog}
+          onClose={() => setShowCreateDialog(false)}
+          onCreate={async (taskData) => {
+            // Generate unique ID
+            const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            // Create full task object
+            const newTask: Task = {
+              id: taskId,
+              title: taskData.title || '',
+              description: taskData.description || '',
+              assignee: taskData.assignee || 'Unassigned',
+              priority: taskData.priority || 'medium',
+              type: 'task',
+              status: taskData.status || createTaskStatus,
+              createdBy: 'user',
+              primaryRats: ['All'],
+              tags: taskData.tags || [],
+              blockedBy: taskData.blockedBy || [],
+              blocks: [],
+              comments: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              projectPath: currentFolder || ''
+            };
+            
+            // Add to local state
+            setTasks([...tasks, newTask]);
+            
+            // Save to backend
+            await kanbanService.updateTask(boardId, newTask);
+            
+            // Vectorize with Dexy
+            if (dexyReady) {
+              await dexyService.updateTaskVector(newTask, boardId);
+            }
+            
+            // Dispatch event for Dashboard to update vector stats
+            const taskCreatedEvent = new CustomEvent('task-created', { 
+              detail: { task: newTask, boardId } 
+            });
+            window.dispatchEvent(taskCreatedEvent);
+            
+            // Close dialog
+            setShowCreateDialog(false);
+          }}
+          defaultStatus={createTaskStatus}
+          allTasks={tasks}
+        />
       )}
       
       {showAssignDialog && assignDialogData && (
@@ -528,6 +595,41 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
           onSelectTask={(task) => {
             setSelectedTask(task);
             // Dialog remains open to show the new task
+          }}
+          onAddComment={async (taskId, comment) => {
+            try {
+              // Update local state
+              const updatedTasks = tasks.map(task => {
+                if (task.id === taskId) {
+                  return {
+                    ...task,
+                    comments: [...(task.comments || []), comment],
+                    updatedAt: new Date().toISOString()
+                  };
+                }
+                return task;
+              });
+              setTasks(updatedTasks);
+              
+              // Update selectedTask for immediate UI update
+              const updatedSelectedTask = updatedTasks.find(t => t.id === taskId);
+              if (updatedSelectedTask) {
+                setSelectedTask(updatedSelectedTask);
+              }
+              
+              // Save to backend
+              const taskToUpdate = updatedTasks.find(t => t.id === taskId);
+              if (taskToUpdate) {
+                await kanbanService.updateTask(boardId, taskToUpdate);
+                
+                // Update vector if Dexy is ready
+                if (dexyReady) {
+                  await dexyService.updateTaskVector(taskToUpdate, boardId);
+                }
+              }
+            } catch (error) {
+              console.error('Error adding comment:', error);
+            }
           }}
           onDelete={async () => {
             try {

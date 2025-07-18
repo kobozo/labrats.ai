@@ -13,42 +13,34 @@ export const kanbanColumns: KanbanColumn[] = [
   {
     id: 'todo',
     title: 'TO-DO',
-    stages: ['definition-of-ready'],
-    color: 'gray',
-    description: 'Ticket is groomed, AC clear, value confirmed',
-    exitGate: '"Ready" label applied & Cortex pulls it next sprint'
-  },
-  {
-    id: 'design-build',
-    title: 'DESIGN & BUILD',
-    stages: ['ux-design', 'development'],
+    stages: ['todo'],
     color: 'blue',
-    description: 'UX Design → Development',
-    exitGate: 'CI pipeline green & feature branch merged to develop'
+    description: 'Ready for work',
+    exitGate: 'Work started'
   },
   {
-    id: 'review-test',
-    title: 'REVIEW & TEST',
-    stages: ['code-review', 'qa-validation', 'security-hardening'],
+    id: 'in-progress',
+    title: 'IN PROGRESS',
+    stages: ['in-progress'],
     color: 'yellow',
-    description: 'Code Review → QA & UX → Security',
-    exitGate: 'All reviewers approve, QA/UX/Chaos pass, no high vulns'
+    description: 'Work in progress',
+    exitGate: 'Ready for review'
   },
   {
-    id: 'waiting-user',
-    title: 'WAITING FOR USER',
-    stages: ['product-acceptance', 'deliver-feedback'],
-    color: 'orange',
-    description: 'Product Acceptance → Deliver & Feedback',
-    exitGate: 'PO & users sign off; any hot-fixes resolved'
+    id: 'review',
+    title: 'REVIEW',
+    stages: ['review'],
+    color: 'purple',
+    description: 'Under review',
+    exitGate: 'Approved'
   },
   {
-    id: 'delivered',
-    title: 'DELIVERED',
-    stages: ['retro-docs'],
+    id: 'done',
+    title: 'DONE',
+    stages: ['done'],
     color: 'green',
-    description: 'Retro & Docs Close-out',
-    exitGate: 'Retro complete → card archived / released'
+    description: 'Complete',
+    exitGate: 'Closed'
   }
 ];
 
@@ -59,15 +51,10 @@ export function getColumnForStage(stage: WorkflowStage): KanbanColumn | undefine
 export function getStageIndex(stage: WorkflowStage): number {
   const stageOrder: WorkflowStage[] = [
     'backlog',
-    'definition-of-ready',
-    'ux-design',
-    'development',
-    'code-review',
-    'qa-validation',
-    'security-hardening',
-    'product-acceptance',
-    'deliver-feedback',
-    'retro-docs'
+    'todo',
+    'in-progress',
+    'review',
+    'done'
   ];
   return stageOrder.indexOf(stage);
 }
@@ -75,15 +62,10 @@ export function getStageIndex(stage: WorkflowStage): number {
 export function getStageNumber(stage: WorkflowStage): string {
   const stageNumbers: Record<WorkflowStage, string> = {
     'backlog': '0',
-    'definition-of-ready': '1',
-    'ux-design': '2',
-    'development': '3',
-    'code-review': '4',
-    'qa-validation': '5',
-    'security-hardening': '6',
-    'product-acceptance': '7',
-    'deliver-feedback': '8',
-    'retro-docs': '9'
+    'todo': '1',
+    'in-progress': '2',
+    'review': '3',
+    'done': '4'
   };
   return stageNumbers[stage] || '?';
 }

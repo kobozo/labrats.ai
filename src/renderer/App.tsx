@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Chat } from './components/Chat';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Dashboard } from './components/Dashboard';
-import { KanbanBoard } from './components/OldKanbanBoard';
+import { KanbanBoard } from './components/KanbanBoard';
 import { Documentation } from './components/Documentation';
 import { FileExplorer } from './components/FileExplorer';
 import { GitExplorer } from './components/GitExplorer';

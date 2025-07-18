@@ -1,14 +1,9 @@
 export type WorkflowStage = 
   | 'backlog'
-  | 'definition-of-ready'
-  | 'ux-design'
-  | 'development'
-  | 'code-review'
-  | 'qa-validation'
-  | 'security-hardening'
-  | 'product-acceptance'
-  | 'deliver-feedback'
-  | 'retro-docs';
+  | 'todo'
+  | 'in-progress'
+  | 'review'
+  | 'done';
 
 export interface Task {
   id: string;
@@ -36,6 +31,13 @@ export interface Task {
   boardId?: string;
   tags?: string[];
   
+  // Blocking relationships
+  blockedBy?: string[];  // Task IDs that block this task
+  blocks?: string[];     // Task IDs that this task blocks
+  
+  // Comment system
+  comments?: TaskComment[];
+  
   // TODO-specific fields
   todoId?: string;
   todoType?: 'TODO' | 'FIXME' | 'HACK' | 'NOTE' | 'BUG';
@@ -51,6 +53,16 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   projectPath: string;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  authorName: string;
+  authorType: 'user' | 'agent';
+  content: string;
+  timestamp: string;
+  agentColor?: string;
 }
 
 export interface Epic {

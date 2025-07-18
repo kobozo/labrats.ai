@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Task, WorkflowStage } from '../../types/kanban';
+import { Task, WorkflowStage, TaskLink, TaskLinkType } from '../../types/kanban';
 import { Plus, X, Search } from 'lucide-react';
 import { RichTextInput, RichTextInputRef } from './RichTextInput';
 import { agents } from '../../config/agents';
@@ -34,11 +34,12 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   const [assignee, setAssignee] = useState('LabRats');
   const [status, setStatus] = useState<WorkflowStage>(defaultStatus);
   const [tags, setTags] = useState<string[]>([]);
-  const [blockedBy, setBlockedBy] = useState<string[]>([]);
+  const [linkedTasks, setLinkedTasks] = useState<TaskLink[]>([]);
   const [newTag, setNewTag] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [suggestedBlockers, setSuggestedBlockers] = useState<Task[]>([]);
-  const [isSearchingBlockers, setIsSearchingBlockers] = useState(false);
+  const [linkType, setLinkType] = useState<TaskLinkType>('blocked-by');
+  const [suggestedLinks, setSuggestedLinks] = useState<Task[]>([]);
+  const [isSearchingLinks, setIsSearchingLinks] = useState(false);
   
   const richTextRef = useRef<RichTextInputRef>(null);
   
@@ -63,22 +64,22 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
       setAssignee('LabRats');
       setStatus(defaultStatus);
       setTags([]);
-      setBlockedBy([]);
+      setLinkedTasks([]);
       setNewTag('');
       setSearchQuery('');
-      setSuggestedBlockers([]);
+      setSuggestedLinks([]);
     }
   }, [open, defaultStatus]);
   
-  // Search for similar tasks when title or description changes (for blockers)
+  // Search for similar tasks when title or description changes (for linking)
   useEffect(() => {
-    const searchForBlockers = async () => {
+    const searchForLinks = async () => {
       if (!title && !description) {
-        setSuggestedBlockers([]);
+        setSuggestedLinks([]);
         return;
       }
       
-      setIsSearchingBlockers(true);
+      setIsSearchingLinks(true);
       try {
         const similarTasks = await dexyService.findSimilarTasks(
           { 
@@ -97,15 +98,15 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
           .map(st => st.task)
           .filter((t): t is Task => t !== undefined && t.status !== 'done');
           
-        setSuggestedBlockers(suggestedTasks);
+        setSuggestedLinks(suggestedTasks);
       } catch (error) {
-        console.error('Error searching for blockers:', error);
+        console.error('Error searching for links:', error);
       } finally {
-        setIsSearchingBlockers(false);
+        setIsSearchingLinks(false);
       }
     };
     
-    const debounceTimer = setTimeout(searchForBlockers, 500);
+    const debounceTimer = setTimeout(searchForLinks, 500);
     return () => clearTimeout(debounceTimer);
   }, [title, description, allTasks]);
 
@@ -119,7 +120,11 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
         type,
         assignee,
         tags,
-        blockedBy
+        linkedTasks,
+        // Convert linkedTasks to legacy blockedBy for backward compatibility
+        blockedBy: linkedTasks
+          .filter(link => link.type === 'blocked-by')
+          .map(link => link.taskId)
       });
       onClose();
     }
@@ -136,12 +141,19 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
     setTags(tags.filter(t => t !== tag));
   };
 
-  const handleToggleBlocker = (blockerId: string) => {
-    if (blockedBy.includes(blockerId)) {
-      setBlockedBy(blockedBy.filter(id => id !== blockerId));
+  const handleToggleLink = (taskId: string) => {
+    const existingLink = linkedTasks.find(link => link.taskId === taskId);
+    if (existingLink) {
+      setLinkedTasks(linkedTasks.filter(link => link.taskId !== taskId));
     } else {
-      setBlockedBy([...blockedBy, blockerId]);
+      setLinkedTasks([...linkedTasks, { taskId, type: linkType }]);
     }
+  };
+  
+  const handleChangeLinkType = (taskId: string, newType: TaskLinkType) => {
+    setLinkedTasks(linkedTasks.map(link => 
+      link.taskId === taskId ? { ...link, type: newType } : link
+    ));
   };
   
   // Filter tasks for manual search
@@ -153,6 +165,18 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
          task.id.toLowerCase().includes(searchQuery.toLowerCase()))
       )
     : [];
+    
+  // Helper to get link type label
+  const getLinkTypeLabel = (type: TaskLinkType): string => {
+    switch (type) {
+      case 'blocks': return 'Blocks';
+      case 'blocked-by': return 'Blocked by';
+      case 'relates-to': return 'Relates to';
+      case 'duplicates': return 'Duplicates';
+      case 'depends-on': return 'Depends on';
+      default: return type;
+    }
+  };
 
   if (!open) return null;
 
@@ -313,10 +337,10 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                 </div>
               </div>
               
-              {/* Blocked By Section */}
+              {/* Linked Tasks Section */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Blocked By Tasks
+                  Linked Tasks
                 </label>
                 
                 {/* Manual Search Box */}
@@ -327,10 +351,26 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search for blocking tasks..."
+                      placeholder="Search for related tasks..."
                       className="w-full pl-10 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
                     />
                   </div>
+                </div>
+                
+                {/* Link Type Selector */}
+                <div className="mb-3">
+                  <label className="block text-xs text-gray-400 mb-1">Default link type for new links:</label>
+                  <select
+                    value={linkType}
+                    onChange={(e) => setLinkType(e.target.value as TaskLinkType)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="blocked-by">Blocked by</option>
+                    <option value="blocks">Blocks</option>
+                    <option value="relates-to">Relates to</option>
+                    <option value="duplicates">Duplicates</option>
+                    <option value="depends-on">Depends on</option>
+                  </select>
                 </div>
                 
                 {/* Search Results */}
@@ -342,8 +382,8 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                         <label key={task.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
                           <input
                             type="checkbox"
-                            checked={blockedBy.includes(task.id)}
-                            onChange={() => handleToggleBlocker(task.id)}
+                            checked={linkedTasks.some(link => link.taskId === task.id)}
+                            onChange={() => handleToggleLink(task.id)}
                             className="rounded bg-gray-600 border-gray-500"
                           />
                           <span className="truncate">[{task.id}] {task.title}</span>
@@ -353,19 +393,19 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                   </div>
                 )}
                 
-                {/* AI Suggested Blockers */}
-                {suggestedBlockers.length > 0 && (
+                {/* AI Suggested Links */}
+                {suggestedLinks.length > 0 && (
                   <div className="mb-3 p-3 bg-gray-700 rounded-md border border-gray-600">
                     <p className="text-xs text-gray-400 mb-2">
-                      {isSearchingBlockers ? 'Searching...' : 'Suggested blocking tasks (based on similarity):'}
+                      {isSearchingLinks ? 'Searching...' : 'Suggested related tasks (based on similarity):'}
                     </p>
                     <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {suggestedBlockers.map(task => (
+                      {suggestedLinks.map(task => (
                         <label key={task.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
                           <input
                             type="checkbox"
-                            checked={blockedBy.includes(task.id)}
-                            onChange={() => handleToggleBlocker(task.id)}
+                            checked={linkedTasks.some(link => link.taskId === task.id)}
+                            onChange={() => handleToggleLink(task.id)}
                             className="rounded bg-gray-600 border-gray-500"
                           />
                           <span className="truncate">[{task.id}] {task.title}</span>
@@ -375,19 +415,32 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                   </div>
                 )}
                 
-                {/* Selected Blockers */}
-                {blockedBy.length > 0 && (
+                {/* Selected Links */}
+                {linkedTasks.length > 0 && (
                   <div className="p-3 bg-gray-700 rounded-md border border-gray-600">
-                    <p className="text-xs text-gray-400 mb-2">Selected blockers:</p>
-                    <div className="space-y-1">
-                      {blockedBy.map(id => {
-                        const task = allTasks.find(t => t.id === id);
+                    <p className="text-xs text-gray-400 mb-2">Selected linked tasks:</p>
+                    <div className="space-y-2">
+                      {linkedTasks.map(link => {
+                        const task = allTasks.find(t => t.id === link.taskId);
                         return task ? (
-                          <div key={id} className="flex items-center justify-between text-sm text-gray-300">
-                            <span className="truncate">[{task.id}] {task.title}</span>
+                          <div key={link.taskId} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2 flex-1">
+                              <select
+                                value={link.type}
+                                onChange={(e) => handleChangeLinkType(link.taskId, e.target.value as TaskLinkType)}
+                                className="px-2 py-1 bg-gray-600 border border-gray-500 rounded text-xs text-white"
+                              >
+                                <option value="blocked-by">Blocked by</option>
+                                <option value="blocks">Blocks</option>
+                                <option value="relates-to">Relates to</option>
+                                <option value="duplicates">Duplicates</option>
+                                <option value="depends-on">Depends on</option>
+                              </select>
+                              <span className="text-gray-300 truncate">[{task.id}] {task.title}</span>
+                            </div>
                             <button
-                              onClick={() => handleToggleBlocker(id)}
-                              className="text-red-400 hover:text-red-300"
+                              onClick={() => handleToggleLink(link.taskId)}
+                              className="text-red-400 hover:text-red-300 ml-2"
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -435,7 +488,10 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                 boardId: 'main-board',
                 primaryRats: [],
                 tags,
-                blockedBy
+                linkedTasks,
+                blockedBy: linkedTasks
+                  .filter(link => link.type === 'blocked-by')
+                  .map(link => link.taskId)
               }}
               boardId="main-board"
               excludeTaskId="new-task"

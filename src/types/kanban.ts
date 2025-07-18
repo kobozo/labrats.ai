@@ -5,6 +5,13 @@ export type WorkflowStage =
   | 'review'
   | 'done';
 
+export type TaskLinkType = 'blocks' | 'blocked-by' | 'relates-to' | 'duplicates' | 'depends-on';
+
+export interface TaskLink {
+  taskId: string;
+  type: TaskLinkType;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -31,9 +38,10 @@ export interface Task {
   boardId?: string;
   tags?: string[];
   
-  // Blocking relationships
-  blockedBy?: string[];  // Task IDs that block this task
-  blocks?: string[];     // Task IDs that this task blocks
+  // Task relationships
+  linkedTasks?: TaskLink[];  // New flexible linking system
+  blockedBy?: string[];  // Task IDs that block this task (legacy, for backward compatibility)
+  blocks?: string[];     // Task IDs that this task blocks (legacy, for backward compatibility)
   
   // Comment system
   comments?: TaskComment[];

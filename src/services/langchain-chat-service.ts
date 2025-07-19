@@ -593,6 +593,31 @@ export class LangChainChatService {
           return this.formatDependencyImpactResult(parsed, args);
         case 'circular_dependencies':
           return this.formatCircularDependenciesResult(parsed, args);
+        // Kanban tools
+        case 'get_tasks_by_status':
+          return this.formatGetTasksByStatusResult(parsed, args);
+        case 'get_task':
+          return this.formatGetTaskResult(parsed, args);
+        case 'create_task':
+          return this.formatCreateTaskResult(parsed, args);
+        case 'update_task':
+          return this.formatUpdateTaskResult(parsed, args);
+        case 'move_and_assign_task':
+          return this.formatMoveAndAssignTaskResult(parsed, args);
+        case 'add_task_comment':
+          return this.formatAddTaskCommentResult(parsed, args);
+        case 'get_task_comments':
+          return this.formatGetTaskCommentsResult(parsed, args);
+        case 'search_tasks':
+          return this.formatSearchTasksResult(parsed, args);
+        case 'get_backlog':
+          return this.formatGetBacklogResult(parsed, args);
+        case 'get_my_tasks':
+          return this.formatGetMyTasksResult(parsed, args);
+        case 'link_tasks':
+          return this.formatLinkTasksResult(parsed, args);
+        case 'get_task_stats':
+          return this.formatGetTaskStatsResult(parsed, args);
         default:
           return `\n\n**Tool Result (${toolName}):**\n\`\`\`json\n${result}\n\`\`\``;
       }
@@ -1353,6 +1378,308 @@ export class LangChainChatService {
     return output;
   }
 
+  // Kanban Tool Formatters
+  private formatGetTasksByStatusResult(parsed: any, args: any): string {
+    let output = `\n\n### 📋 Tasks in ${args.status.toUpperCase()}\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    const data = parsed.data;
+    output += `**Found ${data.count} task${data.count !== 1 ? 's' : ''}**\n\n`;
+    
+    if (data.tasks && data.tasks.length > 0) {
+      for (const task of data.tasks) {
+        const priorityIcon = task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢';
+        const typeIcon = task.type === 'bug' ? '🐛' : task.type === 'feature' ? '✨' : '📝';
+        
+        output += `${typeIcon} **${task.title}** ${priorityIcon}\n`;
+        output += `  - ID: \`${task.id}\`\n`;
+        output += `  - Assignee: ${task.assignee}\n`;
+        output += `  - Created: ${new Date(task.createdAt).toLocaleDateString()}\n`;
+        output += `  - Updated: ${new Date(task.updatedAt).toLocaleDateString()}\n\n`;
+      }
+    } else {
+      output += '*No tasks found*\n';
+    }
+    
+    return output;
+  }
+
+  private formatGetTaskResult(parsed: any, args: any): string {
+    let output = `\n\n### 📋 Task Details\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    const task = parsed.data;
+    const priorityIcon = task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢';
+    const typeIcon = task.type === 'bug' ? '🐛' : task.type === 'feature' ? '✨' : '📝';
+    
+    output += `${typeIcon} **${task.title}** ${priorityIcon}\n\n`;
+    output += `**ID:** \`${task.id}\`\n`;
+    output += `**Status:** ${task.status}\n`;
+    output += `**Assignee:** ${task.assignee}\n`;
+    output += `**Type:** ${task.type}\n`;
+    output += `**Priority:** ${task.priority}\n\n`;
+    
+    output += `**Description:**\n${task.description}\n\n`;
+    
+    if (task.linkedTasks && task.linkedTasks.length > 0) {
+      output += `**Linked Tasks:**\n`;
+      for (const link of task.linkedTasks) {
+        output += `- ${link.type}: \`${link.taskId}\`\n`;
+      }
+      output += '\n';
+    }
+    
+    if (task.comments && task.comments.length > 0) {
+      output += `**Comments (${task.comments.length}):**\n`;
+      for (const comment of task.comments.slice(-3)) {
+        output += `- **${comment.authorName}** (${new Date(comment.timestamp).toLocaleString()}): ${comment.content}\n`;
+      }
+      if (task.comments.length > 3) {
+        output += `*... and ${task.comments.length - 3} more comments*\n`;
+      }
+    }
+    
+    return output;
+  }
+
+  private formatCreateTaskResult(parsed: any, args: any): string {
+    let output = `\n\n### ✅ Task Created Successfully\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    const data = parsed.data;
+    output += `${data.message}\n\n`;
+    output += `**Task ID:** \`${data.taskId}\`\n`;
+    output += `**Title:** ${data.task.title}\n`;
+    output += `**Status:** ${data.task.status}\n`;
+    output += `**Assignee:** ${data.task.assignee}\n`;
+    
+    return output;
+  }
+
+  private formatUpdateTaskResult(parsed: any, args: any): string {
+    let output = `\n\n### ✅ Task Updated\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    const data = parsed.data;
+    output += `${data.message}\n\n`;
+    output += `**Updated fields:**\n`;
+    
+    const task = data.task;
+    if (args.title) output += `- Title: ${task.title}\n`;
+    if (args.description) output += `- Description updated\n`;
+    if (args.priority) output += `- Priority: ${task.priority}\n`;
+    if (args.type) output += `- Type: ${task.type}\n`;
+    
+    return output;
+  }
+
+  private formatMoveAndAssignTaskResult(parsed: any, args: any): string {
+    let output = `\n\n### ✅ Task Moved\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    output += `${parsed.data.message}\n`;
+    
+    return output;
+  }
+
+  private formatAddTaskCommentResult(parsed: any, args: any): string {
+    let output = `\n\n### 💬 Comment Added\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    output += `${parsed.data.message}\n`;
+    
+    return output;
+  }
+
+  private formatGetTaskCommentsResult(parsed: any, args: any): string {
+    let output = `\n\n### 💬 Task Comments\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    const data = parsed.data;
+    output += `**Task:** ${data.taskTitle}\n\n`;
+    
+    if (data.comments && data.comments.length > 0) {
+      output += `**Comments (${data.comments.length}):**\n\n`;
+      for (const comment of data.comments) {
+        output += `**${comment.authorName}** - ${new Date(comment.timestamp).toLocaleString()}\n`;
+        output += `${comment.content}\n\n`;
+      }
+    } else {
+      output += '*No comments yet*\n';
+    }
+    
+    return output;
+  }
+
+  private formatSearchTasksResult(parsed: any, args: any): string {
+    let output = `\n\n### 🔍 Search Results for "${args.query}"\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    const data = parsed.data;
+    output += `**Found ${data.count} matching task${data.count !== 1 ? 's' : ''}**\n\n`;
+    
+    if (data.tasks && data.tasks.length > 0) {
+      for (const task of data.tasks) {
+        const priorityIcon = task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢';
+        const typeIcon = task.type === 'bug' ? '🐛' : task.type === 'feature' ? '✨' : '📝';
+        
+        output += `${typeIcon} **${task.title}** ${priorityIcon}\n`;
+        output += `  - ID: \`${task.id}\`\n`;
+        output += `  - Status: ${task.status}\n`;
+        output += `  - Assignee: ${task.assignee}\n`;
+        output += `  - ${task.description}\n\n`;
+      }
+    }
+    
+    return output;
+  }
+
+  private formatGetBacklogResult(parsed: any, args: any): string {
+    let output = `\n\n### 📋 Backlog Tasks (Priority Order)\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    const data = parsed.data;
+    output += `**Showing ${data.showing} of ${data.total} total backlog tasks**\n\n`;
+    
+    if (data.tasks && data.tasks.length > 0) {
+      let currentPriority = '';
+      for (const task of data.tasks) {
+        if (task.priority !== currentPriority) {
+          currentPriority = task.priority;
+          const priorityIcon = task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢';
+          output += `\n**${priorityIcon} ${task.priority.toUpperCase()} Priority**\n\n`;
+        }
+        
+        const typeIcon = task.type === 'bug' ? '🐛' : task.type === 'feature' ? '✨' : '📝';
+        output += `${typeIcon} **${task.title}**\n`;
+        output += `  - ID: \`${task.id}\`\n`;
+        output += `  - Assignee: ${task.assignee}\n`;
+        output += `  - Created: ${new Date(task.createdAt).toLocaleDateString()}\n\n`;
+      }
+    } else {
+      output += '*No tasks in backlog*\n';
+    }
+    
+    return output;
+  }
+
+  private formatGetMyTasksResult(parsed: any, args: any): string {
+    let output = `\n\n### 👤 Tasks for ${args.agentName}\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    const data = parsed.data;
+    const statusText = data.status === 'all' ? '' : ` in ${data.status}`;
+    output += `**${data.count} task${data.count !== 1 ? 's' : ''}${statusText}**\n\n`;
+    
+    if (data.tasks && data.tasks.length > 0) {
+      // Group by status
+      const tasksByStatus: Record<string, any[]> = {};
+      for (const task of data.tasks) {
+        if (!tasksByStatus[task.status]) {
+          tasksByStatus[task.status] = [];
+        }
+        tasksByStatus[task.status].push(task);
+      }
+      
+      const statusOrder = ['in-progress', 'review', 'todo', 'backlog', 'done'];
+      for (const status of statusOrder) {
+        if (tasksByStatus[status] && tasksByStatus[status].length > 0) {
+          output += `**${status.toUpperCase()}**\n`;
+          for (const task of tasksByStatus[status]) {
+            const priorityIcon = task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢';
+            const typeIcon = task.type === 'bug' ? '🐛' : task.type === 'feature' ? '✨' : '📝';
+            
+            output += `- ${typeIcon} ${task.title} ${priorityIcon} (\`${task.id}\`)\n`;
+          }
+          output += '\n';
+        }
+      }
+    } else {
+      output += '*No tasks assigned*\n';
+    }
+    
+    return output;
+  }
+
+  private formatLinkTasksResult(parsed: any, args: any): string {
+    let output = `\n\n### 🔗 Task Link ${args.action === 'remove' ? 'Removed' : 'Created'}\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    output += `${parsed.data.message}\n`;
+    
+    return output;
+  }
+
+  private formatGetTaskStatsResult(parsed: any, args: any): string {
+    let output = `\n\n### 📊 Task Statistics\n\n`;
+    
+    if (!parsed.success) {
+      output += `❌ Error: ${parsed.error}\n`;
+      return output;
+    }
+    
+    const data = parsed.data;
+    output += `**Total Tasks:** ${data.total}\n`;
+    output += `**Grouped by:** ${data.groupBy}\n\n`;
+    
+    if (data.stats && Object.keys(data.stats).length > 0) {
+      // Sort by count descending
+      const sorted = Object.entries(data.stats).sort((a, b) => (b[1] as number) - (a[1] as number));
+      
+      for (const [key, count] of sorted) {
+        const percentage = ((count as number) / data.total * 100).toFixed(1);
+        const bar = this.createProgressBar(parseInt(percentage));
+        output += `**${key}:** ${count} (${percentage}%) ${bar}\n`;
+      }
+    }
+    
+    return output;
+  }
+
   private createProgressBar(progress: number): string {
     const filled = Math.round(progress / 10);
     const empty = 10 - filled;
@@ -1378,7 +1705,20 @@ export class LangChainChatService {
       'dependency_path': 'Dependency Path',
       'dependency_stats': 'Dependency Statistics',
       'dependency_impact': 'Dependency Impact',
-      'circular_dependencies': 'Circular Dependencies'
+      'circular_dependencies': 'Circular Dependencies',
+      // Kanban tools
+      'get_tasks_by_status': 'Get Tasks by Status',
+      'get_task': 'Get Task',
+      'create_task': 'Create Task',
+      'update_task': 'Update Task',
+      'move_and_assign_task': 'Move & Assign Task',
+      'add_task_comment': 'Add Comment',
+      'get_task_comments': 'Get Comments',
+      'search_tasks': 'Search Tasks',
+      'get_backlog': 'Get Backlog',
+      'get_my_tasks': 'Get My Tasks',
+      'link_tasks': 'Link Tasks',
+      'get_task_stats': 'Get Task Stats'
     };
     
     return toolDisplayNames[toolName] || toolName;

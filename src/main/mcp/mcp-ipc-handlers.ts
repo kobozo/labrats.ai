@@ -180,40 +180,40 @@ export function setupMcpIpcHandlers(workspaceRoot: string | null): void {
         // Kanban Management Tools
         case 'get_tasks_by_status':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleGetTasksByStatus(args);
+          return JSON.stringify(await kanbanHandler.handleGetTasksByStatus(args));
         case 'get_task':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleGetTask(args);
+          return JSON.stringify(await kanbanHandler.handleGetTask(args));
         case 'create_task':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleCreateTask(args);
+          return JSON.stringify(await kanbanHandler.handleCreateTask(args));
         case 'update_task':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleUpdateTask(args);
+          return JSON.stringify(await kanbanHandler.handleUpdateTask(args));
         case 'move_and_assign_task':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleMoveAndAssignTask(args);
+          return JSON.stringify(await kanbanHandler.handleMoveAndAssignTask(args));
         case 'add_task_comment':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleAddTaskComment(args);
+          return JSON.stringify(await kanbanHandler.handleAddTaskComment(args));
         case 'get_task_comments':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleGetTaskComments(args);
+          return JSON.stringify(await kanbanHandler.handleGetTaskComments(args));
         case 'search_tasks':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleSearchTasks(args);
+          return JSON.stringify(await kanbanHandler.handleSearchTasks(args));
         case 'get_backlog':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleGetBacklog(args);
+          return JSON.stringify(await kanbanHandler.handleGetBacklog(args));
         case 'get_my_tasks':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleGetMyTasks(args);
+          return JSON.stringify(await kanbanHandler.handleGetMyTasks(args));
         case 'link_tasks':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleLinkTasks(args);
+          return JSON.stringify(await kanbanHandler.handleLinkTasks(args));
         case 'get_task_stats':
           if (!kanbanHandler) throw new Error('Kanban handler not initialized');
-          return await kanbanHandler.handleGetTaskStats(args);
+          return JSON.stringify(await kanbanHandler.handleGetTaskStats(args));
         
         default:
           throw new Error(`Unknown tool: ${toolName}`);

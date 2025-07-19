@@ -263,6 +263,162 @@ class LangChainMcpClient {
             required: [],
           },
         },
+        
+        // Kanban Task Management Tools
+        {
+          name: 'get_tasks_by_status',
+          description: 'Get all tasks filtered by workflow stage/status (backlog, todo, in-progress, review, done). Essential for viewing current work and planning.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              status: { type: 'string', enum: ['backlog', 'todo', 'in-progress', 'review', 'done'], description: 'Workflow stage to filter by' },
+              assignee: { type: 'string', description: 'Optional: Filter by assignee name' },
+              priority: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Optional: Filter by priority' },
+            },
+            required: ['status'],
+          },
+        },
+        {
+          name: 'get_task',
+          description: 'Get detailed information about a specific task including description, comments, and file references.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Unique task ID (e.g., "TASK-1234567890")' },
+            },
+            required: ['taskId'],
+          },
+        },
+        {
+          name: 'create_task',
+          description: 'Create a new task in the kanban board. Automatically generates unique ID and timestamps.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Task title/summary' },
+              description: { type: 'string', description: 'Detailed task description with requirements and context' },
+              assignee: { type: 'string', description: 'Agent name to assign (default: "LabRats")' },
+              priority: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Priority level (default: "medium")' },
+              type: { type: 'string', enum: ['task', 'bug', 'feature', 'documentation', 'technical-debt', 'todo'], description: 'Task type (default: "task")' },
+              status: { type: 'string', enum: ['backlog', 'todo', 'in-progress', 'review', 'done'], description: 'Initial status (default: "backlog")' },
+            },
+            required: ['title', 'description'],
+          },
+        },
+        {
+          name: 'update_task',
+          description: 'Update task details like title, description, priority, or type. Does not change status or assignee.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Task ID to update' },
+              title: { type: 'string', description: 'New title' },
+              description: { type: 'string', description: 'New description' },
+              priority: { type: 'string', enum: ['low', 'medium', 'high'], description: 'New priority' },
+              type: { type: 'string', enum: ['task', 'bug', 'feature', 'documentation', 'technical-debt', 'todo'], description: 'New type' },
+            },
+            required: ['taskId'],
+          },
+        },
+        {
+          name: 'move_and_assign_task',
+          description: 'Move task to different status and optionally reassign it. Efficient for workflow transitions.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Task ID to move' },
+              status: { type: 'string', enum: ['backlog', 'todo', 'in-progress', 'review', 'done'], description: 'New status' },
+              assignee: { type: 'string', description: 'Optional: New assignee' },
+              comment: { type: 'string', description: 'Optional: Transition comment' },
+            },
+            required: ['taskId', 'status'],
+          },
+        },
+        {
+          name: 'add_task_comment',
+          description: 'Add a comment to a task for communication and progress tracking.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Task ID to comment on' },
+              content: { type: 'string', description: 'Comment content' },
+              authorName: { type: 'string', description: 'Your agent name' },
+            },
+            required: ['taskId', 'content', 'authorName'],
+          },
+        },
+        {
+          name: 'get_task_comments',
+          description: 'Get all comments for a task to understand context and communication history.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Task ID to get comments for' },
+            },
+            required: ['taskId'],
+          },
+        },
+        {
+          name: 'search_tasks',
+          description: 'Search tasks by title/description content. Useful for finding related work.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Search query' },
+              status: { type: 'string', enum: ['backlog', 'todo', 'in-progress', 'review', 'done'], description: 'Optional: Limit to status' },
+              assignee: { type: 'string', description: 'Optional: Limit to assignee' },
+            },
+            required: ['query'],
+          },
+        },
+        {
+          name: 'get_backlog',
+          description: 'Get backlog tasks ordered by priority (high → medium → low). Essential for sprint planning.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              limit: { type: 'number', description: 'Optional: Max tasks to return (default: 50)', minimum: 1, maximum: 200 },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'get_my_tasks',
+          description: 'Get all tasks assigned to a specific agent. Use to see your current workload.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              agentName: { type: 'string', description: 'Agent name to get tasks for' },
+              status: { type: 'string', enum: ['backlog', 'todo', 'in-progress', 'review', 'done'], description: 'Optional: Filter by status' },
+            },
+            required: ['agentName'],
+          },
+        },
+        {
+          name: 'link_tasks',
+          description: 'Create or remove relationships between tasks. Important for dependency management.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Source task ID' },
+              linkedTaskId: { type: 'string', description: 'Target task ID to link/unlink' },
+              linkType: { type: 'string', enum: ['blocks', 'blocked-by', 'relates-to', 'duplicates', 'depends-on'], description: 'Relationship type' },
+              action: { type: 'string', enum: ['add', 'remove'], description: 'Add or remove link (default: "add")' },
+            },
+            required: ['taskId', 'linkedTaskId', 'linkType'],
+          },
+        },
+        {
+          name: 'get_task_stats',
+          description: 'Get task statistics grouped by status, priority, assignee, or type. Useful for project health monitoring.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              groupBy: { type: 'string', enum: ['status', 'priority', 'assignee', 'type'], description: 'Grouping method (default: "status")' },
+            },
+            required: [],
+          },
+        },
       ];
       
       console.log('[LANGCHAIN-MCP] Connected. Available tools:', this.tools.map(t => t.name));
@@ -385,6 +541,66 @@ class LangChainMcpClient {
       circular_dependencies: z.object({
         includeDetails: z.boolean().optional().describe('Whether to include detailed information about each cycle'),
         maxCycles: z.number().optional().describe('Maximum number of cycles to return'),
+      }),
+      
+      // Kanban Task Management Tool Schemas
+      get_tasks_by_status: z.object({
+        status: z.enum(['backlog', 'todo', 'in-progress', 'review', 'done']).describe('Workflow stage to filter by'),
+        assignee: z.string().optional().describe('Optional: Filter by assignee name'),
+        priority: z.enum(['low', 'medium', 'high']).optional().describe('Optional: Filter by priority'),
+      }),
+      get_task: z.object({
+        taskId: z.string().describe('Unique task ID (e.g., "TASK-1234567890")'),
+      }),
+      create_task: z.object({
+        title: z.string().describe('Task title/summary'),
+        description: z.string().describe('Detailed task description with requirements and context'),
+        assignee: z.string().optional().describe('Agent name to assign (default: "LabRats")'),
+        priority: z.enum(['low', 'medium', 'high']).optional().describe('Priority level (default: "medium")'),
+        type: z.enum(['task', 'bug', 'feature', 'documentation', 'technical-debt', 'todo']).optional().describe('Task type (default: "task")'),
+        status: z.enum(['backlog', 'todo', 'in-progress', 'review', 'done']).optional().describe('Initial status (default: "backlog")'),
+      }),
+      update_task: z.object({
+        taskId: z.string().describe('Task ID to update'),
+        title: z.string().optional().describe('New title'),
+        description: z.string().optional().describe('New description'),
+        priority: z.enum(['low', 'medium', 'high']).optional().describe('New priority'),
+        type: z.enum(['task', 'bug', 'feature', 'documentation', 'technical-debt', 'todo']).optional().describe('New type'),
+      }),
+      move_and_assign_task: z.object({
+        taskId: z.string().describe('Task ID to move'),
+        status: z.enum(['backlog', 'todo', 'in-progress', 'review', 'done']).describe('New status'),
+        assignee: z.string().optional().describe('Optional: New assignee'),
+        comment: z.string().optional().describe('Optional: Transition comment'),
+      }),
+      add_task_comment: z.object({
+        taskId: z.string().describe('Task ID to comment on'),
+        content: z.string().describe('Comment content'),
+        authorName: z.string().describe('Your agent name'),
+      }),
+      get_task_comments: z.object({
+        taskId: z.string().describe('Task ID to get comments for'),
+      }),
+      search_tasks: z.object({
+        query: z.string().describe('Search query'),
+        status: z.enum(['backlog', 'todo', 'in-progress', 'review', 'done']).optional().describe('Optional: Limit to status'),
+        assignee: z.string().optional().describe('Optional: Limit to assignee'),
+      }),
+      get_backlog: z.object({
+        limit: z.number().min(1).max(200).optional().describe('Optional: Max tasks to return (default: 50)'),
+      }),
+      get_my_tasks: z.object({
+        agentName: z.string().describe('Agent name to get tasks for'),
+        status: z.enum(['backlog', 'todo', 'in-progress', 'review', 'done']).optional().describe('Optional: Filter by status'),
+      }),
+      link_tasks: z.object({
+        taskId: z.string().describe('Source task ID'),
+        linkedTaskId: z.string().describe('Target task ID to link/unlink'),
+        linkType: z.enum(['blocks', 'blocked-by', 'relates-to', 'duplicates', 'depends-on']).describe('Relationship type'),
+        action: z.enum(['add', 'remove']).optional().describe('Add or remove link (default: "add")'),
+      }),
+      get_task_stats: z.object({
+        groupBy: z.enum(['status', 'priority', 'assignee', 'type']).optional().describe('Grouping method (default: "status")'),
       }),
     };
 

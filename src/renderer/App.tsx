@@ -520,7 +520,7 @@ function App() {
         ) : (
           /* Show normal views when a folder is open */
           <>
-            <div style={{ display: activeView === 'chat' ? 'block' : 'none' }}>
+            <div style={{ display: activeView === 'chat' ? 'block' : 'none', height: '100%' }}>
               <ErrorBoundary>
                 <Chat 
                   onCodeReview={() => showNotification('info', 'Code review initiated')} 

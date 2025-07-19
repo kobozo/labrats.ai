@@ -25,10 +25,34 @@ export const AssignTaskDialog: React.FC<AssignTaskDialogProps> = ({
     agent.name !== 'Dexy'
   );
   
-  // Build the list of available assignees
-  const availableAssignees = targetStage === 'review' ? [
+  // Get stage-specific agents
+  const getStageAgents = (stage: WorkflowStage) => {
+    switch (stage) {
+      case 'todo':
+        // For todo: All development agents (backend, frontend, etc.)
+        return assignableAgents.filter(agent => 
+          ['Cortex', 'Patchy', 'Shiny', 'Wheelie', 'Nestor', 'Quill', 'Sketchy'].includes(agent.name)
+        );
+      case 'in-progress':
+        // For in-progress: All development agents
+        return assignableAgents.filter(agent => 
+          ['Cortex', 'Patchy', 'Shiny', 'Wheelie', 'Nestor', 'Quill', 'Sketchy'].includes(agent.name)
+        );
+      case 'review':
+        // For review: Quality and review focused agents
+        return assignableAgents.filter(agent => 
+          ['Clawsy', 'Sniffy', 'Trappy', 'Scratchy', 'Cortex'].includes(agent.name)
+        );
+      default:
+        return assignableAgents;
+    }
+  };
+  
+  // Build the list of available assignees based on target stage
+  const stageAgents = getStageAgents(targetStage);
+  const availableAssignees = ['todo', 'in-progress', 'review'].includes(targetStage) ? [
     { id: 'LabRats', name: 'LabRats (User)', avatar: null },
-    ...assignableAgents.map(agent => ({ 
+    ...stageAgents.map(agent => ({ 
       id: agent.name, 
       name: agent.name, 
       avatar: agent.avatar 
@@ -47,12 +71,12 @@ export const AssignTaskDialog: React.FC<AssignTaskDialogProps> = ({
   }, [targetStage]);
 
   const handleConfirm = () => {
-    if (targetStage === 'review') {
+    if (['todo', 'in-progress', 'review'].includes(targetStage)) {
       if (selectedAssignee) {
         onConfirm([selectedAssignee]);
       }
     } else {
-      // For non-review columns, use default assignee
+      // For other columns, use default assignee
       onConfirm(['LabRats']);
     }
   };
@@ -76,12 +100,15 @@ export const AssignTaskDialog: React.FC<AssignTaskDialogProps> = ({
             <span className="font-semibold text-purple-400">{stageConfig?.title || targetStage}</span>
           </p>
           <p className="text-sm text-gray-400">
-            {targetStage === 'review' ? 'Select a reviewer to assign this task to:' : 'This task will be moved to the selected column.'}
+            {targetStage === 'todo' ? 'Select who will work on this task:' :
+             targetStage === 'in-progress' ? 'Select who is working on this task:' :
+             targetStage === 'review' ? 'Select a reviewer to assign this task to:' :
+             'This task will be moved to the selected column.'}
           </p>
         </div>
 
         <div className="space-y-2 mb-6 max-h-64 overflow-y-auto">
-          {targetStage === 'review' && availableAssignees.length > 0 ? (
+          {['todo', 'in-progress', 'review'].includes(targetStage) && availableAssignees.length > 0 ? (
             availableAssignees.map(assignee => (
               <label
                 key={assignee.id}
@@ -117,9 +144,9 @@ export const AssignTaskDialog: React.FC<AssignTaskDialogProps> = ({
                 </div>
               </label>
             ))
-          ) : targetStage === 'review' ? (
+          ) : ['todo', 'in-progress', 'review'].includes(targetStage) ? (
             <p className="text-gray-400 text-center py-4">
-              No reviewers available
+              No agents available for this stage
             </p>
           ) : (
             <p className="text-gray-400 text-center py-4">
@@ -131,14 +158,17 @@ export const AssignTaskDialog: React.FC<AssignTaskDialogProps> = ({
         <div className="flex space-x-3">
           <button
             onClick={handleConfirm}
-            disabled={targetStage === 'review' && !selectedAssignee}
+            disabled={['todo', 'in-progress', 'review'].includes(targetStage) && !selectedAssignee}
             className={`flex-1 px-4 py-2 rounded-md transition-colors ${
-              (targetStage === 'review' && selectedAssignee) || targetStage !== 'review'
+              (['todo', 'in-progress', 'review'].includes(targetStage) && selectedAssignee) || !['todo', 'in-progress', 'review'].includes(targetStage)
                 ? 'bg-purple-600 hover:bg-purple-700 text-white'
                 : 'bg-gray-700 text-gray-400 cursor-not-allowed'
             }`}
           >
-            {targetStage === 'review' ? 'Assign Reviewer' : 'Move Task'}
+            {targetStage === 'todo' ? 'Assign Worker' :
+             targetStage === 'in-progress' ? 'Assign Worker' :
+             targetStage === 'review' ? 'Assign Reviewer' :
+             'Move Task'}
           </button>
           <button
             onClick={onCancel}

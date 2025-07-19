@@ -391,7 +391,7 @@ function App() {
   ];
 
   return (
-    <div className="h-screen bg-gray-900 flex flex-col overflow-hidden">
+    <div className="h-screen bg-gray-900 flex flex-col">
       {/* Notification */}
       {notification && (
         <div className="fixed top-20 right-4 z-50 animate-in slide-in-from-top-2">
@@ -507,7 +507,7 @@ function App() {
       )}
 
       {/* Content Area - Scrollable */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-y-auto">
         {!currentFolder ? (
           /* Show start screen when no folder is open */
           activeView === 'account' ? (
@@ -520,7 +520,7 @@ function App() {
         ) : (
           /* Show normal views when a folder is open */
           <>
-            <div style={{ display: activeView === 'chat' ? 'block' : 'none', height: '100%' }}>
+            <div style={{ display: activeView === 'chat' ? 'block' : 'none' }}>
               <ErrorBoundary>
                 <Chat 
                   onCodeReview={() => showNotification('info', 'Code review initiated')} 
@@ -532,15 +532,15 @@ function App() {
               </ErrorBoundary>
             </div>
             
-            <div style={{ display: activeView === 'kanban' ? 'block' : 'none', height: '100%' }}>
+            <div style={{ display: activeView === 'kanban' ? 'block' : 'none' }}>
               <KanbanBoard currentFolder={currentFolder} />
             </div>
             
-            <div style={{ display: activeView === 'docs' ? 'block' : 'none', height: '100%' }}>
+            <div style={{ display: activeView === 'docs' ? 'block' : 'none' }}>
               <Documentation />
             </div>
             
-            <div style={{ display: activeView === 'files' ? 'block' : 'none', height: '100%' }}>
+            <div style={{ display: activeView === 'files' ? 'block' : 'none' }}>
               <FileExplorer 
                 currentFolder={currentFolder} 
                 isVisible={activeView === 'files'} 
@@ -549,11 +549,11 @@ function App() {
               />
             </div>
             
-            <div style={{ display: activeView === 'git' ? 'block' : 'none', height: '100%' }}>
+            <div style={{ display: activeView === 'git' ? 'block' : 'none' }}>
               <GitExplorer currentFolder={currentFolder} isVisible={activeView === 'git'} />
             </div>
             
-            <div style={{ display: activeView === 'terminal' ? 'block' : 'none', height: '100%' }}>
+            <div style={{ display: activeView === 'terminal' ? 'block' : 'none' }}>
               <TerminalComponent 
                 currentFolder={currentFolder} 
                 isVisible={activeView === 'terminal'}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Search, Plus } from 'lucide-react';
+import { X, Search, Plus, Link, ChevronDown, ChevronUp } from 'lucide-react';
 import { Task, WorkflowStage, TaskLink, TaskLinkType } from '../../types/kanban';
 import { RichTextInput, RichTextInputRef } from './RichTextInput';
 import { agents } from '../../config/agents';
@@ -33,6 +33,7 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
   const [suggestedLinks, setSuggestedLinks] = useState<Task[]>([]);
   const [isSearchingLinks, setIsSearchingLinks] = useState(false);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
+  const [showLinkingSection, setShowLinkingSection] = useState(false);
   
   const richTextRef = useRef<RichTextInputRef>(null);
   
@@ -94,9 +95,11 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
         );
         
         // Convert similar tasks to regular tasks for display
+        // Filter out already linked tasks
+        const alreadyLinkedIds = new Set(linkedTasks.map(link => link.taskId));
         const suggestedTasks = similarTasks
           .map(st => st.task)
-          .filter((t): t is Task => t !== undefined && t.status !== 'done' && t.id !== task.id);
+          .filter((t): t is Task => t !== undefined && t.status !== 'done' && t.id !== task.id && !alreadyLinkedIds.has(t.id));
           
         setSuggestedLinks(suggestedTasks);
       } catch (error) {
@@ -161,13 +164,15 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
   
   // Filter tasks for manual search
   const searchResults = searchQuery.trim() 
-    ? allTasks.filter(t => 
-        t.id !== task.id &&
-        t.status !== 'done' &&
-        (t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-         t.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-         t.id.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
+    ? allTasks.filter(t => {
+        const alreadyLinkedIds = new Set(linkedTasks.map(link => link.taskId));
+        return t.id !== task.id &&
+               t.status !== 'done' &&
+               !alreadyLinkedIds.has(t.id) &&
+               (t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                t.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                t.id.toLowerCase().includes(searchQuery.toLowerCase()));
+      })
     : [];
 
   return (
@@ -330,86 +335,25 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
             
             {/* Linked Tasks Section */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Linked Tasks
-              </label>
-              
-              {/* Manual Search Box */}
-              <div className="mb-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search for related tasks..."
-                    className="w-full pl-10 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
-              
-              {/* Link Type Selector */}
-              <div className="mb-3">
-                <label className="block text-xs text-gray-400 mb-1">Default link type for new links:</label>
-                <select
-                  value={linkType}
-                  onChange={(e) => setLinkType(e.target.value as TaskLinkType)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:border-blue-500"
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Linked Tasks {linkedTasks.length > 0 && `(${linkedTasks.length})`}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowLinkingSection(!showLinkingSection)}
+                  className="flex items-center gap-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded text-sm text-gray-300 transition-colors"
                 >
-                  <option value="blocked-by">Blocked by</option>
-                  <option value="blocks">Blocks</option>
-                  <option value="relates-to">Relates to</option>
-                  <option value="duplicates">Duplicates</option>
-                  <option value="depends-on">Depends on</option>
-                </select>
+                  <Link className="w-4 h-4" />
+                  <span>Link Tasks</span>
+                  {showLinkingSection ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
               </div>
               
-              {/* Search Results */}
-              {searchQuery && searchResults.length > 0 && (
-                <div className="mb-3 p-3 bg-gray-700 rounded-md border border-gray-600">
-                  <p className="text-xs text-gray-400 mb-2">Search Results:</p>
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {searchResults.map(t => (
-                      <label key={t.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
-                        <input
-                          type="checkbox"
-                          checked={linkedTasks.some(link => link.taskId === t.id)}
-                          onChange={() => handleToggleLink(t.id)}
-                          className="rounded bg-gray-600 border-gray-500"
-                        />
-                        <span className="truncate">[{t.id}] {t.title}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* AI Suggested Links */}
-              {suggestedLinks.length > 0 && (
-                <div className="mb-3 p-3 bg-gray-700 rounded-md border border-gray-600">
-                  <p className="text-xs text-gray-400 mb-2">
-                    {isSearchingLinks ? 'Searching...' : 'Suggested related tasks (based on similarity):'}
-                  </p>
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {suggestedLinks.map(t => (
-                      <label key={t.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
-                        <input
-                          type="checkbox"
-                          checked={linkedTasks.some(link => link.taskId === t.id)}
-                          onChange={() => handleToggleLink(t.id)}
-                          className="rounded bg-gray-600 border-gray-500"
-                        />
-                        <span className="truncate">[{t.id}] {t.title}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* Selected Links */}
+              {/* Currently Linked Tasks - Always Visible */}
               {linkedTasks.length > 0 && (
-                <div className="p-3 bg-gray-700 rounded-md border border-gray-600">
-                  <p className="text-xs text-gray-400 mb-2">Selected linked tasks:</p>
+                <div className="mb-3 p-3 bg-gray-700 rounded-md border border-gray-600">
+                  <p className="text-xs text-gray-400 mb-2">Currently linked tasks:</p>
                   <div className="space-y-2">
                     {linkedTasks.map(link => {
                       const t = allTasks.find(task => task.id === link.taskId) || 
@@ -434,6 +378,7 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
                             type="button"
                             onClick={() => handleToggleLink(link.taskId)}
                             className="text-red-400 hover:text-red-300 ml-2"
+                            title="Remove link"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -441,6 +386,90 @@ export const EditTaskDialog: React.FC<EditTaskDialogProps> = ({
                       );
                     })}
                   </div>
+                </div>
+              )}
+              
+              {/* Collapsible Linking Section */}
+              {showLinkingSection && (
+                <div className="space-y-3">
+                  {/* Manual Search Box */}
+                  <div>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search for related tasks..."
+                        className="w-full pl-10 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Link Type Selector */}
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Default link type for new links:</label>
+                    <select
+                      value={linkType}
+                      onChange={(e) => setLinkType(e.target.value as TaskLinkType)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="blocked-by">Blocked by</option>
+                      <option value="blocks">Blocks</option>
+                      <option value="relates-to">Relates to</option>
+                      <option value="duplicates">Duplicates</option>
+                      <option value="depends-on">Depends on</option>
+                    </select>
+                  </div>
+                  
+                  {/* Search Results */}
+                  {searchQuery && searchResults.length > 0 && (
+                    <div className="p-3 bg-gray-700 rounded-md border border-gray-600">
+                      <p className="text-xs text-gray-400 mb-2">Search Results:</p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {searchResults.map(t => (
+                          <label key={t.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
+                            <input
+                              type="checkbox"
+                              checked={linkedTasks.some(link => link.taskId === t.id)}
+                              onChange={() => handleToggleLink(t.id)}
+                              className="rounded bg-gray-600 border-gray-500"
+                            />
+                            <span className="truncate">[{t.id}] {t.title}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* AI Suggested Links */}
+                  {suggestedLinks.length > 0 && (
+                    <div className="p-3 bg-gray-700 rounded-md border border-gray-600">
+                      <p className="text-xs text-gray-400 mb-2">
+                        {isSearchingLinks ? 'Searching...' : 'Suggested related tasks (based on similarity):'}
+                      </p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {suggestedLinks.map(t => (
+                          <label key={t.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
+                            <input
+                              type="checkbox"
+                              checked={linkedTasks.some(link => link.taskId === t.id)}
+                              onChange={() => handleToggleLink(t.id)}
+                              className="rounded bg-gray-600 border-gray-500"
+                            />
+                            <span className="truncate">[{t.id}] {t.title}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* No results message */}
+                  {showLinkingSection && searchQuery && searchResults.length === 0 && (
+                    <div className="p-3 bg-gray-700 rounded-md border border-gray-600 text-center">
+                      <p className="text-sm text-gray-400">No matching tasks found</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

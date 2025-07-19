@@ -36,6 +36,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
   const [showSearchDialog, setShowSearchDialog] = useState(false);
   const [checkingDuplicates, setCheckingDuplicates] = useState<Task | null>(null);
   const [isSyncingTodos, setIsSyncingTodos] = useState(false);
+  const [draggedOverTaskId, setDraggedOverTaskId] = useState<string | null>(null);
+  const [draggedOverBacklog, setDraggedOverBacklog] = useState(false);
   const boardId = 'main-board'; // For now, using a single board
   
   // Set the current project in kanban service
@@ -153,10 +155,21 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
     }
   };
 
-  const backlogTasks = tasks.filter(task => task.status === 'backlog');
+  // Sort tasks by priority (high > medium > low) and then by updated date for same priority
+  const sortTasksByPriority = (taskList: Task[]): Task[] => {
+    const priorityWeight = { high: 3, medium: 2, low: 1 };
+    return [...taskList].sort((a, b) => {
+      const priorityDiff = priorityWeight[b.priority] - priorityWeight[a.priority];
+      if (priorityDiff !== 0) return priorityDiff;
+      // For same priority, use updatedAt (most recently updated first)
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+  };
+  
+  const backlogTasks = sortTasksByPriority(tasks.filter(task => task.status === 'backlog'));
   
   const getTasksByStatus = (status: WorkflowStage): Task[] => {
-    return tasks.filter(task => task.status === status);
+    return sortTasksByPriority(tasks.filter(task => task.status === status));
   };
 
   // Helper function to strip markdown and get plain text for preview
@@ -172,6 +185,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
       .replace(/^[-*+]\s+/gm, '') // Lists
       .replace(/\n{2,}/g, ' ') // Multiple newlines
       .trim();
+  };
+  
+  // Truncate text to specified length
+  const truncateText = (text: string, maxLength: number): string => {
+    const stripped = stripMarkdown(text);
+    if (stripped.length <= maxLength) return stripped;
+    return stripped.substring(0, maxLength) + '...';
   };
 
 
@@ -207,7 +227,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
   }
 
   return (
-    <div className="flex-1 bg-gray-900 p-6 overflow-y-auto">
+    <div className="bg-gray-900 p-6">
       {isLoading ? (
         <div className="flex items-center justify-center h-64">
           <div className="text-gray-400">Loading board...</div>
@@ -252,9 +272,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
         </div>
       </div>
 
-      <div className="flex flex-col h-full">
+      <div className="space-y-6">
         {/* Main workflow columns - 4 stages (excluding backlog) */}
-        <div className="flex-1 grid grid-cols-4 gap-4 mb-4 pb-2 px-1 overflow-x-auto">
+        <div className="grid grid-cols-4 gap-4 overflow-x-auto" style={{ minHeight: '500px' }}>
         {workflowStages.slice(1).map((stage) => (
           <div 
             key={stage.id} 
@@ -270,16 +290,16 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             onDrop={(e) => {
               e.preventDefault();
               if (draggedTask && draggedTask.status !== stage.id) {
-                // Only show assignment dialog for review column
-                if (stage.id === 'review') {
+                // Show assignment dialog for todo, in-progress, and review columns
+                if (stage.id === 'todo' || stage.id === 'in-progress' || stage.id === 'review') {
                   setAssignDialogData({ task: draggedTask, targetStage: stage.id });
                   setShowAssignDialog(true);
                 } else {
-                  // For other columns, move task directly
+                  // For done column, move task directly
                   const updatedTask = {
                     ...draggedTask,
                     status: stage.id,
-                    assignee: 'LabRats', // Default assignee for non-review columns
+                    assignee: 'LabRats', // Default assignee for done column
                     updatedAt: new Date().toISOString()
                   };
                   
@@ -323,15 +343,75 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
             </div>
 
             <div className="space-y-3">
-              {getTasksByStatus(stage.id).map((task) => (
+              {getTasksByStatus(stage.id).map((task, index) => (
                 <div
                   key={task.id}
-                  className={`p-3 rounded-lg border-l-4 ${getPriorityColor(task.priority)} bg-gray-700 hover:bg-gray-600 transition-colors cursor-move`}
+                  className={`p-3 rounded-lg border-l-4 ${getPriorityColor(task.priority)} bg-gray-700 hover:bg-gray-600 transition-colors cursor-move ${
+                    draggedOverTaskId === task.id ? 'border-t-2 border-t-blue-500' : ''
+                  }`}
                   draggable
                   onDragStart={() => setDraggedTask(task)}
                   onDragEnd={() => {
                     setDraggedTask(null);
                     setDragOverColumn(null);
+                    setDraggedOverTaskId(null);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (draggedTask && draggedTask.id !== task.id && draggedTask.status === stage.id) {
+                      setDraggedOverTaskId(task.id);
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    e.stopPropagation();
+                    setDraggedOverTaskId(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (draggedTask && draggedTask.id !== task.id && draggedTask.status === stage.id) {
+                      // Reorder tasks within the same column by swapping priorities
+                      const newTasks = [...tasks];
+                      const draggedTaskIndex = newTasks.findIndex(t => t.id === draggedTask.id);
+                      const targetTaskIndex = newTasks.findIndex(t => t.id === task.id);
+                      
+                      if (draggedTaskIndex !== -1 && targetTaskIndex !== -1) {
+                        // Swap priorities between the two tasks
+                        const draggedPriority = newTasks[draggedTaskIndex].priority;
+                        const targetPriority = newTasks[targetTaskIndex].priority;
+                        
+                        // Only swap if priorities are different
+                        if (draggedPriority !== targetPriority) {
+                          console.log(`[Column Reorder] Swapping priorities: ${draggedTask.id} (${draggedPriority}) <-> ${task.id} (${targetPriority})`);
+                          newTasks[draggedTaskIndex].priority = targetPriority;
+                          newTasks[targetTaskIndex].priority = draggedPriority;
+                          newTasks[draggedTaskIndex].updatedAt = new Date().toISOString();
+                          newTasks[targetTaskIndex].updatedAt = new Date().toISOString();
+                          
+                          setTasks(newTasks);
+                          
+                          // Save both tasks to backend
+                          kanbanService.updateTask(boardId, newTasks[draggedTaskIndex]).catch(console.error);
+                          kanbanService.updateTask(boardId, newTasks[targetTaskIndex]).catch(console.error);
+                        } else {
+                          // If same priority, create a micro-timestamp difference to establish order
+                          console.log(`[Column Reorder] Same priority (${draggedPriority}), using timestamp: ${draggedTask.id} -> ${task.id}`);
+                          const now = new Date();
+                          const draggedTime = new Date(now.getTime() + 1); // 1ms later
+                          
+                          newTasks[draggedTaskIndex].updatedAt = draggedTime.toISOString();
+                          newTasks[targetTaskIndex].updatedAt = now.toISOString();
+                          
+                          setTasks(newTasks);
+                          
+                          // Save both tasks to backend
+                          kanbanService.updateTask(boardId, newTasks[draggedTaskIndex]).catch(console.error);
+                          kanbanService.updateTask(boardId, newTasks[targetTaskIndex]).catch(console.error);
+                        }
+                      }
+                    }
+                    setDraggedOverTaskId(null);
                   }}
                   onClick={() => {
                     setSelectedTask(task);
@@ -406,72 +486,192 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
         </div>
         
         {/* Backlog section */}
-        <div className="border-t border-gray-700 pt-4">
-          <div className="mb-3">
-            <h3 className="text-lg font-semibold text-white">Backlog & Discovery</h3>
-            <p className="text-sm text-gray-400">Drag items to move them into the workflow</p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-3">
-            {backlogTasks.map((task) => (
-              <div
-                key={task.id}
-                className={`p-3 rounded-lg border ${getPriorityColor(task.priority)} bg-gray-800 hover:bg-gray-700 transition-colors cursor-move`}
-                draggable
-                onDragStart={() => setDraggedTask(task)}
-                onDragEnd={() => {
-                  setDraggedTask(null);
-                  setDragOverColumn(null);
-                }}
-                onClick={() => {
-                  setSelectedTask(task);
-                  setShowViewDialog(true);
-                }}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <h4 className="text-white font-medium text-sm leading-tight flex-1">
-                    <span className="text-xs text-gray-500 mr-1">{task.id}</span>
-                    {task.title}
-                  </h4>
-                  <div className="flex items-center space-x-1">
-                    {task.hasBranch && <GitBranch className="w-4 h-4 text-green-400" />}
-                    {getTypeIcon(task.type)}
-                  </div>
-                </div>
-                
-                <p className="text-gray-300 text-xs mb-2 line-clamp-2">
-                  {stripMarkdown(task.description)}
-                </p>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">{task.assignee}</span>
-                  <div className="flex items-center space-x-1">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      task.priority === 'high' ? 'bg-red-900 text-red-300' :
-                      task.priority === 'medium' ? 'bg-yellow-900 text-yellow-300' :
-                      'bg-green-900 text-green-300'
-                    }`}>
-                      {task.priority}
-                    </span>
-                    {task.createdBy === 'agent' && (
-                      <span className="text-xs text-blue-400">🤖</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-            
-            {/* Add new backlog item */}
+        <div className="border-t border-gray-700 pt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Backlog & Discovery</h3>
+              <p className="text-sm text-gray-400">Drag items to move them into the workflow or reorder priority</p>
+            </div>
             <button 
               onClick={() => {
                 setCreateTaskStatus('backlog');
                 setShowCreateDialog(true);
               }}
-              className="p-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors flex items-center justify-center space-x-1 h-32"
+              className="px-3 py-1 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded text-sm text-gray-300 transition-colors flex items-center space-x-1"
             >
               <Plus className="w-4 h-4" />
-              <span className="text-sm">Add to backlog</span>
+              <span>Add Task</span>
             </button>
+          </div>
+          
+          {/* Scrollable table container */}
+          <div className="overflow-auto bg-gray-800 rounded-lg border border-gray-700" style={{ height: '900px' }}>
+            <table className="w-full">
+              <thead className="sticky top-0 bg-gray-900 border-b border-gray-700 z-10">
+                <tr className="text-left text-xs text-gray-400 uppercase tracking-wider">
+                  <th className="px-3 py-2 w-24">ID</th>
+                  <th className="px-3 py-2 min-w-[200px]">Title</th>
+                  <th className="px-3 py-2 min-w-[250px]">Description</th>
+                  <th className="px-3 py-2 w-16 text-center">Type</th>
+                  <th className="px-3 py-2 w-20 text-center">Priority</th>
+                  <th className="px-3 py-2 w-24">Assignee</th>
+                  <th className="px-3 py-2 w-16 text-center">Links</th>
+                </tr>
+              </thead>
+              <tbody
+                className={`${draggedOverBacklog ? 'bg-gray-700' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDraggedOverBacklog(true);
+                }}
+                onDragLeave={() => setDraggedOverBacklog(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedTask && draggedTask.status !== 'backlog') {
+                    const updatedTask = {
+                      ...draggedTask,
+                      status: 'backlog' as WorkflowStage,
+                      updatedAt: new Date().toISOString()
+                    };
+                    
+                    // Update local state
+                    const updatedTasks = tasks.map(task => 
+                      task.id === updatedTask.id ? updatedTask : task
+                    );
+                    setTasks(updatedTasks);
+                    
+                    // Save to backend
+                    kanbanService.updateTask(boardId, updatedTask)
+                      .then(() => {
+                        if (dexyReady) {
+                          return dexyService.updateTaskVector(updatedTask, boardId);
+                        }
+                      })
+                      .catch(console.error);
+                  }
+                  setDraggedTask(null);
+                  setDraggedOverBacklog(false);
+                }}
+              >
+                {backlogTasks.map((task, index) => (
+                  <tr
+                    key={task.id}
+                    className={`border-b border-gray-700 hover:bg-gray-700 transition-colors cursor-pointer ${
+                      draggedOverTaskId === task.id ? 'bg-gray-700' : ''
+                    }`}
+                    draggable
+                    onDragStart={() => setDraggedTask(task)}
+                    onDragEnd={() => {
+                      setDraggedTask(null);
+                      setDraggedOverTaskId(null);
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (draggedTask && draggedTask.id !== task.id) {
+                        setDraggedOverTaskId(task.id);
+                      }
+                    }}
+                    onDragLeave={() => setDraggedOverTaskId(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggedTask && draggedTask.id !== task.id) {
+                        // Reorder tasks in backlog
+                        const newTasks = [...tasks];
+                        const draggedIndex = newTasks.findIndex(t => t.id === draggedTask.id);
+                        const targetIndex = newTasks.findIndex(t => t.id === task.id);
+                        
+                        if (draggedIndex !== -1 && targetIndex !== -1) {
+                          // If dragged task is not in backlog, change its status first
+                          if (newTasks[draggedIndex].status !== 'backlog') {
+                            newTasks[draggedIndex].status = 'backlog';
+                          }
+                          
+                          // Swap priorities between dragged and target tasks
+                          const draggedPriority = newTasks[draggedIndex].priority;
+                          const targetPriority = newTasks[targetIndex].priority;
+                          
+                          // Only swap if priorities are different
+                          if (draggedPriority !== targetPriority) {
+                            console.log(`[Backlog Reorder] Swapping priorities: ${draggedTask.id} (${draggedPriority}) <-> ${task.id} (${targetPriority})`);
+                            newTasks[draggedIndex].priority = targetPriority;
+                            newTasks[targetIndex].priority = draggedPriority;
+                            newTasks[draggedIndex].updatedAt = new Date().toISOString();
+                            newTasks[targetIndex].updatedAt = new Date().toISOString();
+                            
+                            setTasks(newTasks);
+                            
+                            // Save both tasks to backend
+                            kanbanService.updateTask(boardId, newTasks[draggedIndex]).catch(console.error);
+                            kanbanService.updateTask(boardId, newTasks[targetIndex]).catch(console.error);
+                          } else {
+                            // If same priority, create a micro-timestamp difference to establish order
+                            console.log(`[Backlog Reorder] Same priority (${draggedPriority}), using timestamp: ${draggedTask.id} -> ${task.id}`);
+                            const now = new Date();
+                            const draggedTime = new Date(now.getTime() + 1); // 1ms later
+                            
+                            newTasks[draggedIndex].updatedAt = draggedTime.toISOString();
+                            newTasks[targetIndex].updatedAt = now.toISOString();
+                            
+                            setTasks(newTasks);
+                            
+                            // Save both tasks to backend
+                            kanbanService.updateTask(boardId, newTasks[draggedIndex]).catch(console.error);
+                            kanbanService.updateTask(boardId, newTasks[targetIndex]).catch(console.error);
+                          }
+                        }
+                      }
+                      setDraggedOverTaskId(null);
+                    }}
+                    onClick={() => {
+                      setSelectedTask(task);
+                      setShowViewDialog(true);
+                    }}
+                  >
+                    <td className="px-3 py-2 text-xs text-gray-500 font-mono whitespace-nowrap">{task.id}</td>
+                    <td className="px-3 py-2 text-sm text-white font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={task.title}>
+                      {truncateText(task.title, 40)}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-300 whitespace-nowrap overflow-hidden text-ellipsis" title={stripMarkdown(task.description || '')}>
+                      {truncateText(task.description || '', 60)}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {getTypeIcon(task.type)}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`inline-block px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${
+                        task.priority === 'high' ? 'bg-red-900 text-red-300' :
+                        task.priority === 'medium' ? 'bg-yellow-900 text-yellow-300' :
+                        'bg-green-900 text-green-300'
+                      }`}>
+                        {task.priority}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis">{task.assignee}</td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="flex items-center justify-center space-x-1">
+                        {task.hasBranch && <GitBranch className="w-3 h-3 text-green-400" />}
+                        {task.linkedTasks && task.linkedTasks.length > 0 && (
+                          <span className="text-xs text-purple-400">{task.linkedTasks.length}</span>
+                        )}
+                        {task.comments && task.comments.length > 0 && (
+                          <span className="text-xs text-blue-400">{task.comments.length}</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {backlogTasks.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
+                      <div className="flex flex-col items-center gap-2">
+                        <p>No tasks in backlog</p>
+                        <p className="text-sm">Click "Add Task" to create one or drag tasks here from the workflow</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

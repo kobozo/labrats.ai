@@ -506,8 +506,8 @@ function App() {
         </div>
       )}
 
-      {/* Content Area - Scrollable */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Content Area - Conditionally scrollable based on view */}
+      <div className={`flex-1 ${activeView === 'chat' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {!currentFolder ? (
           /* Show start screen when no folder is open */
           activeView === 'account' ? (

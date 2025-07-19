@@ -1,5 +1,6 @@
 import { Task, WorkflowStage, TaskComment, TaskLinkType, TaskLink } from '../../../types/kanban';
 import { KanbanStorageService } from '../../kanban-storage-service';
+import { emitTaskUpdate } from '../../kanban-ipc-handlers';
 
 // Simple Tool interface for documentation purposes
 interface Tool {
@@ -446,6 +447,9 @@ export class KanbanMCPHandler {
       };
 
       await this.storageService.updateTask('main-board', task);
+      
+      // Emit task created event
+      emitTaskUpdate('created', task.id, task);
 
       return {
         success: true,
@@ -491,6 +495,9 @@ export class KanbanMCPHandler {
       };
 
       await this.storageService.updateTask('main-board', updatedTask);
+      
+      // Emit task updated event
+      emitTaskUpdate('updated', updatedTask.id, updatedTask);
 
       return {
         success: true,
@@ -546,6 +553,9 @@ export class KanbanMCPHandler {
       }
 
       await this.storageService.updateTask('main-board', updatedTask);
+      
+      // Emit task updated event
+      emitTaskUpdate('updated', updatedTask.id, updatedTask);
 
       return {
         success: true,
@@ -595,6 +605,9 @@ export class KanbanMCPHandler {
       };
 
       await this.storageService.updateTask('main-board', updatedTask);
+      
+      // Emit task updated event
+      emitTaskUpdate('updated', updatedTask.id, updatedTask);
 
       return {
         success: true,
@@ -812,6 +825,9 @@ export class KanbanMCPHandler {
       };
 
       await this.storageService.updateTask('main-board', updatedTask);
+      
+      // Emit task updated event
+      emitTaskUpdate('updated', updatedTask.id, updatedTask);
 
       return {
         success: true,

@@ -141,6 +141,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getEpics: (projectPath: string, boardId: string) => ipcRenderer.invoke('kanban:getEpics', projectPath, boardId),
     updateEpic: (projectPath: string, boardId: string, epic: any) => ipcRenderer.invoke('kanban:updateEpic', projectPath, boardId, epic),
     checkBranches: (projectPath: string) => ipcRenderer.invoke('kanban:checkBranches', projectPath),
+    onTaskChanged: (callback: (event: any) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('kanban:task-changed', subscription);
+      return () => ipcRenderer.removeListener('kanban:task-changed', subscription);
+    },
   },
 
   // Dexy Vectorization API

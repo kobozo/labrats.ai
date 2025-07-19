@@ -75,6 +75,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
     }
   }, [currentFolder]);
 
+  // Subscribe to task changes from MCP tools
+  useEffect(() => {
+    if (!currentFolder) return;
+
+    const unsubscribe = window.electronAPI.kanban.onTaskChanged((event: any) => {
+      console.log('[KanbanBoard] Task changed event received:', event);
+      
+      // Reload tasks when any task is changed via MCP tools
+      if (event.type === 'created' || event.type === 'updated' || event.type === 'deleted') {
+        loadTasks();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentFolder]);
+
   const loadTasks = async () => {
     try {
       setIsLoading(true);

@@ -77,7 +77,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ currentFolder }) => {
 
   // Subscribe to task changes from MCP tools
   useEffect(() => {
-    if (!currentFolder) return;
+    if (!currentFolder || !window.electronAPI?.kanban?.onTaskChanged) return;
 
     const unsubscribe = window.electronAPI.kanban.onTaskChanged((event: any) => {
       console.log('[KanbanBoard] Task changed event received:', event);

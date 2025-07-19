@@ -196,6 +196,7 @@ export interface KanbanAPI {
   getEpics: (projectPath: string, boardId: string) => Promise<any[]>;
   updateEpic: (projectPath: string, boardId: string, epic: any) => Promise<{ success: boolean; error?: string }>;
   checkBranches: (projectPath: string) => Promise<string[]>;
+  onTaskChanged: (callback: (event: any) => void) => () => void;
 }
 
 export interface DexyAPI {

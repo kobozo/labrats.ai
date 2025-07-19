@@ -1,6 +1,5 @@
 import { Task, WorkflowStage, TaskComment, TaskLinkType, TaskLink } from '../../../types/kanban';
 import { KanbanStorageService } from '../../kanban-storage-service';
-import { agents } from '../../../config/agents';
 
 // Simple Tool interface for documentation purposes
 interface Tool {
@@ -330,6 +329,24 @@ export const getTaskStats: Tool = {
  * Implementation functions for the MCP tools
  */
 
+// Agent color map for comments (hardcoded to avoid webpack issues)
+const agentColors: Record<string, string> = {
+  'Cortex': '#4299e1',
+  'Switchy': '#10b981',
+  'Ziggy': '#ed8936',
+  'Patchy': '#38a169',
+  'Shiny': '#ed64a6',
+  'Sniffy': '#9f7aea',
+  'Trappy': '#4299e1',
+  'Scratchy': '#e53e3e',
+  'Wheelie': '#38b2ac',
+  'Clawsy': '#9b2c2c',
+  'Nestor': '#4c51bf',
+  'Quill': '#f7fafc',
+  'Sketchy': '#14b8a6',
+  'Dexy': '#f6ad55'
+};
+
 export class KanbanMCPHandler {
   private storageService: KanbanStorageService;
   private projectPath: string;
@@ -568,7 +585,7 @@ export class KanbanMCPHandler {
         authorType: 'agent',
         content: args.content,
         timestamp: new Date().toISOString(),
-        agentColor: agents.find(a => a.name === args.authorName)?.colorAccent
+        agentColor: agentColors[args.authorName]
       };
 
       const updatedTask: Task = {

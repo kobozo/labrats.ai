@@ -196,6 +196,7 @@ export interface KanbanAPI {
   getEpics: (projectPath: string, boardId: string) => Promise<any[]>;
   updateEpic: (projectPath: string, boardId: string, epic: any) => Promise<{ success: boolean; error?: string }>;
   checkBranches: (projectPath: string) => Promise<string[]>;
+  onTaskChanged: (callback: (event: any) => void) => () => void;
 }
 
 export interface DexyAPI {
@@ -381,5 +382,24 @@ export interface DependencyAnalysisAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
+    api: {
+      kanban: {
+        getBoard: () => Promise<any>;
+        createTask: (task: any) => Promise<any>;
+        updateTask: (taskId: string, updates: any) => Promise<any>;
+        deleteTask: (taskId: string) => Promise<boolean>;
+        moveTask: (taskId: string, newStatus: string) => Promise<boolean>;
+        addComment: (taskId: string, authorId: string, authorName: string, content: string) => Promise<any>;
+        getTask: (taskId: string) => Promise<any>;
+        getTasksByStatus: (status: string) => Promise<any[]>;
+        getBlockedTasks: () => Promise<any[]>;
+      };
+      todo: {
+        scanProject: () => Promise<any>;
+        scanFile: (filePath: string) => Promise<any>;
+      };
+      on: (channel: string, callback: (event: any, ...args: any[]) => void) => () => void;
+      off: (channel: string, callback: (event: any, ...args: any[]) => void) => void;
+    };
   }
 }

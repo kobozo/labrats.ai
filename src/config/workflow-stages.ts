@@ -3,124 +3,59 @@ import { WorkflowStageConfig, WorkflowStage } from '../types/kanban';
 export const workflowStages: WorkflowStageConfig[] = [
   {
     id: 'backlog',
-    title: 'Backlog & Discovery',
+    title: 'Backlog',
     color: 'gray',
-    primaryRats: ['Cortex', 'Scratchy', 'Sketchy', 'Quill'],
+    primaryRats: ['All'],
     entryCriteria: ['Idea logged'],
-    exitCriteria: ['Acceptance-criteria draft', 'Value statement present'],
+    exitCriteria: ['Ready for work'],
     returnAuthority: {
-      rats: ['Scratchy'],
+      rats: ['All'],
       targetStages: ['backlog']
     }
   },
   {
-    id: 'definition-of-ready',
-    title: 'Definition of Ready',
-    color: 'purple',
-    primaryRats: ['Cortex', 'Sketchy', 'Nestor', 'Trappy', 'Sniffy'],
-    entryCriteria: ['Draft AC + value'],
-    exitCriteria: ['DoR checklist met', 'UX mock-seed', 'Arch notes', 'Risk tags'],
-    returnAuthority: {
-      rats: ['Nestor', 'Trappy'],
-      targetStages: ['backlog']
-    }
-  },
-  {
-    id: 'ux-design',
-    title: 'UX Design',
-    color: 'pink',
-    primaryRats: ['Sketchy'],
-    allowedParallelWork: ['Quill starts docs outline'],
-    entryCriteria: ['DoR met'],
-    exitCriteria: ['Signed-off mock-ups', 'UX acceptance tests defined'],
-    returnAuthority: {
-      rats: ['Cortex', 'Sketchy'],
-      targetStages: ['definition-of-ready']
-    }
-  },
-  {
-    id: 'development',
-    title: 'Development',
+    id: 'todo',
+    title: 'To Do',
     color: 'blue',
-    primaryRats: ['Patchy', 'Shiny', 'Quill', 'Wheelie'],
-    allowedParallelWork: ['Backend & Frontend in parallel', 'Docs + DevOps alongside'],
-    entryCriteria: ['Signed designs'],
-    exitCriteria: ['Green CI', 'Build passes', 'Unit tests pass', 'Lint clean', 'SAST clean'],
+    primaryRats: ['All'],
+    entryCriteria: ['Approved for work'],
+    exitCriteria: ['Ready to start'],
     returnAuthority: {
-      rats: ['Patchy', 'Shiny'],
-      targetStages: ['development']
+      rats: ['All'],
+      targetStages: ['backlog']
     }
   },
   {
-    id: 'code-review',
-    title: 'Code Review / Arch Gate',
-    color: 'indigo',
-    primaryRats: ['Clawsy', 'Nestor', 'Trappy'],
-    allowedParallelWork: ['Reviews happen serially'],
-    entryCriteria: ['Green CI'],
-    exitCriteria: ['All reviewers approve PR'],
-    returnAuthority: {
-      rats: ['Clawsy', 'Nestor', 'Trappy'],
-      targetStages: ['development']
-    }
-  },
-  {
-    id: 'qa-validation',
-    title: 'QA & UX Validation',
+    id: 'in-progress',
+    title: 'In Progress',
     color: 'yellow',
-    primaryRats: ['Sniffy', 'Sketchy', 'Ziggy'],
-    allowedParallelWork: ['QA, UX, Chaos in parallel'],
-    entryCriteria: ['Merged to develop', 'Deployed to QA'],
-    exitCriteria: ['Zero blocking defects', 'UX & Chaos pass rate met'],
+    primaryRats: ['All'],
+    entryCriteria: ['Work started'],
+    exitCriteria: ['Implementation complete'],
     returnAuthority: {
-      rats: ['Sniffy', 'Sketchy', 'Ziggy'],
-      targetStages: ['development']
+      rats: ['All'],
+      targetStages: ['todo']
     }
   },
   {
-    id: 'security-hardening',
-    title: 'Security Hardening',
-    color: 'red',
-    primaryRats: ['Trappy'],
-    entryCriteria: ['QA pass'],
-    exitCriteria: ['No high/critical vulns', 'Risk log updated'],
+    id: 'review',
+    title: 'Review',
+    color: 'purple',
+    primaryRats: ['All'],
+    entryCriteria: ['Ready for review'],
+    exitCriteria: ['Approved'],
     returnAuthority: {
-      rats: ['Trappy'],
-      targetStages: ['development', 'definition-of-ready']
+      rats: ['All'],
+      targetStages: ['in-progress']
     }
   },
   {
-    id: 'product-acceptance',
-    title: 'Product Acceptance',
-    color: 'orange',
-    primaryRats: ['Cortex'],
-    entryCriteria: ['Security green'],
-    exitCriteria: ['PO demo passes', 'Release notes drafted'],
-    returnAuthority: {
-      rats: ['Cortex'],
-      targetStages: ['qa-validation']
-    }
-  },
-  {
-    id: 'deliver-feedback',
-    title: 'Deliver & Feedback',
-    color: 'teal',
-    primaryRats: ['Wheelie', 'Sketchy', 'Cortex'],
-    allowedParallelWork: ['Ops deploy', 'Guided UX session', 'PO Q&A in parallel'],
-    entryCriteria: ['Acceptance sign-off'],
-    exitCriteria: ['Feedback captured', 'Hot-fix defects triaged'],
-    returnAuthority: {
-      rats: ['Wheelie', 'Sketchy', 'Cortex', 'Users'],
-      targetStages: ['development', 'backlog']
-    }
-  },
-  {
-    id: 'retro-docs',
-    title: 'Retro & Docs Close-out',
+    id: 'done',
+    title: 'Done',
     color: 'green',
-    primaryRats: ['All rats', 'Quill'],
-    entryCriteria: ['Delivery complete'],
-    exitCriteria: ['Action items logged', 'Docs closed']
+    primaryRats: ['All'],
+    entryCriteria: ['Approved'],
+    exitCriteria: ['Complete']
   }
 ];
 

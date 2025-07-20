@@ -1,14 +1,16 @@
 export type WorkflowStage = 
   | 'backlog'
-  | 'definition-of-ready'
-  | 'ux-design'
-  | 'development'
-  | 'code-review'
-  | 'qa-validation'
-  | 'security-hardening'
-  | 'product-acceptance'
-  | 'deliver-feedback'
-  | 'retro-docs';
+  | 'todo'
+  | 'in-progress'
+  | 'review'
+  | 'done';
+
+export type TaskLinkType = 'blocks' | 'blocked-by' | 'relates-to' | 'duplicates' | 'depends-on';
+
+export interface TaskLink {
+  taskId: string;
+  type: TaskLinkType;
+}
 
 export interface Task {
   id: string;
@@ -36,6 +38,14 @@ export interface Task {
   boardId?: string;
   tags?: string[];
   
+  // Task relationships
+  linkedTasks?: TaskLink[];  // New flexible linking system
+  blockedBy?: string[];  // Task IDs that block this task (legacy, for backward compatibility)
+  blocks?: string[];     // Task IDs that this task blocks (legacy, for backward compatibility)
+  
+  // Comment system
+  comments?: TaskComment[];
+  
   // TODO-specific fields
   todoId?: string;
   todoType?: 'TODO' | 'FIXME' | 'HACK' | 'NOTE' | 'BUG';
@@ -51,6 +61,16 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   projectPath: string;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  authorName: string;
+  authorType: 'user' | 'agent';
+  content: string;
+  timestamp: string;
+  agentColor?: string;
 }
 
 export interface Epic {

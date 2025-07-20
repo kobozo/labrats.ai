@@ -92,16 +92,32 @@ export function setupTodoIpcHandlers() {
       const stats = todoScannerService.getTodoStats(scanResult.todos);
       const taskManagerStats = await todoTaskManager.getStats(projectPath);
       
-      const combinedStats = {
+      // Get completed TODO tasks to adjust the total count
+      const kanbanStorage = new KanbanStorageService(projectPath);
+      const allTasks = await kanbanStorage.getTasks('main-board');
+      const completedTodoTasks = allTasks.filter(task => 
+        task.type === 'todo' && 
+        task.todoId && 
+        task.status === 'done'
+      );
+      
+      // Adjust total count by excluding completed tasks
+      const adjustedStats = {
         ...stats,
-        ...taskManagerStats,
+        total: Math.max(0, stats.total - completedTodoTasks.length), // Ensure non-negative
+        validMappings: taskManagerStats.validMappings, // Use task manager's count (already excludes completed)
+        totalMappings: taskManagerStats.totalMappings, // Use task manager's count (already excludes completed)
+        tasksByType: taskManagerStats.tasksByType, // Use task manager's count (already excludes completed)
+        tasksByPriority: taskManagerStats.tasksByPriority, // Use task manager's count (already excludes completed)
         scannedFiles: scanResult.scannedFiles,
         totalFiles: scanResult.totalFiles,
-        errors: scanResult.errors
+        errors: scanResult.errors,
+        lastScan: taskManagerStats.lastScan,
+        invalidMappings: taskManagerStats.invalidMappings
       };
       
-      console.log('[TODO-IPC] TODO statistics:', combinedStats);
-      return { success: true, data: combinedStats };
+      console.log('[TODO-IPC] TODO statistics (adjusted for completed tasks):', adjustedStats);
+      return { success: true, data: adjustedStats };
     } catch (error) {
       console.error('[TODO-IPC] Error getting TODO stats:', error);
       return { 

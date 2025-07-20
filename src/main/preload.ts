@@ -141,6 +141,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getEpics: (projectPath: string, boardId: string) => ipcRenderer.invoke('kanban:getEpics', projectPath, boardId),
     updateEpic: (projectPath: string, boardId: string, epic: any) => ipcRenderer.invoke('kanban:updateEpic', projectPath, boardId, epic),
     checkBranches: (projectPath: string) => ipcRenderer.invoke('kanban:checkBranches', projectPath),
+    onTaskChanged: (callback: (event: any) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('kanban:task-changed', subscription);
+      return () => ipcRenderer.removeListener('kanban:task-changed', subscription);
+    },
   },
 
   // Dexy Vectorization API
@@ -252,3 +257,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeListener: (channel: string, listener: (event: any, ...args: any[]) => void) => ipcRenderer.removeListener(channel, listener),
   },
 });
+
+// Expose the simplified kanban API on the window object
+(window as any).api = {
+  kanban: {
+    getBoard: () => ipcRenderer.invoke('simple-kanban:get-board'),
+    createTask: (task: any) => ipcRenderer.invoke('simple-kanban:create-task', task),
+    updateTask: (taskId: string, updates: any) => ipcRenderer.invoke('simple-kanban:update-task', taskId, updates),
+    deleteTask: (taskId: string) => ipcRenderer.invoke('simple-kanban:delete-task', taskId),
+    moveTask: (taskId: string, newStatus: string) => ipcRenderer.invoke('simple-kanban:move-task', taskId, newStatus),
+    addComment: (taskId: string, authorId: string, authorName: string, content: string) => 
+      ipcRenderer.invoke('simple-kanban:add-comment', taskId, authorId, authorName, content),
+    getTask: (taskId: string) => ipcRenderer.invoke('simple-kanban:get-task', taskId),
+    getTasksByStatus: (status: string) => ipcRenderer.invoke('simple-kanban:get-tasks-by-status', status),
+    getBlockedTasks: () => ipcRenderer.invoke('simple-kanban:get-blocked-tasks'),
+  },
+  todo: {
+    scanProject: () => ipcRenderer.invoke('simple-todo:scan-project'),
+    scanFile: (filePath: string) => ipcRenderer.invoke('simple-todo:scan-file', filePath),
+  },
+  on: (channel: string, callback: (event: any, ...args: any[]) => void) => {
+    ipcRenderer.on(channel, callback);
+    return () => ipcRenderer.removeAllListeners(channel);
+  },
+  off: (channel: string, callback: (event: any, ...args: any[]) => void) => {
+    ipcRenderer.removeListener(channel, callback);
+  }
+};

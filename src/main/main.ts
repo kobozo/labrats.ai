@@ -179,6 +179,7 @@ function createWindow(projectPath?: string, windowState?: WindowState): BrowserW
       setupMcpIpcHandlers(projectPath);
       // Initialize dependency analysis for this window
       dependencyAnalysisIPCHandlers.initialize(window);
+      // Initialize simple kanban handlers
     }
   });
 
@@ -307,7 +308,7 @@ function createMenu(window?: BrowserWindow): void {
               setDexyProjectPath(projectPath);
               todoAutoScanner.startScanning(projectPath);
               setupMcpIpcHandlers(projectPath);
-              
+                      
               updateRecentProjects(projectPath);
               saveOpenWindows();
             }

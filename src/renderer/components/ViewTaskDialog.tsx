@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, GitBranch, AlertCircle, Calendar, User, Tag, Trash2, Search, ExternalLink, FileCode, Code, MessageSquare, Sparkles } from 'lucide-react';
-import { Task } from '../../types/kanban';
+import { X, GitBranch, AlertCircle, Calendar, User, Tag, Trash2, Search, ExternalLink, FileCode, Code, MessageSquare, Sparkles, Send } from 'lucide-react';
+import { Task, TaskComment } from '../../types/kanban';
 import { workflowStages } from '../../config/workflow-stages';
 import { agents } from '../../config/agents';
 import { dexyService } from '../../services/dexy-service-renderer';
@@ -13,6 +13,7 @@ interface ViewTaskDialogProps {
   onEdit: () => void;
   onDelete?: () => void;
   onSelectTask?: (task: Task) => void;
+  onAddComment?: (taskId: string, comment: TaskComment) => void;
 }
 
 interface SimilarTask {
@@ -38,12 +39,14 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
   onClose,
   onEdit,
   onDelete,
-  onSelectTask
+  onSelectTask,
+  onAddComment
 }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [similarTasks, setSimilarTasks] = useState<SimilarTask[]>([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
   const [showSimilarTasks, setShowSimilarTasks] = useState(false);
+  const [newComment, setNewComment] = useState('');
   const currentStage = workflowStages.find(stage => stage.id === task.status);
   const assigneeAgent = agents.find(agent => agent.name === task.assignee);
   
@@ -81,6 +84,22 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
     
     // Close this dialog
     onClose();
+  };
+
+  const handleAddComment = () => {
+    if (newComment.trim() && onAddComment) {
+      const comment: TaskComment = {
+        id: `comment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        taskId: task.id,
+        authorName: 'User',
+        authorType: 'user',
+        content: newComment.trim(),
+        timestamp: new Date().toISOString()
+      };
+      
+      onAddComment(task.id, comment);
+      setNewComment('');
+    }
   };
 
   const loadSimilarTasks = async () => {
@@ -435,6 +454,60 @@ export const ViewTaskDialog: React.FC<ViewTaskDialogProps> = ({
               )}
             </div>
           )}
+          
+          {/* Comments Section */}
+          <div className="mt-8 border-t border-gray-700 pt-6">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+              <MessageSquare className="w-5 h-5 mr-2" />
+              Comments ({task.comments?.length || 0})
+            </h3>
+            
+            {/* Existing Comments */}
+            <div className="space-y-3 mb-4">
+              {task.comments?.map((comment) => (
+                <div key={comment.id} className="bg-gray-900/50 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-medium text-white">{comment.authorName}</span>
+                      {comment.authorType === 'agent' && (
+                        <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">🤖</span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-400">
+                      {new Date(comment.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-300">{comment.content}</p>
+                </div>
+              ))}
+              
+              {(!task.comments || task.comments.length === 0) && (
+                <div className="text-center py-4 text-gray-400">
+                  No comments yet
+                </div>
+              )}
+            </div>
+            
+            {/* Add Comment */}
+            {onAddComment && (
+              <div className="flex space-x-2">
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Add a comment..."
+                  className="flex-1 bg-gray-800 border border-gray-600 rounded-md p-2 text-white placeholder-gray-400 text-sm resize-none"
+                  rows={2}
+                />
+                <button
+                  onClick={handleAddComment}
+                  disabled={!newComment.trim()}
+                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-md transition-colors flex items-center"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       

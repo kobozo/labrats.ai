@@ -37,7 +37,7 @@ export class CodeOrchestratorService {
       await this.codeVectorization.initialize(projectPath);
       console.log('[CODE-ORCHESTRATOR] Code vectorization service initialized');
       
-      // TODO auto scanner should be started separately from the renderer
+      // Auto scanner initialization moved to a separate service
       // to avoid circular dependencies
       console.log('[CODE-ORCHESTRATOR] TODO auto scanner should be started from renderer');
       

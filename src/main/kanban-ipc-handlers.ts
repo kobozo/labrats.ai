@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { KanbanStorageService } from './kanban-storage-service';
 import { Board, Task, Epic } from '../types/kanban';
 import { exec } from 'child_process';
@@ -9,6 +9,21 @@ const execAsync = promisify(exec);
 // Store current project path - handlers are global, but storage is per-project
 let currentProjectPath: string | null = null;
 let handlersRegistered = false;
+
+// Function to emit task update events to all renderer windows
+export function emitTaskUpdate(eventType: 'created' | 'updated' | 'deleted', taskId: string, task?: Task) {
+  const windows = BrowserWindow.getAllWindows();
+  windows.forEach(window => {
+    if (!window.isDestroyed()) {
+      window.webContents.send('kanban:task-changed', {
+        type: eventType,
+        taskId,
+        task,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+}
 
 export function setupKanbanHandlers(projectPath: string) {
   console.log('Setting up kanban handlers for project:', projectPath);

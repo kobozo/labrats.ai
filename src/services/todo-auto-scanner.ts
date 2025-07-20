@@ -1,7 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { todoScannerService } from './todo-scanner-service';
 import { todoTaskManager } from './todo-task-manager';
+import { KanbanStorageService } from '../main/kanban-storage-service';
+// TODO: test branch-aware scanning implementation
 
 export interface AutoScanConfig {
   enabled: boolean;
@@ -10,6 +14,8 @@ export interface AutoScanConfig {
   scanOnFileChange: boolean;
   includedExtensions: string[];
   excludedPaths: string[];
+  allowedBranches?: string[]; // Branch-aware scanning
+  autoCompleteInvalidTodos?: boolean; // Auto-complete TODOs that are no longer detected
 }
 
 export interface AutoScanStats {
@@ -62,10 +68,47 @@ export class TodoAutoScanner {
       'target',
       'bin',
       'obj'
-    ]
+    ],
+    allowedBranches: ['main', 'master', 'develop'], // Default allowed branches
+    autoCompleteInvalidTodos: true // Auto-complete TODOs that are no longer detected
   };
 
   private constructor() {}
+
+  /**
+   * Get current git branch
+   */
+  private async getCurrentBranch(projectPath: string): Promise<string | null> {
+    const execAsync = promisify(exec);
+    try {
+      const { stdout } = await execAsync('git branch --show-current', { cwd: projectPath });
+      return stdout.trim() || null;
+    } catch (error) {
+      console.warn('[TODO-AUTO-SCANNER] Failed to get current git branch:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if current branch is allowed for scanning
+   */
+  private async isBranchAllowed(projectPath: string, config: AutoScanConfig): Promise<boolean> {
+    if (!config.allowedBranches || config.allowedBranches.length === 0) {
+      return true; // If no branch restrictions, allow all branches
+    }
+
+    const currentBranch = await this.getCurrentBranch(projectPath);
+    if (!currentBranch) {
+      console.warn('[TODO-AUTO-SCANNER] Could not determine current branch, allowing scan');
+      return true;
+    }
+
+    const isAllowed = config.allowedBranches.includes(currentBranch);
+    if (!isAllowed) {
+      console.log(`[TODO-AUTO-SCANNER] Current branch "${currentBranch}" is not in allowed branches:`, config.allowedBranches);
+    }
+    return isAllowed;
+  }
 
   public static getInstance(): TodoAutoScanner {
     if (!TodoAutoScanner.instance) {
@@ -131,7 +174,7 @@ export class TodoAutoScanner {
     this.watchers.clear();
     
     // Clear debounce timers
-    for (const [_path, timer] of this.debounceTimers) {
+    for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
     }
     this.debounceTimers.clear();
@@ -279,6 +322,16 @@ export class TodoAutoScanner {
     const startTime = Date.now();
     
     try {
+      // Load config to check branch restrictions
+      const config = await this.loadConfig(this.currentProject);
+      
+      // Check if current branch is allowed for scanning
+      const branchAllowed = await this.isBranchAllowed(this.currentProject, config);
+      if (!branchAllowed) {
+        console.log('[TODO-AUTO-SCANNER] Skipping scan - current branch not allowed');
+        return;
+      }
+      
       // Get existing mappings to identify already processed TODOs
       const mappings = await todoTaskManager.getMappings(this.currentProject);
       const existingTodoIds = mappings.map(m => m.todoId);
@@ -286,6 +339,11 @@ export class TodoAutoScanner {
       // Get all TODOs first, then filter out existing ones
       const scanResult = await todoScannerService.scanProject(this.currentProject);
       const newTodos = scanResult.todos.filter(todo => !existingTodoIds.includes(todo.id));
+      
+      // Auto-complete TODOs that are no longer detected
+      if (config.autoCompleteInvalidTodos) {
+        await this.autoCompleteMissingTodos(scanResult.todos, this.currentProject);
+      }
       
       if (newTodos.length > 0) {
         console.log('[TODO-AUTO-SCANNER] Found', newTodos.length, 'new TODOs');
@@ -316,6 +374,58 @@ export class TodoAutoScanner {
       console.error('[TODO-AUTO-SCANNER] Error during scan:', error);
     } finally {
       this.isScanning = false;
+    }
+  }
+
+  /**
+   * Auto-complete TODOs that are no longer detected in the codebase
+   */
+  private async autoCompleteMissingTodos(currentTodos: { id: string }[], projectPath: string): Promise<void> {
+    try {
+      const kanbanStorage = new KanbanStorageService(projectPath);
+      const allTasks = await kanbanStorage.getTasks('main-board');
+      
+      // Find all TODO tasks that are not in done status
+      const todoTasks = allTasks.filter(task => 
+        task.todoId && task.status !== 'done'
+      );
+      
+      // Create set of currently detected TODO IDs
+      const currentTodoIds = new Set(currentTodos.map(todo => todo.id));
+      
+      // Find tasks that correspond to TODOs that no longer exist
+      const missingTodoTasks = todoTasks.filter(task => 
+        task.todoId && !currentTodoIds.has(task.todoId)
+      );
+      
+      if (missingTodoTasks.length > 0) {
+        console.log(`[TODO-AUTO-SCANNER] Auto-completing ${missingTodoTasks.length} missing TODOs`);
+        
+        // Move missing TODO tasks to done status
+        for (const task of missingTodoTasks) {
+          const updatedTask = {
+            ...task,
+            status: 'done' as const,
+            updatedAt: new Date().toISOString(),
+            comments: [
+              ...(task.comments || []),
+              {
+                id: `comment-${Date.now()}`,
+                taskId: task.id,
+                authorName: 'System',
+                authorType: 'agent' as const,
+                content: 'Auto-completed: TODO no longer detected in codebase',
+                timestamp: new Date().toISOString()
+              }
+            ]
+          };
+          
+          await kanbanStorage.updateTask('main-board', updatedTask);
+          console.log(`[TODO-AUTO-SCANNER] Auto-completed task ${task.id} (TODO: ${task.todoId})`);
+        }
+      }
+    } catch (error) {
+      console.error('[TODO-AUTO-SCANNER] Error auto-completing missing TODOs:', error);
     }
   }
 

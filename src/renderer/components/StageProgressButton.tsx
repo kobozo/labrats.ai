@@ -48,8 +48,8 @@ export const StageProgressButton: React.FC<StageProgressButtonProps> = ({ task, 
     }
   };
 
-  const isFirstStage = task.status === 'definition-of-ready';
-  const isLastStage = task.status === 'retro-docs';
+  const isFirstStage = task.status === 'backlog';
+  const isLastStage = task.status === 'done';
 
   return (
     <div className="flex items-center space-x-1 mt-2">

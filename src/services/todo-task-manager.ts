@@ -323,15 +323,19 @@ export class TodoTaskManager {
   }> {
     const config = await this.loadConfig(projectPath);
     
-    // Get all TODO tasks from the board
+    // Get all TODO tasks from the board, excluding completed ones
     const kanbanStorage = new KanbanStorageService(projectPath);
     const allTasks = await kanbanStorage.getTasks('main-board');
-    const todoTasks = allTasks.filter(task => task.type === 'todo' && task.todoId);
+    const todoTasks = allTasks.filter(task => 
+      task.type === 'todo' && 
+      task.todoId && 
+      task.status !== 'done' // Exclude completed tasks
+    );
     
     const tasksByType: Record<string, number> = {};
     const tasksByPriority: Record<string, number> = {};
     
-    // Count tasks by TODO type and priority
+    // Count tasks by TODO type and priority (excluding completed)
     for (const task of todoTasks) {
       if (task.todoType) {
         tasksByType[task.todoType] = (tasksByType[task.todoType] || 0) + 1;
@@ -343,7 +347,7 @@ export class TodoTaskManager {
     
     return {
       totalMappings: todoTasks.length,
-      validMappings: todoTasks.length, // All tasks in board are valid
+      validMappings: todoTasks.length, // All non-completed tasks in board are valid
       invalidMappings: 0, // No invalid mappings in new structure
       lastScan: config.lastScan,
       tasksByType,
